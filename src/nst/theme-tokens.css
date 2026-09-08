@@ -1,0 +1,93 @@
+/* ============================================================
+   NST Design System — Theme Tokens (default)
+   Maps gx-theme semantic tokens used in guidelines:
+   --grayColor*, --primaryColor*, --accentColor*, --warnColor*, --bgColor*
+   Default theme: blue (#1C81EF). Override via theme-blue.css etc.
+   ============================================================ */
+
+:root {
+  /* Gray (Material palette — from guidelines color-palette) */
+  --grayColor50:  #fafafa;
+  --grayColor100: #f5f5f5;
+  --grayColor200: #eeeeee;
+  --grayColor300: #e0e0e0;
+  --grayColor400: #bdbdbd;
+  --grayColor500: #9e9e9e;
+  --grayColor600: #757575;
+  --grayColor700: #616161;
+  --grayColor800: #424242;
+  --grayColor900: #212121;
+  --grayColor1000: #000000;
+
+  /* Primary — blue brand (theme-blue / Figma) */
+  --primaryColor50:  #eff6ff;
+  --primaryColor100: #dbeafe;
+  --primaryColor200: #bfdbfe;
+  --primaryColor300: #93c5fd;
+  --primaryColor400: #60a5fa;
+  --primaryColor500: #1C81EF;
+  --primaryColor600: #2563eb;
+  --primaryColor700: #1d4ed8;
+  --primaryColor800: #1e40af;
+  --primaryColor900: #1e3a8a;
+
+  /* Accent — mirrors primary blue scale */
+  --accentColor50:  #eff6ff;
+  --accentColor100: #dbeafe;
+  --accentColor200: #bfdbfe;
+  --accentColor300: #93c5fd;
+  --accentColor400: #60a5fa;
+  --accentColor500: #1C81EF;
+  --accentColor600: #2563eb;
+  --accentColor700: #1d4ed8;
+  --accentColor800: #1e40af;
+  --accentColor900: #1e3a8a;
+
+  /* Warn */
+  --warnColor10:  #fffbeb;
+  --warnColor50:  #fff8e1;
+  --warnColor100: #ffecb3;
+  --warnColor200: #ffe082;
+  --warnColor300: #ffd54f;
+  --warnColor400: #ffca28;
+  --warnColor500: #ffc107;
+  --warnColor600: #ffb300;
+  --warnColor700: #ffa000;
+  --warnColor800: #ff8f00;
+  --warnColor900: #ff6f00;
+  --warnColor1000: #e65100;
+
+  /* Background surfaces */
+  --bgColor10:  #ffffff;
+  --bgColor50:  #fafafa;
+  --bgColor100: #f5f5f5;
+  --bgColor200: #eeeeee;
+  --bgColor300: #e0e0e0;
+
+  /* Field tokens (core-mixin) */
+  --fieldLabelColor:       var(--grayColor800);
+  --fieldLabelFontWeight:  500;
+  --fieldTextColor:        var(--grayColor900);
+  --fieldTextFontWeight:   400;
+  --fieldDisabledLabelColor: var(--grayColor500);
+  --fieldDisabledTextColor:  var(--grayColor400);
+
+  /* vw accent remap — align primitive accent with brand blue */
+  --vw-color-accent-50:  #eff6ff;
+  --vw-color-accent-100: #dbeafe;
+  --vw-color-accent-200: #bfdbfe;
+  --vw-color-accent-300: #93c5fd;
+  --vw-color-accent-400: #60a5fa;
+  --vw-color-accent-500: #1C81EF;
+  --vw-color-accent-600: #2563eb;
+  --vw-color-accent-700: #1d4ed8;
+  --vw-color-accent-800: #1e40af;
+  --vw-color-accent-900: #1e3a8a;
+}
+
+html,
+body {
+  font-family: var(--fontFamily);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

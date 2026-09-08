@@ -1,0 +1,43 @@
+import { Route, Routes } from 'react-router-dom'
+import AppShell from '@/components/AppShell'
+import Dashboard from '@/pages/Dashboard'
+import ProvisioningRequests from '@/pages/ProvisioningRequests'
+import ProvisioningExecution from '@/pages/ProvisioningExecution'
+import OrderDetail from '@/pages/OrderDetail'
+import NewServiceWizard from '@/pages/NewServiceWizard'
+import ServiceInventory from '@/pages/ServiceInventory'
+import ServiceDetail from '@/pages/ServiceDetail'
+import ChangeCease from '@/pages/ChangeCease'
+import Workflows from '@/pages/Workflows'
+import WorkflowBuilder from '@/pages/WorkflowBuilder'
+import ProfileTypes from '@/pages/ProfileTypes'
+import ResourcePools from '@/pages/ResourcePools'
+import Evidence from '@/pages/Evidence'
+import Reports from '@/pages/Reports'
+import NotFound from '@/pages/NotFound'
+
+export default function App() {
+  return (
+    <Routes>
+      <Route element={<AppShell />}>
+        <Route index element={<Dashboard />} />
+        <Route path="requests" element={<ProvisioningRequests />} />
+        <Route path="requests/new" element={<NewServiceWizard />} />
+        <Route path="requests/:id" element={<OrderDetail />} />
+        <Route path="execution" element={<ProvisioningExecution />} />
+        <Route path="execution/:id" element={<OrderDetail />} />
+        <Route path="inventory" element={<ServiceInventory />} />
+        <Route path="inventory/:id" element={<ServiceDetail />} />
+        <Route path="change" element={<ChangeCease />} />
+        <Route path="workflows" element={<Workflows />} />
+        <Route path="workflows/new" element={<WorkflowBuilder />} />
+        <Route path="workflows/:id" element={<WorkflowBuilder />} />
+        <Route path="profile-types" element={<ProfileTypes />} />
+        <Route path="pools" element={<ResourcePools />} />
+        <Route path="evidence" element={<Evidence />} />
+        <Route path="reports" element={<Reports />} />
+        <Route path="*" element={<NotFound />} />
+      </Route>
+    </Routes>
+  )
+}

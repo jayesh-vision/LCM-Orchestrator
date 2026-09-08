@@ -1,0 +1,119 @@
+/* ============================================================
+   NST Design System — vw-chip classes
+   Ported from core-mixin.scss (gx-theme) per guidelines vw-cards page.
+   ============================================================ */
+
+.vw-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--vw-radius-full);
+  font-size: var(--vw-font-label-sm);
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.vw-chip.is-strong    { font-weight: 500; }
+.vw-chip.is-clickable { cursor: pointer; }
+
+/* Default variants */
+.vw-chip.vw-chip--neutral {
+  background-color: #f4f4f4;
+  color: #515151;
+}
+
+.vw-chip.vw-chip--success {
+  background-color: var(--vw-color-emerald-50);
+  color: var(--vw-color-emerald-700);
+}
+
+.vw-chip.vw-chip--error {
+  background-color: #fcf6f5;
+  color: #b21313;
+}
+
+.vw-chip.vw-chip--warning {
+  background-color: #fffae8;
+  color: #926e00;
+}
+
+.vw-chip.vw-chip--info {
+  background-color: #f5f9ff;
+  color: #124e8e;
+}
+
+.vw-chip.vw-chip--purple {
+  background-color: var(--vw-color-purple-50);
+  color: var(--vw-color-purple-700);
+}
+
+.vw-chip.vw-chip--cyan {
+  background-color: var(--vw-color-cyan-50);
+  color: var(--vw-color-cyan-700);
+}
+
+.vw-chip.vw-chip--orange {
+  background-color: var(--vw-color-orange-50);
+  color: var(--vw-color-orange-700);
+}
+
+.vw-chip.vw-chip--pink {
+  background-color: var(--vw-color-fuchsia-50);
+  color: var(--vw-color-fuchsia-700);
+}
+
+/* Solid variants */
+.vw-chip.vw-chip--neutral-solid {
+  background-color: var(--vw-color-gray-700);
+  color: var(--vw-color-white);
+}
+
+.vw-chip.vw-chip--success-solid {
+  background-color: var(--vw-color-emerald-700);
+  color: var(--vw-color-white);
+}
+
+.vw-chip.vw-chip--error-solid {
+  background-color: var(--vw-color-red-700);
+  color: var(--vw-color-white);
+}
+
+.vw-chip.vw-chip--warning-solid {
+  background-color: var(--vw-color-amber-700);
+  color: var(--vw-color-white);
+}
+
+.vw-chip.vw-chip--info-solid {
+  background-color: var(--vw-color-sky-700);
+  color: var(--vw-color-white);
+}
+
+.vw-chip.vw-chip--purple-solid {
+  background-color: var(--vw-color-purple-700);
+  color: var(--vw-color-white);
+}
+
+.vw-chip.vw-chip--cyan-solid {
+  background-color: var(--vw-color-cyan-700);
+  color: var(--vw-color-white);
+}
+
+.vw-chip.vw-chip--orange-solid {
+  background-color: var(--vw-color-orange-700);
+  color: var(--vw-color-white);
+}
+
+.vw-chip.vw-chip--pink-solid {
+  background-color: var(--vw-color-fuchsia-700);
+  color: var(--vw-color-white);
+}
+
+/* Legacy chip aliases (core-mixin) */
+.common-red-chip    { background: var(--vw-color-red-50);    color: var(--vw-color-red-700); }
+.common-orange-chip { background: var(--vw-color-orange-50); color: var(--vw-color-orange-700); }
+.common-yellow-chip { background: var(--vw-color-yellow-50); color: var(--vw-color-yellow-700); }
+.common-green-chip  { background: var(--vw-color-green-50);  color: var(--vw-color-green-700); }
+.common-blue-chip   { background: var(--vw-color-blue-50);   color: var(--vw-color-blue-700); }
+.common-gray-chip   { background: var(--vw-color-gray-100);  color: var(--vw-color-gray-700); }

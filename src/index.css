@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+/* ============================================================
+   NST / Vision Waves design system — the source of truth for
+   every colour, font, weight, radius and spacing value below.
+   Registry: COMPONENTS.md in the nst-design-system repo.
+   ============================================================ */
+@import "./nst/colors.css";
+@import "./nst/spacing.css";
+@import "./nst/typography-tokens.css";
+@import "./nst/theme-tokens.css";
+@import "./nst/vw-cards.css";
+@import "./nst/vw-chips.css";
+@import "./nst/vw-utilities.css";
+@import "./nst/components.css";
+
+/* ============================================================
+   Tailwind theme, retargeted onto NST tokens.
+
+   Every utility the app already uses now resolves to a value from
+   colors.css / theme-tokens.css / typography-tokens.css — no hex
+   originates here. The names are kept so no markup had to churn;
+   the comment on each line is the NST token it carries.
+   ============================================================ */
+@theme {
+  --font-sans: var(--fontFamily);
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --color-ink-1: #111827;          /* --vw-color-gray-900 */
+  --color-ink-2: #4b5563;          /* --vw-color-gray-600 */
+  --color-ink-3: #6b7280;          /* --vw-color-gray-500 */
+
+  --color-line: #e2e8f0;           /* --vw-color-slate-200 */
+  --color-line-soft: #f1f5f9;      /* --vw-color-slate-100 */
+  --color-plane: #f8fafc;          /* --vw-color-slate-50  */
+
+  --color-brand-50:  #eff6ff;      /* --primaryColor50  */
+  --color-brand-100: #dbeafe;      /* --primaryColor100 */
+  --color-brand-200: #bfdbfe;      /* --primaryColor200 */
+  --color-brand-500: #1c81ef;      /* --primaryColor500 — NST brand blue */
+  --color-brand-600: #2563eb;      /* --primaryColor600 */
+  --color-brand-700: #1d4ed8;      /* --primaryColor700 */
+
+  --color-good-50:  #ecfdf5;       /* --vw-color-emerald-50  */
+  --color-good-200: #a7f3d0;       /* --vw-color-emerald-200 */
+  --color-good-500: #059669;       /* --vw-color-emerald-600 */
+  --color-good-700: #047857;       /* --vw-color-emerald-700 */
+
+  --color-warn-50:  #fffbeb;       /* --vw-color-amber-50  */
+  --color-warn-200: #fde68a;       /* --vw-color-amber-200 */
+  --color-warn-500: #f59e0b;       /* --vw-color-amber-500 */
+  --color-warn-700: #b45309;       /* --vw-color-amber-700 */
+
+  --color-crit-50:  #fef2f2;       /* --vw-color-red-50  */
+  --color-crit-200: #fecaca;       /* --vw-color-red-200 */
+  --color-crit-500: #dc2626;       /* --vw-color-red-600 */
+  --color-crit-700: #b91c1c;       /* --vw-color-red-700 */
+
+  --color-plum-50:  #faf5ff;       /* --vw-color-purple-50  */
+  --color-plum-200: #e9d5ff;       /* --vw-color-purple-200 */
+  --color-plum-500: #9333ea;       /* --vw-color-purple-600 */
+  --color-plum-700: #7e22ce;       /* --vw-color-purple-700 */
+
+  --color-teal-50:  #f0fdfa;       /* --vw-color-teal-50  */
+  --color-teal-200: #99f6e4;       /* --vw-color-teal-200 */
+  --color-teal-700: #0f766e;       /* --vw-color-teal-700 */
+
+  --color-neutral-fill: #9ca3af;   /* --vw-color-gray-400 */
+
+  --radius-card: 1rem;             /* --vw-radius-lg */
+}
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--color-plane);
+    color: var(--color-ink-1);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  * { box-sizing: border-box; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--vw-color-slate-300); border-radius: var(--vw-radius-xs); border: 2px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--vw-color-slate-400); background-clip: content-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
+
+@layer utilities {
+  .tnum { font-variant-numeric: tabular-nums; }
+  /* Elevation ladder from components.css: resting = border only, raised = --shadow-sm. */
+  .shadow-card { box-shadow: var(--shadow-resting); }
+  .shadow-pop {
+    box-shadow: 0 2px 2px -1px rgba(10,13,18,.04),
+                0 4px 6px -2px rgba(10,13,18,.03),
+                0 12px 16px -4px rgba(10,13,18,.08);
+  }
+  @keyframes lcm-fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .anim-in { animation: lcm-fade-up .18s ease-out both; }
+  @keyframes lcm-slide-in { from { transform: translateX(100%); } to { transform: none; } }
+  .anim-drawer { animation: lcm-slide-in .22s cubic-bezier(.32,.72,0,1) both; }
+  @keyframes lcm-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .anim-pulse { animation: lcm-pulse 1.4s ease-in-out infinite; }
+}
+
+/* ============================================================
+   Registry adjustments — documented, minimal, and only where the
+   design system's specimen assumptions do not hold in this app.
+   Unlayered on purpose: components.css is unlayered, so anything
+   inside @layer would lose to it.
+   ============================================================ */
+
+/* 1. components.css sets Inter on .nst-table / .nst-btn / .nst-table-*.
+      CLAUDE.md forbids Inter on dashboard pages, and every screen here is a
+      dashboard screen, so Poppins wins. Registry conflict, resolved in
+      favour of the stricter rule. */
+.nst-table,
+.nst-table th,
+.nst-table td,
+.nst-btn,
+.nst-table-th,
+.nst-table-td,
+.nst-table-menu-item { font-family: var(--fontFamily); }
+
+/* 2. .nst-input has fixed horizontal padding. Fields with a prefix or suffix
+      icon need room for it — a layout constraint, not a restyle. */
+.nst-input.has-icon-left  { padding-left: 2.25rem; }
+.nst-input.has-icon-right { padding-right: 2rem; }
+
+/* 3. .nst-table td is tuned for 4–5 wide columns; these grids carry 9–10.
+      Horizontal padding steps down one notch on the spacing scale, and the
+      cell type drops to the 13px the .nst-table-td spec in the same file
+      already uses. Vertical rhythm and every colour are unchanged. */
+.nst-table th,
+.nst-table td {
+  padding-left: var(--vw-space-md);
+  padding-right: var(--vw-space-md);
+}
+.nst-table td { font-size: 0.8125rem; }
+.nst-table td.tnum { white-space: nowrap; }

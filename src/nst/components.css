@@ -1,0 +1,747 @@
+/* ============================================================
+   NST Design System — Component Tokens & Base Styles
+   Import after colors.css and typography-semantic.css
+   ============================================================ */
+
+/* ============================================================
+   Elevation Tokens
+   Two levels — both share the same slate-200 border.
+   ============================================================ */
+
+:root {
+  --elevation-border:   1px solid var(--vw-color-slate-200);
+  --shadow-resting:     none;                                   /* Level 1 — border only */
+  --shadow-sm:          0 2px 4px 0 rgba(0, 0, 0, 0.06);       /* Level 2 — raised      */
+}
+
+/* Utility classes */
+.nst-surface {
+  border: var(--elevation-border);
+  box-shadow: var(--shadow-resting);
+  background: var(--vw-color-white);
+  border-radius: 8px;
+}
+
+.nst-surface--raised {
+  border: var(--elevation-border);
+  box-shadow: var(--shadow-sm);
+  background: var(--vw-color-white);
+  border-radius: 8px;
+}
+
+/* ============================================================
+   Button — .nst-btn
+   Ported from preview/buttons-styles.html + buttons-sizes.html, which
+   previously existed only as specimens (no reusable class shipped).
+
+   Base class = md size + outline variant. Add one size and one variant:
+     <button class="nst-btn nst-btn--filled">        primary action
+     <button class="nst-btn nst-btn--sm">             small outline
+     <button class="nst-btn nst-btn--ghost">          borderless
+     <button class="nst-btn nst-btn--danger">         destructive
+
+   Variants: filled | outline (default) | gray | ghost | action | danger
+   Sizes:    xs | sm | md (default) | lg
+   Hover LIGHTENS (never darkens) — per the guidelines' state spec.
+   ============================================================ */
+
+.nst-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: var(--vw-radius-sm);
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
+
+  /* default size = md */
+  font-size: 14px;
+  line-height: 20px;
+  padding: 8px 16px;
+
+  /* default variant = outline */
+  background: var(--vw-color-white);
+  color: var(--vw-color-gray-900);
+  border: 1px solid var(--vw-color-slate-200);
+}
+
+.nst-btn:hover {
+  border-color: var(--color-primary, var(--primaryColor500));
+  color: var(--color-primary, var(--primaryColor500));
+}
+
+.nst-btn:focus-visible {
+  outline: 2px solid var(--color-primary, var(--primaryColor500));
+  outline-offset: 2px;
+}
+
+.nst-btn:disabled,
+.nst-btn.is-disabled {
+  background: var(--vw-color-gray-100);
+  color: var(--vw-color-gray-400);
+  border-color: var(--vw-color-slate-200);
+  cursor: not-allowed;
+}
+
+/* ── Sizes ───────────────────────────────────────────────── */
+.nst-btn--xs { font-size: 12px; line-height: 16px; padding: 4px; }
+.nst-btn--sm { font-size: 13px; line-height: 18px; padding: 6px 8px; }
+.nst-btn--md { font-size: 14px; line-height: 20px; padding: 8px 16px; }
+.nst-btn--lg { font-size: 16px; line-height: 24px; padding: 8px 16px; }
+
+/* Icon-only — square, matching each size's text-button height */
+.nst-btn--icon.nst-btn--xs { width: 24px; height: 24px; padding: 0; }
+.nst-btn--icon.nst-btn--sm { width: 30px; height: 30px; padding: 0; }
+.nst-btn--icon.nst-btn--md,
+.nst-btn--icon           { width: 36px; height: 36px; padding: 0; }
+.nst-btn--icon.nst-btn--lg { width: 40px; height: 40px; padding: 0; }
+
+/* ── Variants ────────────────────────────────────────────── */
+.nst-btn--filled {
+  background: var(--color-primary, var(--primaryColor500));
+  border-color: var(--color-primary, var(--primaryColor500));
+  color: var(--vw-color-white);
+}
+.nst-btn--filled:hover {
+  background: var(--color-primary-hover, var(--primaryColor400));
+  border-color: var(--color-primary-hover, var(--primaryColor400));
+  color: var(--vw-color-white);
+}
+
+.nst-btn--gray {
+  background: var(--vw-color-gray-100);
+  border-color: transparent;
+  color: var(--vw-color-gray-900);
+}
+.nst-btn--gray:hover {
+  background: var(--vw-color-gray-200);
+  border-color: transparent;
+  color: var(--vw-color-gray-900);
+}
+
+.nst-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--vw-color-gray-900);
+}
+.nst-btn--ghost:hover {
+  background: var(--vw-color-gray-100);
+  border-color: transparent;
+  color: var(--vw-color-gray-900);
+}
+
+.nst-btn--action {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-primary, var(--primaryColor500));
+}
+.nst-btn--action:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-primary-hover, var(--primaryColor400));
+}
+
+.nst-btn--danger {
+  background: var(--vw-color-red-600);
+  border-color: var(--vw-color-red-600);
+  color: var(--vw-color-white);
+}
+.nst-btn--danger:hover {
+  background: var(--vw-color-red-500);
+  border-color: var(--vw-color-red-500);
+  color: var(--vw-color-white);
+}
+
+/* Subtle destructive — for dense boards where several destructive actions
+   sit side by side and solid red would shout. */
+.nst-btn--danger-subtle {
+  background: var(--vw-color-white);
+  border-color: var(--vw-color-red-200);
+  color: var(--vw-color-red-700);
+}
+.nst-btn--danger-subtle:hover {
+  background: var(--vw-color-red-50);
+  border-color: var(--vw-color-red-300);
+  color: var(--vw-color-red-700);
+}
+
+/* ============================================================
+   Input Field
+   ============================================================ */
+
+.nst-input {
+  display: flex;
+  min-height: 36px;
+  padding: 6px 8px;
+  align-items: center;
+  gap: 8px;
+
+  border-radius: 8px;
+  border: 1px solid var(--vw-color-gray-200);
+  background: var(--vw-color-white);
+
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  color: var(--vw-color-gray-700);
+
+  box-sizing: border-box;
+  width: 100%;
+  transition: border-color 120ms ease-out, box-shadow 120ms ease-out;
+}
+
+/* Label above input */
+.nst-input-label {
+  overflow: hidden;
+  color: var(--vw-color-gray-500);
+  font-feature-settings: 'ss01' on, 'cv01' on, 'cv11' on;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+/* Placeholder text */
+.nst-input::placeholder {
+  color: var(--vw-color-gray-400);
+}
+
+/* States */
+.nst-input:hover {
+  border-color: var(--vw-color-gray-400);
+}
+
+.nst-input:focus,
+.nst-input:focus-visible {
+  outline: none;
+  border-color: var(--vw-color-accent-500);
+  box-shadow: 0 0 0 3px var(--vw-color-accent-100);
+}
+
+.nst-input.nst-input--error {
+  border-color: var(--vw-color-red-500);
+}
+
+.nst-input.nst-input--error:focus {
+  box-shadow: 0 0 0 3px var(--vw-color-red-100);
+}
+
+.nst-input:disabled,
+.nst-input.nst-input--disabled {
+  background: var(--vw-color-gray-50);
+  border-color: var(--vw-color-gray-200);
+  color: var(--vw-color-gray-300);
+  cursor: not-allowed;
+}
+
+/* Hint / error message below input */
+.nst-input-hint {
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 400;
+  color: var(--vw-color-gray-400);
+}
+
+.nst-input-hint.nst-input-hint--error {
+  color: var(--vw-color-red-600);
+}
+
+/* Input wrapper (shell for icon + input + suffix) */
+.nst-input-shell {
+  display: flex;
+  min-height: 36px;
+  padding: 6px 8px;
+  align-items: center;
+  gap: 8px;
+
+  border-radius: 8px;
+  border: 1px solid var(--vw-color-gray-200);
+  background: var(--vw-color-white);
+
+  box-sizing: border-box;
+  width: 100%;
+  transition: border-color 120ms ease-out, box-shadow 120ms ease-out;
+}
+
+.nst-input-shell:hover                   { border-color: var(--vw-color-gray-400); }
+.nst-input-shell:focus-within            { border-color: var(--vw-color-accent-500); box-shadow: 0 0 0 3px var(--vw-color-accent-100); }
+.nst-input-shell.nst-input--error        { border-color: var(--vw-color-red-500); }
+.nst-input-shell.nst-input--error:focus-within { box-shadow: 0 0 0 3px var(--vw-color-red-100); }
+.nst-input-shell.nst-input--disabled     { background: var(--vw-color-gray-50); border-color: var(--vw-color-gray-200); cursor: not-allowed; }
+
+.nst-input-shell input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--vw-color-gray-700);
+  min-width: 0;
+}
+
+.nst-input-shell input::placeholder { color: var(--vw-color-gray-400); }
+.nst-input-shell input:disabled     { cursor: not-allowed; color: var(--vw-color-gray-300); }
+
+.nst-input-shell .nst-input-icon {
+  flex-shrink: 0;
+  color: var(--vw-color-gray-400);
+  width: 16px;
+  height: 16px;
+}
+
+.nst-input-shell.nst-input--disabled .nst-input-icon {
+  color: var(--vw-color-gray-300);
+}
+
+/* ============================================================
+   Table
+   Usage: wrap your table in .nst-table-card, set
+   grid-template-columns on .nst-table-head + each .nst-table-row.
+   ============================================================ */
+
+/* Outer card */
+.nst-table-card {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #E9E9E9;
+  overflow: hidden;
+}
+
+/* Toolbar strip */
+.nst-table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #E9E9E9;
+  flex-wrap: nowrap;
+}
+
+/* Header row — set grid-template-columns to match your column widths */
+.nst-table-head {
+  display: grid;
+  background: var(--vw-color-neutral-50);
+  border-bottom: 1px solid #E9E9E9;
+}
+
+.nst-table-th {
+  padding: 10px 8px;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  color: #7C7C7C;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* Body row — set the same grid-template-columns as .nst-table-head */
+.nst-table-row {
+  display: grid;
+  border-bottom: 1px solid #F1F1F1;
+  background: #fff;
+  transition: background 100ms;
+}
+
+.nst-table-row:hover {
+  background: #FAFAFA;
+}
+
+.nst-table-row--selected {
+  background: #F0F7FE;
+}
+
+.nst-table-row--selected:hover {
+  background: #E8F2FD;
+}
+
+/* Cell */
+.nst-table-td {
+  padding: 10px 8px;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+  color: #515151;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* Primary/value cell — darker text */
+.nst-table-td--primary {
+  color: #252525;
+}
+
+/* Kebab (⋮) action trigger */
+.nst-table-kebab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #A8A8A8;
+  cursor: pointer;
+  transition: color 100ms;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 4px;
+}
+
+.nst-table-kebab:hover {
+  color: #252525;
+}
+
+/* Row action drop-menu */
+.nst-table-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  width: 140px;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #E9E9E9;
+  box-shadow: 0 2px 2px -1px rgba(10,13,18,.04),
+              0 4px 6px -2px rgba(10,13,18,.03),
+              0 12px 16px -4px rgba(10,13,18,.08);
+  padding: 4px;
+  z-index: 50;
+}
+
+.nst-table-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 20px;
+  color: #252525;
+  cursor: pointer;
+  transition: background 100ms;
+}
+
+.nst-table-menu-item:hover {
+  background: #F4F4F4;
+}
+
+.nst-table-menu-item--danger {
+  color: #E53535;
+}
+
+/* ============================================================
+   Semantic <table> variant — .nst-table
+   Use when the data IS tabular and must stay accessible: real
+   <table>/<thead>/<th>/<td> keeps row/column semantics for screen
+   readers, which the grid-of-divs variant above does not provide.
+   Same visual language; no grid-template-columns bookkeeping.
+
+     <table class="nst-table"> <thead><tr><th>…  <tbody><tr class="nst-table-row">…
+
+   Prefer this for data grids. Use .nst-table-card/-head/-row (grid)
+   only when columns must be resized or virtualised.
+   ============================================================ */
+
+.nst-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--vw-color-white);
+  border: 1px solid var(--vw-color-slate-200);
+  border-radius: var(--vw-radius-md);
+  overflow: hidden;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+}
+
+.nst-table th {
+  text-align: left;
+  padding: var(--vw-space-md) var(--vw-space-lg);
+  background: var(--vw-color-white);
+  border-bottom: 1px solid var(--vw-color-slate-200);
+  font-size: var(--vw-font-label-sm);
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--vw-color-gray-500);
+  white-space: nowrap;
+}
+
+.nst-table td {
+  padding: var(--vw-space-md) var(--vw-space-lg);
+  border-bottom: 1px solid var(--vw-color-slate-200);
+  font-size: var(--vw-font-description);
+  color: var(--vw-color-gray-700);
+  vertical-align: middle;
+}
+
+.nst-table td.nst-table-td--primary { color: var(--vw-color-gray-900); }
+.nst-table tr:last-child td { border-bottom: 0; }
+
+/* Rows need no class. Do NOT reuse .nst-table-row here — that is the grid
+   variant and carries display:grid, which would destroy <tr> layout. */
+.nst-table tbody tr { transition: background 100ms; }
+.nst-table tbody tr:hover td { background: var(--vw-color-gray-50); }
+.nst-table tbody tr.is-clickable { cursor: pointer; }
+.nst-table tbody tr.is-selected td { background: var(--vw-color-blue-50); }
+
+/* ============================================================
+   Icon Button
+   Square icon-only button for table toolbars — filter trigger,
+   actions trigger, or the collapsed state of .nst-table-search.
+   ============================================================ */
+
+.nst-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: var(--vw-radius-sm);
+  border: 1px solid var(--vw-color-gray-200);
+  background: var(--vw-color-white);
+  color: var(--vw-color-gray-500);
+  cursor: pointer;
+  transition: border-color 120ms ease-out, color 120ms ease-out, background 120ms ease-out;
+}
+
+.nst-icon-btn:hover {
+  border-color: var(--vw-color-gray-400);
+  color: var(--vw-color-gray-700);
+}
+
+.nst-icon-btn.is-active {
+  border-color: var(--vw-color-accent-500);
+  color: var(--vw-color-accent-500);
+  background: var(--vw-color-accent-50);
+}
+
+/* ============================================================
+   Table Search (collapsible)
+   Closed: icon-only, same footprint as .nst-icon-btn.
+   Toggle the .is-open class from JS (on trigger click) to expand
+   into a bordered input with a clear (×) button. Collapse it again
+   on blur/clear so the toolbar returns to its compact state.
+   ============================================================ */
+
+.nst-table-search {
+  display: inline-flex;
+  align-items: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: var(--vw-radius-sm);
+  border: 1px solid var(--vw-color-gray-200);
+  background: var(--vw-color-white);
+  overflow: hidden;
+  transition: width 160ms ease-out, border-color 120ms ease-out, box-shadow 120ms ease-out;
+}
+
+.nst-table-search-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--vw-color-gray-400);
+  cursor: pointer;
+}
+
+.nst-table-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 0;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  color: var(--vw-color-gray-700);
+  display: none;
+}
+
+.nst-table-search input::placeholder { color: var(--vw-color-gray-400); }
+
+.nst-table-search-clear {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  padding: 0;
+  color: var(--vw-color-gray-400);
+  cursor: pointer;
+}
+
+.nst-table-search.is-open {
+  width: 240px;
+  border-color: var(--vw-color-accent-500);
+  box-shadow: 0 0 0 3px var(--vw-color-accent-100);
+}
+
+.nst-table-search.is-open input { display: block; }
+.nst-table-search.is-open .nst-table-search-clear { display: flex; }
+
+/* ============================================================
+   Action Menu
+   A floating context menu opened by kebab buttons, dropdowns, etc.
+   ============================================================ */
+
+/* Container */
+.nst-action-menu {
+  border-radius: 12px;
+  border: 1px solid #E9E9E9;
+  background: #FFF;
+  box-shadow: 0 2px 9px 0 rgba(0, 0, 0, 0.10);
+  padding: 4px;
+  min-width: 160px;
+  position: absolute;
+  z-index: 100;
+}
+
+/* Item */
+.nst-action-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #FFF;
+  cursor: pointer;
+  transition: background 100ms;
+  color: #1F2937;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  user-select: none;
+}
+
+.nst-action-menu-item:hover {
+  background: #F4F4F4;
+}
+
+/* Danger variant */
+.nst-action-menu-item--danger {
+  color: #EF4444;
+}
+
+/* Icon inside item */
+.nst-action-menu-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Divider between item groups */
+.nst-action-menu-divider {
+  height: 1px;
+  background: #E9E9E9;
+  margin: 4px 0;
+}
+
+/* ============================================================
+   Description Field (Textarea)
+   A resizable textarea with character counter.
+   ============================================================ */
+
+/* Wrapper — carries the border/shadow states */
+.nst-textarea-wrap {
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  border: 1px solid #E9E9E9;
+  background: #fff;
+  height: 140px;
+  min-height: 80px;
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+
+.nst-textarea-wrap:hover                    { border-color: #9CA3AF; }
+.nst-textarea-wrap:focus-within             { border-color: #1C81EF; box-shadow: 0 0 0 3px #DBEAFE; }
+.nst-textarea-wrap.nst-textarea--error      { border-color: #EF4444; }
+.nst-textarea-wrap.nst-textarea--error:focus-within { box-shadow: 0 0 0 3px #FEE2E2; }
+.nst-textarea-wrap.nst-textarea--disabled   { background: #F9FAFB; border-color: #E9E9E9; }
+
+/* The <textarea> itself */
+.nst-textarea {
+  flex: 1;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 8px 8px 0;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  color: #111827;
+  background: transparent;
+  min-height: 0;
+  overflow: auto;
+}
+.nst-textarea::placeholder                         { color: #9CA3AF; }
+.nst-textarea-wrap.nst-textarea--disabled .nst-textarea { color: #D1D5DB; cursor: not-allowed; }
+
+/* Footer row (counter + resize handle) */
+.nst-textarea-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 4px 8px 6px;
+  flex-shrink: 0;
+}
+
+/* Character counter */
+.nst-textarea-counter {
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 400;
+  color: #9CA3AF;
+}
+.nst-textarea-counter.nst-textarea-counter--over   { color: #EF4444; font-weight: 500; }
+.nst-textarea-wrap.nst-textarea--disabled .nst-textarea-counter { color: #D1D5DB; }
+
+/* Resize handle */
+.nst-textarea-resize {
+  cursor: se-resize;
+  color: #D1D5DB;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  user-select: none;
+  transition: color 100ms;
+}
+.nst-textarea-resize:hover                         { color: #6B7280; }
+.nst-textarea-wrap.nst-textarea--disabled .nst-textarea-resize { cursor: not-allowed; pointer-events: none; }

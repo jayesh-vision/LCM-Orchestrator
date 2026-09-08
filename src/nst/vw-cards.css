@@ -1,0 +1,293 @@
+/* ============================================================
+   NST Design System — vw-card classes
+   Ported from core-mixin.scss (gx-theme) per guidelines vw-cards page.
+   Requires: colors.css, spacing.css, typography-tokens.css
+   ============================================================ */
+
+/* ── Card containers ─────────────────────────────────────── */
+
+.vw-card-section {
+  background-color: var(--vw-color-white);
+  border: 1px solid var(--vw-color-slate-200);
+  border-radius: var(--vw-radius-lg);
+  padding: var(--vw-space-lg);
+}
+
+.vw-card-parent {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--vw-color-white);
+  border: 1px solid var(--vw-color-slate-300);
+  border-radius: var(--vw-radius-lg);
+  padding: var(--vw-space-lg);
+  gap: var(--vw-space-sm);
+}
+
+.vw-card-child {
+  padding: var(--vw-space-sm);
+  border: 1px solid var(--vw-color-slate-200);
+  border-radius: var(--vw-radius-sm);
+  background-color: var(--vw-color-white);
+}
+
+.vw-card-child-shaded {
+  padding: var(--vw-space-sm);
+  border: 1px solid var(--vw-color-slate-200);
+  border-radius: var(--vw-radius-sm);
+  background-color: var(--vw-color-slate-50);
+}
+
+.vw-card-footer-divider {
+  border-top: 1px solid var(--vw-color-slate-200);
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
+.vw-card--clickable {
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, outline-color 0.2s ease;
+}
+
+.vw-card--clickable:hover {
+  box-shadow: 0 4px 6px -2px rgba(0, 0, 0, 0.06), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+  border-color: var(--vw-color-slate-400);
+}
+
+.vw-card--clickable:focus-visible {
+  outline: 2px solid var(--vw-color-slate-400);
+  outline-offset: 2px;
+}
+
+/* ── Status accent strip ─────────────────────────────────── */
+/* For cards that must carry a status colour WITHOUT tinting the whole
+   surface (data-dense boards where a tinted card would be too loud). Pair
+   .vw-card--accent on the host with a .vw-card-accent child as the first node.
+   The strip is absolutely positioned and reserves no space itself — add
+   ~3px extra top padding on the host (e.g. `padding-top: calc(var(--vw-space-lg) + 3px)`)
+   so card content doesn't sit underneath it:
+
+     <div class="vw-card-section vw-card--accent" style="padding-top: calc(var(--vw-space-lg) + 3px);">
+       <div class="vw-card-accent" style="background:var(--vw-color-emerald-500);"></div>
+       ...card content...
+     </div> */
+
+.vw-card--accent {
+  position: relative;
+  overflow: hidden;
+}
+
+.vw-card-accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: var(--vw-radius-lg) var(--vw-radius-lg) 0 0;
+}
+
+/* ── Semantic card variants ──────────────────────────────── */
+
+.vw-card--success {
+  background-color: var(--vw-color-emerald-25);
+  border-color: var(--vw-color-emerald-200);
+}
+
+.vw-card--error {
+  background-color: var(--vw-color-red-25);
+  border-color: var(--vw-color-red-200);
+}
+
+.vw-card--warning {
+  background-color: var(--vw-color-amber-25);
+  border-color: var(--vw-color-amber-200);
+}
+
+.vw-card--info {
+  background-color: var(--vw-color-sky-25);
+  border-color: var(--vw-color-sky-200);
+}
+
+.vw-card--fuchsia {
+  background-color: var(--vw-color-fuchsia-25);
+  border-color: var(--vw-color-fuchsia-300);
+}
+
+.vw-card--purple {
+  background-color: var(--vw-color-purple-25);
+  border-color: var(--vw-color-purple-300);
+}
+
+.vw-card--cyan {
+  background-color: var(--vw-color-cyan-25);
+  border-color: var(--vw-color-cyan-300);
+}
+
+.vw-card--yellow {
+  background-color: var(--vw-color-yellow-25);
+  border-color: var(--vw-color-yellow-300);
+}
+
+.vw-card--orange {
+  background-color: var(--vw-color-orange-25);
+  border-color: var(--vw-color-orange-300);
+}
+
+/* ── Card typography ─────────────────────────────────────── */
+
+.vw-card-title {
+  font-size: var(--vw-font-heading-md);
+  font-weight: 500;
+  line-height: var(--vw-line-heading-md);
+  color: var(--vw-color-gray-800);
+}
+
+.vw-card-title-lg {
+  font-size: var(--vw-font-heading-lg);
+  font-weight: 500;
+  line-height: var(--vw-line-heading-lg);
+  color: var(--vw-color-gray-800);
+}
+
+.vw-card-title-sm {
+  font-size: var(--vw-font-heading-sm);
+  font-weight: 500;
+  line-height: var(--vw-line-heading-sm);
+  color: var(--vw-color-gray-800);
+}
+
+.vw-card-description {
+  font-size: var(--vw-font-description);
+  line-height: var(--vw-line-description);
+  font-weight: 400;
+  color: var(--vw-color-gray-500);
+}
+
+.vw-card-activity-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--vw-color-gray-800);
+}
+
+.vw-card-activity-value {
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--vw-color-gray-500);
+}
+
+.vw-label {
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--vw-color-gray-500);
+}
+
+.vw-value {
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--vw-color-gray-900);
+}
+
+.vw-sub-title {
+  font-size: var(--vw-font-label-sm);
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--vw-color-gray-600);
+}
+
+.vw-footer-meta {
+  font-size: var(--vw-font-label-sm);
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--vw-color-gray-500);
+}
+
+/* ── Page typography ─────────────────────────────────────── */
+
+.vw-page-title {
+  font-size: 1.25rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--vw-color-slate-800);
+}
+
+.vw-page-description {
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--vw-color-slate-700);
+}
+
+.vw-page-container {
+  padding: var(--vw-page-gap);
+  gap: var(--vw-page-gap);
+  background: transparent;
+}
+
+/* ── Metric numerals ─────────────────────────────────────── */
+
+.vw-card-metric-xxxl,
+.vw-card-metric-xxl,
+.vw-card-metric-xl,
+.vw-card-metric-lg,
+.vw-card-metric-md,
+.vw-card-metric-sm,
+.vw-card-metric-xs,
+.vw-card-metric-xxs,
+.vw-card-metric-xxxs {
+  font-weight: 300;
+  line-height: 1;
+  color: var(--vw-color-gray-950, var(--vw-color-gray-900));
+}
+
+.vw-card-metric-xxxl { font-size: var(--vw-font-value-xxxl); }
+.vw-card-metric-xxl  { font-size: var(--vw-font-value-xxl); }
+.vw-card-metric-xl   { font-size: var(--vw-font-value-xl); }
+.vw-card-metric-lg   { font-size: var(--vw-font-value-lg); }
+.vw-card-metric-md   { font-size: var(--vw-font-value-md); }
+.vw-card-metric-sm   { font-size: var(--vw-font-value-sm); }
+.vw-card-metric-xs   { font-size: var(--vw-font-value-xs); }
+.vw-card-metric-xxs  { font-size: 0.75rem; }
+.vw-card-metric-xxxs { font-size: 0.625rem; }
+
+.vw-card-metric-label,
+.vw-card-metric-label-sub,
+.vw-card-metric-label-sm {
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--vw-color-gray-500);
+}
+
+.vw-card-metric-label    { font-size: var(--vw-font-label-md); }
+.vw-card-metric-label-sub,
+.vw-card-metric-label-sm { font-size: var(--vw-font-label-sm); }
+
+/* ── Variance / trend ────────────────────────────────────── */
+
+.vw-card-variance {
+  font-size: var(--vw-font-legend);
+  font-weight: 500;
+  line-height: var(--vw-line-legend);
+}
+
+.vw-card-variance.is-positive { color: #1a7f10; }
+.vw-card-variance.is-negative { color: #d91818; }
+.vw-card-variance.is-neutral  { color: #7c7c7c; }
+
+/* ── Card icons ──────────────────────────────────────────── */
+
+.vw-card-icon-sm,
+.vw-card-icon-md,
+.vw-card-icon-lg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--vw-radius-sm);
+}
+
+.vw-card-icon-sm { width: 2rem;   height: 2rem; }
+.vw-card-icon-md { width: 2.5rem; height: 2.5rem; }
+.vw-card-icon-lg { width: 3rem;   height: 3rem; }

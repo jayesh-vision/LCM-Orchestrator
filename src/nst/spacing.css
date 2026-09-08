@@ -1,0 +1,29 @@
+/* ============================================================
+   NST Design System — Spacing & Radius Tokens
+   Ported from @enttribe/themes-gx-theme (_space.scss) per guidelines.
+   ============================================================ */
+
+:root {
+  /* Spacing scale (4pt grid) */
+  --vw-space-none: 0;
+  --vw-space-xxs: 0.25rem;   /* 4px  */
+  --vw-space-xs:  0.5rem;    /* 8px  */
+  --vw-space-sm:  0.5rem;    /* 8px  */
+  --vw-space-md:  0.75rem;   /* 12px */
+  --vw-space-lg:  1rem;      /* 16px */
+  --vw-space-xl:  1.25rem;   /* 20px */
+  --vw-space-2xl: 1.5rem;    /* 24px */
+  --vw-space-3xl: 2rem;      /* 32px */
+  --vw-space-4xl: 2.5rem;    /* 40px */
+
+  /* Default layout gap between page sections / flex children */
+  --vw-page-gap: 0.75rem;   /* 12px */
+
+  /* Radius ladder */
+  --vw-radius-xs:   0.25rem;   /* 4px  */
+  --vw-radius-sm:   0.5rem;    /* 8px  */
+  --vw-radius-md:   0.75rem;  /* 12px */
+  --vw-radius-lg:   1rem;      /* 16px — card default */
+  --vw-radius-xl:   1.25rem;   /* 20px */
+  --vw-radius-full: 9999px;
+}

@@ -1,0 +1,213 @@
+import type {
+  ChangeRecord, Conformance, Endpoint, HeldResource, OperState,
+  Service, ServiceAttribute, ServiceState,
+} from '@/types'
+import { ACCOUNTS, DEVICE_MODELS, SITES, between, intentById, pad, pick, rnd } from './catalog'
+
+/* Exact distributions — every screen's totals reconcile to these. */
+const STATE_MIX: [ServiceState, number][] = [
+  ['Live', 2143], ['Activating', 41], ['Degraded', 96], ['Suspended', 58], ['Ceased', 119],
+]
+const CONF_MIX: [Conformance, number][] = [
+  ['Conformant', 1881], ['Drifted', 214], ['Never proven', 316], ['Ghost', 46],
+]
+const INTENT_MIX: [string, number][] = [
+  ['INT-IBW-ACCESS', 1697], ['INT-L2-P2P', 431], ['INT-L2-RAILWIRE', 181],
+  ['INT-L3-HUBSPOKE', 96], ['INT-L3-MESH', 52],
+]
+
+function expand<T>(mix: [T, number][]): T[] {
+  const out: T[] = []
+  for (const [v, n] of mix) for (let i = 0; i < n; i += 1) out.push(v)
+  return out
+}
+function shuffle<T>(a: T[]): T[] {
+  const r = [...a]
+  for (let i = r.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rnd() * (i + 1));
+    [r[i], r[j]] = [r[j], r[i]]
+  }
+  return r
+}
+
+function makeEndpoint(role: Endpoint['role'], i: number): Endpoint {
+  const site = pick(SITES)
+  const dm = pick(DEVICE_MODELS)
+  const port = pick(dm.ports)
+  return {
+    id: `EP-${pad(i, 6)}`,
+    role, siteCode: site.code, deviceName: dm.model, vendor: dm.vendor,
+    mgmtIp: `172.31.${between(10, 60)}.${between(2, 250)}`,
+    port, subInterface: `${port}.${between(100, 900)}`,
+  }
+}
+
+const OPER_FOR: Record<ServiceState, OperState> = {
+  Live: 'Up', Activating: 'Unknown', Degraded: 'Degraded', Suspended: 'Down',
+  Ceasing: 'Down', Ceased: 'Down', Purged: 'Unknown', Designed: 'Unknown',
+}
+
+function attributes(intentId: string, conformance: Conformance, bandwidth: number, vlan: number): ServiceAttribute[] {
+  const drift = conformance === 'Drifted'
+  const ghost = conformance === 'Ghost'
+  const dev = (v: string) => (ghost ? 'not present' : v)
+  const verdict = (d: boolean): ServiceAttribute['verdict'] => (ghost ? 'Absent' : d ? 'Drift' : 'Match')
+  const verified = ghost ? undefined : `${between(1, 22)} h ago`
+  const base: ServiceAttribute[] = [
+    { name: 'Service type', intent: intentById(intentId).name, onDevice: dev(intentById(intentId).type), source: 'Order', verifiedAt: verified, verdict: verdict(false) },
+    { name: 'Bandwidth', intent: `${bandwidth} Mbps`, onDevice: dev(drift ? `${bandwidth * 2} Mbps` : `${bandwidth} Mbps`), source: drift ? 'Manual' : 'Order', verifiedAt: verified, verdict: verdict(drift) },
+    { name: 'MTU', intent: '1500', onDevice: dev('1500'), source: 'Order', verifiedAt: verified, verdict: verdict(false) },
+  ]
+  if (intentId.startsWith('INT-L2')) {
+    base.splice(1, 0,
+      { name: 'VLAN', intent: String(vlan), onDevice: dev(String(vlan)), source: 'Reserved', verifiedAt: verified, verdict: verdict(false) },
+      { name: 'Pseudowire ID', intent: String(4000 + vlan), onDevice: dev(String(4000 + vlan)), source: 'Reserved', verifiedAt: verified, verdict: verdict(false) },
+    )
+  } else if (intentId.startsWith('INT-L3')) {
+    base.splice(1, 0,
+      { name: 'Route distinguisher', intent: `65001:${vlan}`, onDevice: dev(`65001:${vlan}`), source: 'Reserved', verifiedAt: verified, verdict: verdict(false) },
+      { name: 'PE-CE protocol', intent: 'BGP', onDevice: dev('BGP'), source: 'Order', verifiedAt: verified, verdict: verdict(false) },
+    )
+  } else {
+    base.splice(1, 0,
+      { name: 'Customer ASN', intent: String(64500 + between(1, 900)), onDevice: dev(String(64500 + between(1, 900))), source: 'Order', verifiedAt: verified, verdict: verdict(false) },
+      { name: 'Prefix limit', intent: '500', onDevice: dev('500'), source: 'Order', verifiedAt: verified, verdict: verdict(false) },
+    )
+  }
+  base.push({ name: 'Purchase order', intent: '—', onDevice: 'n/a', source: 'No source system', verdict: 'Not sourced' })
+  return base
+}
+
+function resources(intentId: string, vlan: number, eps: Endpoint[], state: ServiceState): HeldResource[] {
+  const st: HeldResource['state'] = state === 'Ceased' ? 'Quarantined' : 'Allocated'
+  const out: HeldResource[] = eps.map((e) => ({
+    kind: 'Sub-interface', value: e.subInterface ?? e.port, pool: `${e.siteCode} · ${e.port}`, state: st,
+  }))
+  if (intentId.startsWith('INT-L2')) {
+    eps.forEach((e) => out.push({ kind: 'VLAN', value: String(vlan), pool: `${e.siteCode} · ${e.port}`, state: st }))
+    out.push({ kind: 'Pseudowire ID', value: String(4000 + vlan), pool: 'global L2VPN pw-id', state: st })
+  } else if (intentId.startsWith('INT-L3')) {
+    out.push({ kind: 'RD/RT', value: `65001:${vlan}`, pool: 'global route target', state: st })
+    out.push({ kind: 'IP block', value: `10.244.${between(1, 250)}.0/28`, pool: 'WAN transit', state: st })
+  } else {
+    out.push({ kind: 'IP block', value: `10.244.${between(1, 250)}.${between(0, 60) * 4}/30`, pool: 'WAN transit', state: st })
+    out.push({ kind: 'ASN slot', value: String(64500 + between(1, 900)), pool: 'private ASN', state: st })
+  }
+  return out
+}
+
+function history(id: string, liveSince: Date, conformance: Conformance): ChangeRecord[] {
+  const out: ChangeRecord[] = [{
+    at: liveSince.toISOString(), orderId: `ORD-2026-${pad(between(1000, 4400), 6)}`,
+    change: 'Created · service went Live', by: pick(['Priya S.', 'Ravi K.', 'Anil M.']), outOfBand: false,
+  }]
+  if (conformance === 'Drifted') {
+    out.unshift({
+      at: new Date(liveSince.getTime() + 86400000 * between(20, 200)).toISOString(),
+      change: 'Bandwidth changed on the device', by: 'ops-nikhil', outOfBand: true,
+    })
+  }
+  if (rnd() > 0.6) {
+    out.unshift({
+      at: new Date(liveSince.getTime() + 86400000 * between(5, 160)).toISOString(),
+      orderId: `ORD-2026-${pad(between(1000, 4400), 6)}`,
+      change: pick(['MTU 1400 → 1500', 'Bandwidth 100 → 200 Mbps', 'Prefix limit 300 → 500', 'Added spoke site']),
+      by: pick(['Priya S.', 'Ravi K.']), outOfBand: false,
+    })
+  }
+  void id
+  return out
+}
+
+export function buildServices(): Service[] {
+  const states = shuffle(expand(STATE_MIX))
+  const confs = shuffle(expand(CONF_MIX))
+  const intents = shuffle(expand(INTENT_MIX))
+  const now = Date.now()
+  const out: Service[] = []
+
+  for (let i = 0; i < 2457; i += 1) {
+    const intentId = intents[i]
+    const intent = intentById(intentId)
+    let state = states[i]
+    let conformance = confs[i]
+    // Keep the two axes coherent: a ceased service is not "drifted",
+    // and an activating service has not been proven yet.
+    if (state === 'Ceased') conformance = 'Not checked'
+    if (state === 'Activating' && conformance === 'Drifted') conformance = 'Not checked'
+
+    const acct = pick(ACCOUNTS)
+    const vlan = between(100, 900)
+    const nEnd = intent.topology === 'Single-ended' ? 1
+      : intent.topology === 'Two-ended' ? 2 : between(3, 6)
+    const eps: Endpoint[] = []
+    for (let e = 0; e < nEnd; e += 1) {
+      eps.push(makeEndpoint(
+        intent.topology === 'Star' ? (e === 0 ? 'hub' : 'spoke') : e === 0 ? 'A' : 'Z',
+        i * 10 + e,
+      ))
+    }
+    const bandwidth = pick([10, 20, 50, 100, 200, 500, 1000])
+    const ageDays = between(3, 1400)
+    const liveSince = new Date(now - ageDays * 86400000)
+    const proven = conformance === 'Never proven' || conformance === 'Ghost'
+      ? undefined
+      : new Date(now - between(1, 40) * 3600000).toISOString()
+    const prefix = intent.category === 'IBW' ? 'IBW' : intent.category === 'L2VPN' ? 'L2' : 'L3'
+    const years = Math.floor(ageDays / 365)
+    const months = Math.floor((ageDays % 365) / 30)
+
+    out.push({
+      id: `SVC-${prefix}-${pad(100000 + i * 7, 6)}`,
+      name: `${acct.name.split(' ')[0]} ${pick(SITES).city} ${intent.category === 'IBW' ? 'DIA' : 'link'}`,
+      category: intent.category, type: intent.type, intentId,
+      accountId: acct.id, accountName: acct.name,
+      state, operState: OPER_FOR[state], conformance,
+      endpoints: eps,
+      attributes: attributes(intentId, conformance, bandwidth, vlan),
+      resources: resources(intentId, vlan, eps, state),
+      history: history(`s${i}`, liveSince, conformance),
+      bandwidthMbps: bandwidth,
+      monthlyValueInr: bandwidth * between(900, 1800),
+      liveSince: liveSince.toISOString(),
+      lastProvenAt: proven,
+      ageLabel: years > 0 ? `${years} y ${months} m` : `${Math.max(1, months)} m`,
+      driftCount: conformance === 'Drifted' ? between(1, 3) : 0,
+      acceptanceEvidence: conformance === 'Conformant'
+        ? intent.acceptance.map((a) => ({
+          criterion: a.claim, layer: a.layer, expected: a.expected,
+          actual: a.layer === 'service' ? `${(bandwidth * (0.96 + rnd() * 0.06)).toFixed(1)} Mbps · 0/20 loss` : 'up / Established',
+          passed: true,
+        }))
+        : undefined,
+    })
+  }
+
+  /* One hand-authored service so the detail screen always has a rich example. */
+  const featured = out.find((s) => s.intentId === 'INT-L2-P2P' && s.conformance === 'Drifted')
+  if (featured) {
+    featured.id = 'SVC-L2-018842'
+    featured.name = 'Excitel BLR ring — east leg'
+    featured.accountId = 'ACC-04417'
+    featured.accountName = 'Excitel Business Solutions'
+    featured.state = 'Live'
+    featured.operState = 'Up'
+    featured.bandwidthMbps = 100
+    featured.driftCount = 1
+    featured.endpoints = [
+      { id: 'EP-A', role: 'A', siteCode: 'DL-BLR-0412', deviceName: 'MX204', vendor: 'JUNIPER', mgmtIp: '172.31.33.20', port: 'xe-0/0/3', subInterface: 'xe-0/0/3.104' },
+      { id: 'EP-Z', role: 'Z', siteCode: 'DL-BLR-0977', deviceName: 'MX204', vendor: 'JUNIPER', mgmtIp: '172.31.33.100', port: 'xe-1/1/0', subInterface: 'xe-1/1/0.104' },
+    ]
+    featured.attributes = attributes('INT-L2-P2P', 'Drifted', 100, 104)
+    featured.resources = resources('INT-L2-P2P', 104, featured.endpoints, 'Live')
+    featured.lastProvenAt = new Date(now - 4 * 3600000).toISOString()
+    featured.acceptanceEvidence = [
+      { criterion: 'Both sub-interfaces admin-up and oper-up', layer: 'device', expected: 'admin=up, link=up ×2', actual: 'up/up · up/up', passed: true },
+      { criterion: 'Pseudowire 4104 Up at both ends, matching vc-id', layer: 'device', expected: 'state=Up, vc-id=4104', actual: 'Up/Up · 4104/4104', passed: true },
+      { criterion: 'MPLS LSP to 172.31.33.100 resolves', layer: 'network', expected: 'received >= 4', actual: '5', passed: true },
+      { criterion: '1500-byte frame crosses CE to CE, 0 loss over 20', layer: 'service', expected: 'loss = 0/20, mtu = 1500', actual: '0/20 · 1500 · avg 3.8 ms', passed: true },
+      { criterion: 'Throughput within ±5% of ordered 100 Mbps', layer: 'service', expected: '95 – 105 Mbps', actual: '98.4 Mbps', passed: true },
+    ]
+  }
+  return out
+}

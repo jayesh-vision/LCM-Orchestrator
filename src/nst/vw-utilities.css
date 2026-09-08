@@ -1,0 +1,92 @@
+/* ============================================================
+   NST Design System — Layout utilities
+   Ported from core-mixin.scss per guidelines vw-cards-ext page.
+   ============================================================ */
+
+/* Display */
+.vw-flex        { display: flex; }
+.vw-inline-flex { display: inline-flex; }
+.vw-grid        { display: grid; }
+
+/* Direction */
+.vw-flex-row { flex-direction: row; }
+.vw-flex-col { flex-direction: column; }
+
+/* Align */
+.vw-items-start    { align-items: flex-start; }
+.vw-items-center   { align-items: center; }
+.vw-items-end      { align-items: flex-end; }
+.vw-items-baseline { align-items: baseline; }
+.vw-items-stretch  { align-items: stretch; }
+
+/* Justify */
+.vw-justify-start   { justify-content: flex-start; }
+.vw-justify-center  { justify-content: center; }
+.vw-justify-end     { justify-content: flex-end; }
+.vw-justify-between { justify-content: space-between; }
+.vw-justify-around  { justify-content: space-around; }
+.vw-justify-evenly  { justify-content: space-evenly; }
+
+/* Wrap */
+.vw-wrap   { flex-wrap: wrap; }
+.vw-nowrap { flex-wrap: nowrap; }
+
+/* Page gap utilities (flex/grid gap) */
+.vw-page-gap     { gap: var(--vw-page-gap); }
+.vw-page-gap-xl  { gap: var(--vw-space-xl); }
+.vw-page-gap-md  { gap: var(--vw-space-md); }
+.vw-page-gap-sm  { gap: var(--vw-space-sm); }
+.vw-page-gap-xxs { gap: var(--vw-space-xxs); }
+
+/* Gap utilities */
+.vw-gap-none { gap: var(--vw-space-none); }
+.vw-gap-xxs  { gap: var(--vw-space-xxs); }
+.vw-gap-xs   { gap: var(--vw-space-xs); }
+.vw-gap-sm   { gap: var(--vw-space-sm); }
+.vw-gap-md   { gap: var(--vw-space-md); }
+.vw-gap-lg   { gap: var(--vw-space-lg); }
+.vw-gap-xl   { gap: var(--vw-space-xl); }
+
+/* Grid helpers */
+.vw-grid-cols-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.vw-grid-cols-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.vw-grid-cols-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.vw-grid-cols-auto-320 {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
+.vw-items-start-grid {
+  align-items: start;
+}
+
+.vw-w-full {
+  width: 100%;
+}
+
+/* Field color helpers (core-mixin) */
+.field-label-color {
+  color: var(--fieldLabelColor);
+  font-weight: var(--fieldLabelFontWeight);
+}
+
+.field-text-color {
+  color: var(--fieldTextColor);
+  font-weight: var(--fieldTextFontWeight);
+}
+
+.field-disabled-label-color {
+  color: var(--fieldDisabledLabelColor);
+}
+
+.field-disabled-text-color {
+  color: var(--fieldDisabledTextColor);
+}

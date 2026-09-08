@@ -1,0 +1,332 @@
+/* ============================================================
+   NST Design System — Color Tokens
+   Full --vw-color-* primitive scale
+   ============================================================ */
+
+:root {
+
+  /* Pure */
+  --vw-color-white: #ffffff;
+  --vw-color-black: #000000;
+
+  /* Gray */
+  --vw-color-gray-10:   #ffffff;
+  --vw-color-gray-50:   #f9fafb;
+  --vw-color-gray-100:  #f3f4f6;
+  --vw-color-gray-200:  #e5e7eb;
+  --vw-color-gray-300:  #d1d5db;
+  --vw-color-gray-400:  #9ca3af;
+  --vw-color-gray-500:  #6b7280;
+  --vw-color-gray-600:  #4b5563;
+  --vw-color-gray-700:  #374151;
+  --vw-color-gray-800:  #1f2937;
+  --vw-color-gray-900:  #111827;
+  --vw-color-gray-950:  #030712;
+  --vw-color-gray-1000: #000000;
+
+  /* Blue */
+  --vw-color-blue-25:  #f8fcff;
+  --vw-color-blue-50:  #eff6ff;
+  --vw-color-blue-100: #dbeafe;
+  --vw-color-blue-200: #bfdbfe;
+  --vw-color-blue-300: #93c5fd;
+  --vw-color-blue-400: #60a5fa;
+  --vw-color-blue-500: #3b82f6;
+  --vw-color-blue-600: #2563eb;
+  --vw-color-blue-700: #1d4ed8;
+  --vw-color-blue-800: #1e40af;
+  --vw-color-blue-900: #1e3a8a;
+  --vw-color-blue-950: #172554;
+
+  /* Teal */
+  --vw-color-teal-25:  #f7fffe;
+  --vw-color-teal-50:  #f0fdfa;
+  --vw-color-teal-100: #ccfbf1;
+  --vw-color-teal-200: #99f6e4;
+  --vw-color-teal-300: #5eead4;
+  --vw-color-teal-400: #2dd4bf;
+  --vw-color-teal-500: #14b8a6;
+  --vw-color-teal-600: #0d9488;
+  --vw-color-teal-700: #0f766e;
+  --vw-color-teal-800: #115e59;
+  --vw-color-teal-900: #134e4a;
+  --vw-color-teal-950: #042f2e;
+
+  /* Green */
+  --vw-color-green-25:  #f7fff9;
+  --vw-color-green-50:  #f0fdf4;
+  --vw-color-green-100: #dcfce7;
+  --vw-color-green-200: #bbf7d0;
+  --vw-color-green-300: #86efac;
+  --vw-color-green-400: #4ade80;
+  --vw-color-green-500: #22c55e;
+  --vw-color-green-600: #16a34a;
+  --vw-color-green-700: #15803d;
+  --vw-color-green-800: #166534;
+  --vw-color-green-900: #14532d;
+  --vw-color-green-950: #052e16;
+
+  /* Amber */
+  --vw-color-amber-25:  #fffef7;
+  --vw-color-amber-50:  #fffbeb;
+  --vw-color-amber-100: #fef3c7;
+  --vw-color-amber-200: #fde68a;
+  --vw-color-amber-300: #fcd34d;
+  --vw-color-amber-400: #fbbf24;
+  --vw-color-amber-500: #f59e0b;
+  --vw-color-amber-600: #d97706;
+  --vw-color-amber-700: #b45309;
+  --vw-color-amber-800: #92400e;
+  --vw-color-amber-900: #78350f;
+  --vw-color-amber-950: #451a03;
+
+  /* Red */
+  --vw-color-red-25:  #fffcfc;
+  --vw-color-red-50:  #fef2f2;
+  --vw-color-red-100: #fee2e2;
+  --vw-color-red-200: #fecaca;
+  --vw-color-red-300: #fca5a5;
+  --vw-color-red-400: #f87171;
+  --vw-color-red-500: #ef4444;
+  --vw-color-red-600: #dc2626;
+  --vw-color-red-700: #b91c1c;
+  --vw-color-red-800: #991b1b;
+  --vw-color-red-900: #7f1d1d;
+  --vw-color-red-950: #450a0a;
+
+  /* Indigo */
+  --vw-color-indigo-25:  #f6f6ff;
+  --vw-color-indigo-50:  #eef2ff;
+  --vw-color-indigo-100: #e0e7ff;
+  --vw-color-indigo-200: #c7d2fe;
+  --vw-color-indigo-300: #a5b4fc;
+  --vw-color-indigo-400: #818cf8;
+  --vw-color-indigo-500: #6366f1;
+  --vw-color-indigo-600: #4f46e5;
+  --vw-color-indigo-700: #4338ca;
+  --vw-color-indigo-800: #3730a3;
+  --vw-color-indigo-900: #312e81;
+  --vw-color-indigo-950: #1e1b4b;
+
+  /* Orange */
+  --vw-color-orange-25:  #fff8ee;
+  --vw-color-orange-50:  #fff7ed;
+  --vw-color-orange-100: #ffedd5;
+  --vw-color-orange-200: #fed7aa;
+  --vw-color-orange-300: #fdba74;
+  --vw-color-orange-400: #fb923c;
+  --vw-color-orange-500: #f97316;
+  --vw-color-orange-600: #ea580c;
+  --vw-color-orange-700: #c2410c;
+  --vw-color-orange-800: #9a3412;
+  --vw-color-orange-900: #7c2d12;
+  --vw-color-orange-950: #431407;
+
+  /* Stone */
+  --vw-color-stone-25:  #fcfcfb;
+  --vw-color-stone-50:  #fafaf9;
+  --vw-color-stone-100: #f5f5f4;
+  --vw-color-stone-200: #e7e5e4;
+  --vw-color-stone-300: #d6d3d1;
+  --vw-color-stone-400: #a8a29e;
+  --vw-color-stone-500: #78716c;
+  --vw-color-stone-600: #57534e;
+  --vw-color-stone-700: #44403c;
+  --vw-color-stone-800: #292524;
+  --vw-color-stone-900: #1c1917;
+  --vw-color-stone-950: #0c0a09;
+
+  /* Neutral */
+  --vw-color-neutral-25:  #fcfcfc;
+  --vw-color-neutral-50:  #fafafa;
+  --vw-color-neutral-100: #f5f5f5;
+  --vw-color-neutral-200: #e5e5e5;
+  --vw-color-neutral-300: #d4d4d4;
+  --vw-color-neutral-400: #a3a3a3;
+  --vw-color-neutral-500: #737373;
+  --vw-color-neutral-600: #525252;
+  --vw-color-neutral-700: #404040;
+  --vw-color-neutral-800: #262626;
+  --vw-color-neutral-900: #171717;
+  --vw-color-neutral-950: #0a0a0a;
+
+  /* Zinc */
+  --vw-color-zinc-25:  #fcfcfc;
+  --vw-color-zinc-50:  #fafafa;
+  --vw-color-zinc-100: #f4f4f5;
+  --vw-color-zinc-200: #e4e4e7;
+  --vw-color-zinc-300: #d4d4d8;
+  --vw-color-zinc-400: #a1a1aa;
+  --vw-color-zinc-500: #71717a;
+  --vw-color-zinc-600: #52525b;
+  --vw-color-zinc-700: #3f3f46;
+  --vw-color-zinc-800: #27272a;
+  --vw-color-zinc-900: #18181b;
+  --vw-color-zinc-950: #09090b;
+
+  /* Slate */
+  --vw-color-slate-25:  #fbfcfe;
+  --vw-color-slate-50:  #f8fafc;
+  --vw-color-slate-100: #f1f5f9;
+  --vw-color-slate-200: #e2e8f0;
+  --vw-color-slate-300: #cbd5e1;
+  --vw-color-slate-400: #94a3b8;
+  --vw-color-slate-500: #64748b;
+  --vw-color-slate-600: #475569;
+  --vw-color-slate-700: #334155;
+  --vw-color-slate-800: #1e293b;
+  --vw-color-slate-900: #0f172a;
+  --vw-color-slate-950: #020617;
+
+  /* Rose */
+  --vw-color-rose-25:  #fff8f9;
+  --vw-color-rose-50:  #fff1f2;
+  --vw-color-rose-100: #ffe4e6;
+  --vw-color-rose-200: #fecdd3;
+  --vw-color-rose-300: #fda4af;
+  --vw-color-rose-400: #fb7185;
+  --vw-color-rose-500: #f43f5e;
+  --vw-color-rose-600: #e11d48;
+  --vw-color-rose-700: #be123c;
+  --vw-color-rose-800: #9f1239;
+  --vw-color-rose-900: #881337;
+  --vw-color-rose-950: #4c0519;
+
+  /* Pink */
+  --vw-color-pink-25:  #fef7fb;
+  --vw-color-pink-50:  #fdf2f8;
+  --vw-color-pink-100: #fce7f3;
+  --vw-color-pink-200: #fbcfe8;
+  --vw-color-pink-300: #f9a8d4;
+  --vw-color-pink-400: #f472b6;
+  --vw-color-pink-500: #ec4899;
+  --vw-color-pink-600: #db2777;
+  --vw-color-pink-700: #be185d;
+  --vw-color-pink-800: #9d174d;
+  --vw-color-pink-900: #831843;
+  --vw-color-pink-950: #500724;
+
+  /* Fuchsia */
+  --vw-color-fuchsia-25:  #fef9ff;
+  --vw-color-fuchsia-50:  #fdf4ff;
+  --vw-color-fuchsia-100: #fae8ff;
+  --vw-color-fuchsia-200: #f5d0fe;
+  --vw-color-fuchsia-300: #f0abfc;
+  --vw-color-fuchsia-400: #e879f9;
+  --vw-color-fuchsia-500: #d946ef;
+  --vw-color-fuchsia-600: #c026d3;
+  --vw-color-fuchsia-700: #a21caf;
+  --vw-color-fuchsia-800: #86198f;
+  --vw-color-fuchsia-900: #701a75;
+  --vw-color-fuchsia-950: #4a044e;
+
+  /* Purple */
+  --vw-color-purple-25:  #fdfaff;
+  --vw-color-purple-50:  #faf5ff;
+  --vw-color-purple-100: #f3e8ff;
+  --vw-color-purple-200: #e9d5ff;
+  --vw-color-purple-300: #d8b4fe;
+  --vw-color-purple-400: #c084fc;
+  --vw-color-purple-500: #a855f7;
+  --vw-color-purple-600: #9333ea;
+  --vw-color-purple-700: #7e22ce;
+  --vw-color-purple-800: #6b21a8;
+  --vw-color-purple-900: #581c87;
+  --vw-color-purple-950: #3b0764;
+
+  /* Violet */
+  --vw-color-violet-25:  #faf9ff;
+  --vw-color-violet-50:  #f5f3ff;
+  --vw-color-violet-100: #ede9fe;
+  --vw-color-violet-200: #ddd6fe;
+  --vw-color-violet-300: #c4b5fd;
+  --vw-color-violet-400: #a78bfa;
+  --vw-color-violet-500: #8b5cf6;
+  --vw-color-violet-600: #7c3aed;
+  --vw-color-violet-700: #6d28d9;
+  --vw-color-violet-800: #5b21b6;
+  --vw-color-violet-900: #4c1d95;
+  --vw-color-violet-950: #2e1065;
+
+  /* Sky */
+  --vw-color-sky-25:  #f8fcff;
+  --vw-color-sky-50:  #f0f9ff;
+  --vw-color-sky-100: #e0f2fe;
+  --vw-color-sky-200: #bae6fd;
+  --vw-color-sky-300: #7dd3fc;
+  --vw-color-sky-400: #38bdf8;
+  --vw-color-sky-500: #0ea5e9;
+  --vw-color-sky-600: #0284c7;
+  --vw-color-sky-700: #0369a1;
+  --vw-color-sky-800: #075985;
+  --vw-color-sky-900: #0c4a6e;
+  --vw-color-sky-950: #082f49;
+
+  /* Cyan */
+  --vw-color-cyan-25:  #f5feff;
+  --vw-color-cyan-50:  #ecfeff;
+  --vw-color-cyan-100: #cffafe;
+  --vw-color-cyan-200: #a5f3fc;
+  --vw-color-cyan-300: #67e8f9;
+  --vw-color-cyan-400: #22d3ee;
+  --vw-color-cyan-500: #06b6d4;
+  --vw-color-cyan-600: #0891b2;
+  --vw-color-cyan-700: #0e7490;
+  --vw-color-cyan-800: #155e75;
+  --vw-color-cyan-900: #164e63;
+  --vw-color-cyan-950: #083344;
+
+  /* Yellow */
+  --vw-color-yellow-25:  #fffef5;
+  --vw-color-yellow-50:  #fefce8;
+  --vw-color-yellow-100: #fef9c3;
+  --vw-color-yellow-200: #fef08a;
+  --vw-color-yellow-300: #fde047;
+  --vw-color-yellow-400: #facc15;
+  --vw-color-yellow-500: #eab308;
+  --vw-color-yellow-600: #ca8a04;
+  --vw-color-yellow-700: #a16207;
+  --vw-color-yellow-800: #854d0e;
+  --vw-color-yellow-900: #713f12;
+  --vw-color-yellow-950: #422006;
+
+  /* Lime */
+  --vw-color-lime-25:  #fbfff3;
+  --vw-color-lime-50:  #f7fee7;
+  --vw-color-lime-100: #ecfccb;
+  --vw-color-lime-200: #d9f99d;
+  --vw-color-lime-300: #bef264;
+  --vw-color-lime-400: #a3e635;
+  --vw-color-lime-500: #84cc16;
+  --vw-color-lime-600: #65a30d;
+  --vw-color-lime-700: #4d7c0f;
+  --vw-color-lime-800: #3f6212;
+  --vw-color-lime-900: #365314;
+  --vw-color-lime-950: #1a2e05;
+
+  /* Emerald */
+  --vw-color-emerald-25:  #f7fffb;
+  --vw-color-emerald-50:  #ecfdf5;
+  --vw-color-emerald-100: #d1fae5;
+  --vw-color-emerald-200: #a7f3d0;
+  --vw-color-emerald-300: #6ee7b7;
+  --vw-color-emerald-400: #34d399;
+  --vw-color-emerald-500: #10b981;
+  --vw-color-emerald-600: #059669;
+  --vw-color-emerald-700: #047857;
+  --vw-color-emerald-800: #065f46;
+  --vw-color-emerald-900: #064e3b;
+  --vw-color-emerald-950: #022c22;
+
+  /* Accent (brand) — default blue; overridden by theme-tokens.css / theme-*.css */
+  --vw-color-accent-50:  #eff6ff;
+  --vw-color-accent-100: #dbeafe;
+  --vw-color-accent-200: #bfdbfe;
+  --vw-color-accent-300: #93c5fd;
+  --vw-color-accent-400: #60a5fa;
+  --vw-color-accent-500: #1C81EF;
+  --vw-color-accent-600: #2563eb;
+  --vw-color-accent-700: #1d4ed8;
+  --vw-color-accent-800: #1e40af;
+  --vw-color-accent-900: #1e3a8a;
+}

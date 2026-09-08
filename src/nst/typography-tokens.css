@@ -1,0 +1,46 @@
+/* ============================================================
+   NST Design System — Typography Tokens
+   Ported from variables.scss per guidelines (fonts-fields page).
+   ============================================================ */
+
+:root {
+  --fontFamily: 'Poppins', ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* Heading scale */
+  --vw-font-heading-2xl: 1.5rem;     /* 24px */
+  --vw-font-heading-xl:  1.25rem;    /* 20px */
+  --vw-font-heading-lg:  1.125rem;   /* 18px */
+  --vw-font-heading-md:  1rem;       /* 16px */
+  --vw-font-heading-sm:  0.875rem;   /* 14px */
+  --vw-font-heading-xs:  0.75rem;    /* 12px */
+
+  --vw-line-heading-2xl: 1.5;
+  --vw-line-heading-xl:  1.5;
+  --vw-line-heading-lg:  1.44;
+  --vw-line-heading-md:  1.5;
+  --vw-line-heading-sm:  1.43;
+  --vw-line-heading-xs:  1.33;
+
+  /* Body / description */
+  --vw-font-description: 0.875rem;    /* 14px */
+  --vw-line-description: 1.4;
+
+  /* Label scale */
+  --vw-font-label-lg: 1rem;          /* 16px */
+  --vw-font-label-md: 0.875rem;      /* 14px */
+  --vw-font-label-sm: 0.75rem;       /* 12px */
+  --vw-font-label-xs: 0.6875rem;     /* 11px */
+
+  /* Legend / variance */
+  --vw-font-legend: 0.75rem;         /* 12px */
+  --vw-line-legend: 1.2;
+
+  /* Metric value scale (matches .vw-card-metric-*) */
+  --vw-font-value-xxxl: 2.25rem;     /* 36px */
+  --vw-font-value-xxl:  2rem;        /* 32px */
+  --vw-font-value-xl:   1.75rem;     /* 28px */
+  --vw-font-value-lg:   1.5rem;      /* 24px */
+  --vw-font-value-md:   1.125rem;    /* 18px */
+  --vw-font-value-sm:   1rem;        /* 16px */
+  --vw-font-value-xs:   0.875rem;    /* 14px */
+}
