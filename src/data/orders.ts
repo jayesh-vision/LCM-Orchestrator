@@ -114,6 +114,29 @@ export function bindEndpoints(
     })
   }
 
+  /* Radio domain, RAN VNF category — a CU/DU has no VLAN/VRF vocabulary
+     either; it's O-RAN interface config (F1/NG/E1), and CU vs DU carry
+     entirely different placeholder sets since they're different network
+     functions, not two ends of the same link. */
+  if (category === 'RAN VNF') {
+    return eps.map((e) => {
+      const wf = find(e)
+      const vnfParams: OrderParamValue[] = type === 'DU' ? [
+        { name: 'CU F1 IP', value: val('cu_f1_ip') ?? `172.31.90.${between(2, 250)}`, source: 'derived' },
+        { name: 'PCI', value: val('pci') ?? String(between(0, 503)), source: 'pool' },
+        { name: 'Bandwidth', value: val('bandwidth_mhz') ?? '100', source: 'user' },
+        { name: 'TX Power', value: val('tx_power_dbm') ?? '40', source: 'user' },
+      ] : [
+        { name: 'PLMN', value: val('plmn_id') ?? '404-01', source: 'user' },
+        { name: 'gNB ID', value: val('gnb_id') ?? `GNB-${between(10000, 99999)}`, source: 'derived' },
+        { name: 'AMF IP', value: val('amf_ip') ?? `172.31.80.${between(2, 250)}`, source: 'pool' },
+        { name: 'F1 IP', value: val('f1_ip') ?? `172.31.90.${between(2, 250)}`, source: 'pool' },
+        { name: 'Max UE Capacity', value: val('max_ue_capacity') ?? String(bandwidth), source: 'user' },
+      ]
+      return { ...e, workflowId: wf?.id, params: vnfParams }
+    })
+  }
+
   const vlan = val('vlan') ?? String(between(100, 900))
   const vcId = val('pw_id') ?? String(between(90000, 99999))
   const rd = val('rd') ?? `65001:${between(100, 900)}`
@@ -171,7 +194,8 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
      with its own existing-service pool, so this loop (fixed at 170 Transport
      orders) never accidentally binds to a service from another domain. */
   const liveServices = services.filter((s) => s.state === 'Live'
-    && !s.intentId.startsWith('INT-ACCESS') && !s.intentId.startsWith('INT-RADIO') && !s.intentId.startsWith('INT-FIBER'))
+    && !s.intentId.startsWith('INT-ACCESS') && !s.intentId.startsWith('INT-RADIO')
+    && !s.intentId.startsWith('INT-FIBER') && !s.intentId.startsWith('INT-RAN'))
   const now = Date.now()
   const out: Order[] = []
 
@@ -490,6 +514,77 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
           : [{ role: 'NOC lead' }],
       delta: orderIntent === 'Modify'
         ? [{ attribute: 'Circuit capacity', current: `${bandwidth} Gbps`, requested: `${bandwidth * 2} Gbps` }]
+        : undefined,
+      slaBreached: (state === 'Failed' || state === 'Reinstantiate') && ageDays > 10,
+      notes: undefined,
+    })
+  }
+
+  /* Radio domain, RAN VNF category — additive: 20 more orders, single-ended
+     CU/DU instances (no far end — a VNF isn't a link between two devices). */
+  const RAN_ORDER_MIX: [OrderState, number][] = [
+    ['Draft', 2], ['Planned', 1], ['Validated', 4], ['Approved', 2], ['Rejected', 1],
+    ['Queued', 1], ['In progress', 1], ['Ready', 6], ['Failed', 2],
+  ]
+  const RAN_INTENT_MIX: [OrderIntent, number][] = [['Create', 15], ['Modify', 3], ['Cease', 2]]
+  const vStates = shuffle(expand(RAN_ORDER_MIX))
+  const vOrderIntents = shuffle(expand(RAN_INTENT_MIX))
+  const ranLive = services.filter((s) => s.state === 'Live' && s.intentId.startsWith('INT-RAN'))
+  for (let i = 0; i < 20; i += 1) {
+    const state = vStates[i]
+    const orderIntent = vOrderIntents[i]
+    const existing = orderIntent === 'Create' ? undefined : ranLive[i % Math.max(1, ranLive.length)]
+    const intentId = existing ? existing.intentId : pick(['INT-RAN-CU', 'INT-RAN-DU'])
+    const intent = intentById(intentId)
+    const acct = existing ? ACCOUNTS.find((a) => a.id === existing.accountId)! : pick(ACCOUNTS)
+    const wf = active.find((w) => w.intentId === intentId) ?? active[0]
+
+    const eps = existing?.endpoints ?? [endpointFor('A', 90000 + i, intent.category)]
+    const bandwidth = existing?.bandwidthMbps ?? pick([500, 1000, 2000, 5000])
+    const params: OrderParamValue[] = intent.params.map((p) => ({
+      name: p.name,
+      value: p.fromPool === 'IP block' ? `172.31.${between(80, 95)}.${between(2, 250)}`
+        : p.fromPool === 'PCI' ? String(between(0, 503))
+          : p.default !== undefined ? String(p.default)
+            : p.name === 'plmn_id' ? '404-01'
+              : p.name === 'gnb_id' ? `GNB-${between(10000, 99999)}`
+                : p.name === 'cu_f1_ip' ? `172.31.90.${between(2, 250)}`
+                  : p.name === 'max_ue_capacity' ? String(bandwidth)
+                    : 'value',
+      source: p.fromPool ? 'pool' : p.default !== undefined ? 'template' : 'user',
+    }))
+    const boundEps = bindEndpoints(eps, intent.category, intent.type, '', workflows, params, bandwidth)
+
+    const ageDays = between(0, 30)
+    const created = new Date(now - ageDays * 86400000)
+
+    out.push({
+      id: `ORD-2026-${pad(9000 - i * 2, 6)}`,
+      code: `NS-${pad(900 + i, 6)}`,
+      name: `${intent.name}${orderIntent !== 'Create' ? ` · ${orderIntent.toLowerCase()}` : ''}`,
+      intent: orderIntent, intentId,
+      category: intent.category,
+      type: intent.type,
+      subtype: intent.type === 'CU' ? pick(['Standalone', 'Non-Standalone']) : pick(['Indoor', 'Outdoor']),
+      accountId: acct.id, accountName: acct.name,
+      serviceId: existing?.id,
+      state,
+      workflowId: state === 'Draft' ? undefined : (boundEps[0]?.workflowId ?? wf?.id),
+      endpoints: boundEps,
+      params,
+      createdAt: created.toISOString(),
+      updatedAt: new Date(now - between(0, ageDays) * 86400000).toISOString(),
+      ageDays,
+      owner: pick(OWNERS),
+      waitingOn: WAITING[state],
+      runIds: [],
+      approvals: ['Ready', 'Approved', 'In progress', 'Queued', 'Reinstantiate', 'Failed'].includes(state)
+        ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Approved' }]
+        : state === 'Rejected'
+          ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Rejected', comment: 'Compute quota for this CU/DU workload is exhausted at the target site.' }]
+          : [{ role: 'NOC lead' }],
+      delta: orderIntent === 'Modify'
+        ? [{ attribute: 'Max UE capacity', current: `${bandwidth}`, requested: `${bandwidth * 2}` }]
         : undefined,
       slaBreached: (state === 'Failed' || state === 'Reinstantiate') && ageDays > 10,
       notes: undefined,

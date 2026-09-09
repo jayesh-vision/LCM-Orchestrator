@@ -25,6 +25,9 @@ const DOMAIN_HINT: Record<Domain, string> = {
   Radio: 'Point-to-point microwave backhaul link provisioning.',
   Fiber: 'DWDM wavelength circuit provisioning over optical transport.',
 }
+/* Radio's other category, RAN VNF, has its own subtype vocab — and CU vs DU
+   don't even share one with each other — so it's handled separately below
+   rather than folded into this domain-level map. */
 const DOMAIN_SUBTYPES: Record<Domain, string[]> = {
   Transport: ['Tagged', 'Untagged', 'BGP', 'Static', 'OSPF', 'VRF', 'Other'],
   Access: ['FTTH', 'DSL', 'Other'],
@@ -33,6 +36,10 @@ const DOMAIN_SUBTYPES: Record<Domain, string[]> = {
 }
 const DOMAIN_PORT_LABEL: Record<Domain, string> = {
   Transport: 'Router port', Access: 'CPE port', Radio: 'Radio port', Fiber: 'Optical port',
+}
+function subtypeOptions(domain: Domain, category: Category, type: string): string[] {
+  if (category === 'RAN VNF') return type === 'DU' ? ['Indoor', 'Outdoor'] : ['Standalone', 'Non-Standalone']
+  return DOMAIN_SUBTYPES[domain]
 }
 
 export default function NewServiceWizard() {
@@ -68,7 +75,7 @@ export default function NewServiceWizard() {
     setCategory(c)
     const first = intents.find((i) => i.category === c)!
     setIntentId(first.id)
-    setSubtype(DOMAIN_SUBTYPES[d][0])
+    setSubtype(subtypeOptions(d, c, first.type)[0])
   }
 
   const endpointCount = intent.topology === 'Single-ended' ? 1 : intent.topology === 'Two-ended' ? 2 : eps.length
@@ -224,18 +231,24 @@ export default function NewServiceWizard() {
                     setCategory(c)
                     const first = intents.find((i) => i.category === c)!
                     setIntentId(first.id)
+                    setSubtype(subtypeOptions(domain, c, first.type)[0])
                   }}>
                     {domainCats.map((c) => <option key={c} value={c}>{c}</option>)}
                   </Select>
                 </Field>
                 <Field label="Type" required hint={`${intent.topology} · ${intent.endpointArity}`}>
-                  <Select value={intentId} onChange={(e) => setIntentId(e.target.value)}>
+                  <Select value={intentId} onChange={(e) => {
+                    const next = e.target.value
+                    setIntentId(next)
+                    const nextType = intents.find((i) => i.id === next)?.type ?? intent.type
+                    setSubtype(subtypeOptions(domain, category, nextType)[0])
+                  }}>
                     {catIntents.map((i) => <option key={i.id} value={i.id}>{i.type} — {i.name}</option>)}
                   </Select>
                 </Field>
                 <Field label="Catalog subtype">
                   <Select value={subtype} onChange={(e) => setSubtype(e.target.value)}>
-                    {DOMAIN_SUBTYPES[domain].map((s) => <option key={s}>{s}</option>)}
+                    {subtypeOptions(domain, category, intent.type).map((s) => <option key={s}>{s}</option>)}
                   </Select>
                 </Field>
                 <Field label="Customer" required hint="A reference to the account master, not free text.">

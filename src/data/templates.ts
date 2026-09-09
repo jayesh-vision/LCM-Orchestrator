@@ -420,6 +420,75 @@ function dwdmWavelengthProvisioning(): StageSeed[] {
   ]
 }
 
+/* ---- RAN VNF | CU | * | MAVENIR · SAMSUNG · RADISYS
+   (Pre-Validation 3 · Service configuration 3 · Post-Validation 3). A CU has
+   no CLI in the Transport/Radio-link sense — it's a lifecycle-managed VNF
+   instance, configured over its EMS/orchestrator interface (NETCONF/YANG
+   under the hood; the commands below are what that EMS's own operator CLI
+   shows). One template covers every CU vendor, same convention as the CLI
+   domains above. */
+function ranCuProvisioning(): StageSeed[] {
+  const PLMN = '${PLMN}', GNB = '${gNB ID}', AMF = '${AMF IP}', F1 = '${F1 IP}', CAP = '${Max UE Capacity}'
+  return [
+    { name: 'Pre-Validation', kind: 'Pre validation', tasks: [
+      { name: 'Check CU instance not already deployed', set: `vnf-instance status gnb-id ${GNB}`, rules: [rule('not found', 'Contains'), rule('Running')] },
+      { name: 'Check AMF reachability', set: `ping ${AMF} count 5`, rules: [rule('Success rate is 100 percent', 'Contains')], retry: true },
+      { name: 'Check compute/memory quota for CU workload', set: 'show resource-pool cu-workload quota', rules: [rule('insufficient', 'Not contains')] },
+    ] },
+    { name: 'Service configuration', kind: 'Configuration', tasks: [
+      { name: 'Instantiate CU VNF',
+        set: `vnf-instance create gnb-cu --gnb-id ${GNB}\n vnf-instance start gnb-id ${GNB}`,
+        rollback: `vnf-instance terminate gnb-id ${GNB}`, timeoutMs: 120000, breaker: true },
+      { name: 'Configure PLMN and NG interface',
+        set: `gnb-cu configure plmn-id ${PLMN} gnb-id ${GNB}\n gnb-cu configure ng-interface amf-ip ${AMF}`,
+        rules: [rule('error'), rule('rejected')],
+        rollback: `gnb-cu configure ng-interface amf-ip none` },
+      { name: 'Configure F1 interface and commit',
+        set: `gnb-cu configure f1-interface local-ip ${F1} max-ue-capacity ${CAP}\n gnb-cu commit`,
+        rules: [rule('commit complete', 'Contains'), rule('error')],
+        rollback: 'gnb-cu configure f1-interface admin-down', timeoutMs: 90000, breaker: true },
+    ] },
+    { name: 'Post-Validation', kind: 'Post validation', tasks: [
+      { name: 'Verify CU instance healthy', set: `vnf-instance status gnb-id ${GNB}`, rules: [rule('state=Running', 'Contains'), rule('health=OK', 'Contains')], retry: true, timeoutMs: 90000 },
+      { name: 'Verify NG interface to AMF', set: 'show ng-interface status', rules: [rule('state=Connected', 'Contains'), rule('Down')], retry: true },
+      { name: 'Verify F1 interface ready', set: 'show f1-interface status', rules: [rule('state=Ready', 'Contains'), rule('Down')], retry: true, timeoutMs: 90000 },
+    ] },
+  ]
+}
+
+/* ---- RAN VNF | DU | * | MAVENIR · SAMSUNG · RADISYS
+   (Pre-Validation 3 · Service configuration 3 · Post-Validation 3). Same
+   EMS-CLI convention as the CU template — instantiate, peer to the CU over
+   F1, then activate the cell on its assigned PCI. */
+function ranDuProvisioning(): StageSeed[] {
+  const CUIP = '${CU F1 IP}', PCI = '${PCI}', BW = '${Bandwidth}', TXP = '${TX Power}'
+  return [
+    { name: 'Pre-Validation', kind: 'Pre validation', tasks: [
+      { name: 'Check DU instance not already deployed', set: 'vnf-instance status du-local', rules: [rule('not found', 'Contains'), rule('Running')] },
+      { name: 'Check CU F1 reachability', set: `ping ${CUIP} count 5`, rules: [rule('Success rate is 100 percent', 'Contains')], retry: true },
+      { name: 'Check PCI is not already broadcasting nearby', set: `show cell-plan pci ${PCI}`, rules: [rule('in use', 'Not contains')] },
+    ] },
+    { name: 'Service configuration', kind: 'Configuration', tasks: [
+      { name: 'Instantiate DU VNF',
+        set: 'vnf-instance create gnb-du --name du-local\n vnf-instance start du-local',
+        rollback: 'vnf-instance terminate du-local', timeoutMs: 120000, breaker: true },
+      { name: 'Configure F1 interface to the CU',
+        set: `gnb-du configure f1-interface remote-ip ${CUIP}\n gnb-du connect f1`,
+        rules: [rule('error'), rule('rejected')],
+        rollback: 'gnb-du configure f1-interface admin-down' },
+      { name: 'Configure and activate cell',
+        set: `gnb-du configure cell pci ${PCI} bandwidth ${BW}MHz tx-power ${TXP}\n gnb-du activate cell\n gnb-du commit`,
+        rules: [rule('commit complete', 'Contains'), rule('error')],
+        rollback: 'gnb-du deactivate cell', timeoutMs: 90000, breaker: true },
+    ] },
+    { name: 'Post-Validation', kind: 'Post validation', tasks: [
+      { name: 'Verify DU instance healthy', set: 'vnf-instance status du-local', rules: [rule('state=Running', 'Contains'), rule('health=OK', 'Contains')], retry: true, timeoutMs: 90000 },
+      { name: 'Verify F1 interface to CU', set: 'show f1-interface status', rules: [rule('state=Established', 'Contains'), rule('Down')], retry: true },
+      { name: 'Verify cell active on assigned PCI', set: `show cell status pci ${PCI}`, rules: [rule('state=Active', 'Contains'), rule('Inactive')], retry: true, timeoutMs: 90000 },
+    ] },
+  ]
+}
+
 /* -------------------------------------------------------------- picker */
 
 /** The platform workflow for a profile + vendor. `role` only affects naming; both ends run the same sequence. */
@@ -427,10 +496,11 @@ export function templateFor(category: Category, vendor: Vendor, type: string, _r
   const seeds =
     category === 'Broadband' ? cpeProvisioning()
       : category === 'Microwave' ? radioPtpProvisioning()
-        : category === 'DWDM' ? dwdmWavelengthProvisioning()
-          : category === 'L2VPN' ? (vendor === 'JUNIPER' ? l2vpnJuniper(subtype) : l2vpnCisco(subtype))
-            : category === 'L3VPN' ? (vendor === 'JUNIPER' ? (/hub/i.test(type) ? l3vpnHubSpokeJuniper() : l3vpnMeshJuniper()) : l3vpnCisco(type))
-              : (vendor === 'JUNIPER' ? (/bgp|ospf|vrf/i.test(type) ? ibwBgpJuniper() : ibwStaticJuniper()) : ibwCisco(type))
+        : category === 'RAN VNF' ? (type === 'DU' ? ranDuProvisioning() : ranCuProvisioning())
+          : category === 'DWDM' ? dwdmWavelengthProvisioning()
+            : category === 'L2VPN' ? (vendor === 'JUNIPER' ? l2vpnJuniper(subtype) : l2vpnCisco(subtype))
+              : category === 'L3VPN' ? (vendor === 'JUNIPER' ? (/hub/i.test(type) ? l3vpnHubSpokeJuniper() : l3vpnMeshJuniper()) : l3vpnCisco(type))
+                : (vendor === 'JUNIPER' ? (/bgp|ospf|vrf/i.test(type) ? ibwBgpJuniper() : ibwStaticJuniper()) : ibwCisco(type))
   return materialise(seeds)
 }
 
@@ -487,4 +557,5 @@ export const KNOWN_PARAMS: Record<Category, string[]> = {
   Broadband: ['CPE Serial', 'SSID', 'WiFi Password', 'WAN VLAN', 'Bandwidth'],
   Microwave: ['Frequency Channel', 'Frequency Band', 'Channel Bandwidth', 'Modulation', 'TX Power', 'Capacity'],
   DWDM: ['Wavelength Channel', 'OTN Framing', 'Protection', 'Capacity'],
+  'RAN VNF': ['PLMN', 'gNB ID', 'AMF IP', 'F1 IP', 'Max UE Capacity', 'CU F1 IP', 'PCI', 'Bandwidth', 'TX Power'],
 }

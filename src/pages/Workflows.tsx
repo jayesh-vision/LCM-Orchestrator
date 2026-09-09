@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
-import { Cable, CheckCircle2, Clock, Copy, Download, Eye, Grid3x3, ListChecks, Pencil, Plus, RadioTower, Router, Send, ShieldCheck, Trash2, Network as SwitchIcon, Wifi, XCircle } from 'lucide-react'
+import { Cable, CheckCircle2, Clock, Copy, Cpu, Download, Eye, Grid3x3, ListChecks, Pencil, Plus, RadioTower, Router, Send, ShieldCheck, Trash2, Network as SwitchIcon, Wifi, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { Category, Domain, Vendor, Workflow, WorkflowState } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
@@ -10,12 +10,12 @@ import {
   FilterBanner, Kebab, Mono, Note, Stat, type Column,
 } from '@/components/ui'
 import { CoverageMatrix, type CoverageCol } from '@/components/charts'
-import { CPE_VENDORS, OPTICAL_VENDORS, RADIO_VENDORS, ROUTER_VENDORS, SWITCH_VENDORS } from '@/data/catalog'
+import { CPE_VENDORS, OPTICAL_VENDORS, RADIO_VENDORS, ROUTER_VENDORS, SWITCH_VENDORS, VNF_VENDORS } from '@/data/catalog'
 import { VENDOR_LABEL } from '@/data/workflows'
 import { CATEGORY_TONE, DOMAIN_TONE, WORKFLOW_TONE } from '@/lib/format'
 
 const STATES: WorkflowState[] = ['Draft', 'Assigned', 'Awaiting approval', 'Active', 'Rejected', 'Retired']
-const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM']
+const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
 /* Router vendors first (they can carry any Transport intent), then Switch
    vendors (L2VPN only — a switch has no BGP/VRF to run an L3VPN or IBW
    intent with). CPE/Radio/Optical vendors are each a disjoint estate,
@@ -28,10 +28,30 @@ const VENDOR_COVER_COLS: CoverageCol[] = VENDOR_COLS.map((v) => ({
 const CPE_VENDOR_COVER_COLS: CoverageCol[] = CPE_VENDORS.map((v) => ({ key: v, label: VENDOR_LABEL[v], sub: 'CPE', icon: Wifi }))
 const RADIO_VENDOR_COVER_COLS: CoverageCol[] = RADIO_VENDORS.map((v) => ({ key: v, label: VENDOR_LABEL[v], sub: 'Radio', icon: RadioTower }))
 const FIBER_VENDOR_COVER_COLS: CoverageCol[] = OPTICAL_VENDORS.map((v) => ({ key: v, label: VENDOR_LABEL[v], sub: 'Optical', icon: Cable }))
-const DOMAIN_COVER_COLS: Record<Domain, CoverageCol[]> = {
-  Transport: VENDOR_COVER_COLS, Access: CPE_VENDOR_COVER_COLS, Radio: RADIO_VENDOR_COVER_COLS, Fiber: FIBER_VENDOR_COVER_COLS,
+const VNF_VENDOR_COVER_COLS: CoverageCol[] = VNF_VENDORS.map((v) => ({ key: v, label: VENDOR_LABEL[v], sub: 'VNF', icon: Cpu }))
+/* One vendor-column set per category — not per domain. Radio is the first
+   domain where two categories (Microwave, RAN VNF) have disjoint vendor
+   estates, so the coverage grid groups a domain's categories by their
+   column signature and only surfaces a group switcher when a domain
+   resolves to more than one distinct signature. */
+const CATEGORY_COVER_COLS: Record<Category, CoverageCol[]> = {
+  L2VPN: VENDOR_COVER_COLS, L3VPN: VENDOR_COVER_COLS, IBW: VENDOR_COVER_COLS,
+  Broadband: CPE_VENDOR_COVER_COLS, Microwave: RADIO_VENDOR_COVER_COLS, DWDM: FIBER_VENDOR_COVER_COLS,
+  'RAN VNF': VNF_VENDOR_COVER_COLS,
 }
-const ALL_VENDOR_COLS: Vendor[] = [...VENDOR_COLS, ...CPE_VENDORS, ...RADIO_VENDORS, ...OPTICAL_VENDORS]
+const colSetKey = (c: Category) => CATEGORY_COVER_COLS[c].map((x) => x.key).join(',')
+const domainCategoryGroups = (d: Domain): Category[][] => {
+  const groups: Category[][] = []
+  const byKey = new Map<string, Category[]>()
+  CATEGORIES_BY_DOMAIN[d].forEach((c) => {
+    const k = colSetKey(c)
+    let g = byKey.get(k)
+    if (!g) { g = []; byKey.set(k, g); groups.push(g) }
+    g.push(c)
+  })
+  return groups
+}
+const ALL_VENDOR_COLS: Vendor[] = [...VENDOR_COLS, ...CPE_VENDORS, ...RADIO_VENDORS, ...OPTICAL_VENDORS, ...VNF_VENDORS]
 
 export default function Workflows() {
   const workflows = useStore((s) => s.workflows)
@@ -98,7 +118,8 @@ export default function Workflows() {
     if (category === 'Broadband') return CPE_VENDORS.includes(vendor)
     if (category === 'Microwave') return RADIO_VENDORS.includes(vendor)
     if (category === 'DWDM') return OPTICAL_VENDORS.includes(vendor)
-    if (CPE_VENDORS.includes(vendor) || RADIO_VENDORS.includes(vendor) || OPTICAL_VENDORS.includes(vendor)) return false
+    if (category === 'RAN VNF') return VNF_VENDORS.includes(vendor)
+    if (CPE_VENDORS.includes(vendor) || RADIO_VENDORS.includes(vendor) || OPTICAL_VENDORS.includes(vendor) || VNF_VENDORS.includes(vendor)) return false
     if (category === 'L2VPN') return true
     return !SWITCH_VENDORS.includes(vendor)
   }
@@ -111,13 +132,23 @@ export default function Workflows() {
   const gaps = combinations - built
   const coveragePct = combinations > 0 ? Math.round((built / combinations) * 100) : 100
 
-  /* The matrix stays single-domain — every domain's vendor estate is
-     disjoint from every other's, so mixing them in one grid would be mostly
-     dashes. It follows the Domain filter; "All" defaults to Transport, the
-     largest domain, same as every other widget on this screen. */
+  /* The matrix stays single-category-group — every disjoint vendor estate
+     mixed into one grid would be mostly dashes. It follows the Domain
+     filter; "All" defaults to Transport, the largest domain, same as every
+     other widget on this screen. A domain whose categories split across
+     more than one vendor estate (Radio: Microwave vs RAN VNF) gets a group
+     switcher; the current Category filter picks the group when it applies. */
   const coverageDomain: Domain = domain === 'All' ? 'Transport' : domain
-  const coverageIntents = intents.filter((i) => domainOf(i.category) === coverageDomain)
-  const coverageCols = DOMAIN_COVER_COLS[coverageDomain]
+  const coverageGroups = useMemo(() => domainCategoryGroups(coverageDomain), [coverageDomain])
+  const coverageGroup = useMemo(() => {
+    if (cat !== 'All' && domainOf(cat) === coverageDomain) {
+      const g = coverageGroups.find((grp) => grp.includes(cat))
+      if (g) return g
+    }
+    return coverageGroups[0] ?? []
+  }, [coverageGroups, cat, coverageDomain])
+  const coverageIntents = intents.filter((i) => coverageGroup.includes(i.category))
+  const coverageCols = coverageGroup[0] ? CATEGORY_COVER_COLS[coverageGroup[0]] : []
 
   const columns: Column<Workflow>[] = [
     {
@@ -191,7 +222,7 @@ export default function Workflows() {
       </div>
 
       <Card>
-        <CardHead title="Coverage — intent by vendor" sub={`${coverageDomain} domain — where an active workflow exists, and how much of the installed base rides on it`}
+        <CardHead title="Coverage — intent by vendor" sub={`${coverageDomain} domain${coverageGroups.length > 1 ? ` — ${coverageGroup.join(' / ')}` : ''} — where an active workflow exists, and how much of the installed base rides on it`}
           info="Each tile shows whether an Active workflow exists for that intent on that vendor: a green count = that many active workflows, amber Draft = authoring has started but nothing is approved, a dashed tile = nothing exists, so orders for that combination cannot run. A vendor column is marked Router, Switch or CPE — those are disjoint estates, so a column only ever lights up under the domain it belongs to; everywhere else shows a plain dash (—), not a gap, because that combination can never be built. Use the Domain chip above the grid to switch between Transport and Access. The bar on the right is the live services riding on that intent — the bigger the bar, the more revenue depends on that row's coverage. Click a tile to filter the list below, or the bar to open those services."
           right={<>
             <Badge tone="good">Built {built}</Badge>
@@ -204,6 +235,13 @@ export default function Workflows() {
               <Chip key={d} tone={DOMAIN_TONE[d]} active={(domain === 'All' ? 'Transport' : domain) === d} onClick={() => pickDomain(d)}>{d}</Chip>
             ))}
           </div>
+          {coverageGroups.length > 1 && (
+            <div className="flex items-center gap-1.5 mb-3.5">
+              {coverageGroups.map((g) => (
+                <Chip key={g.join(',')} tone={CATEGORY_TONE[g[0]]} active={coverageGroup === g} onClick={() => setCat(g[0])}>{g.join(' / ')}</Chip>
+              ))}
+            </div>
+          )}
           <CoverageMatrix
             cols={coverageCols}
             rows={coverageIntents.map((i) => ({

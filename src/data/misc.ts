@@ -72,6 +72,12 @@ export function buildPools(services: Service[]): ResourcePool[] {
     total: 96, allocated: 84, quarantined: 3, reserved: 2,
     entries: entries(96, 84, 3, (n) => `${1529 + Math.floor(n / 2)}.${(n % 2) * 50 + 12}nm`, services),
   })
+  // Radio domain, RAN VNF category — 3GPP physical cell identity plan, per DU.
+  pools.push({
+    id: 'POOL-PCI-001', kind: 'PCI', scope: '3GPP TS 38.211 · mod-3 / mod-30 collision-free plan',
+    total: 504, allocated: 68, quarantined: 5, reserved: 3,
+    entries: entries(504, 68, 5, (n) => String(n), services),
+  })
   return pools
 }
 

@@ -87,6 +87,14 @@ export const DEVICE_MODELS: DeviceModel[] = [
   { vendor: 'CIENA', model: '6500-D8', kind: 'Optical', os: 'SAOS 10.2', osRange: '9.8 – 10.2', ports: ['TRANSPONDER-1', 'TRANSPONDER-2', 'LINE-1'] },
   { vendor: 'INFINERA', model: 'GX G30', kind: 'Optical', os: 'GX OS 6.4', osRange: '6.0 – 6.4', ports: ['CLIENT-1', 'CLIENT-2', 'LINE-1'] },
   { vendor: 'ECI', model: 'Apollo ODM', kind: 'Optical', os: 'ECI NPT 5.1', osRange: '4.8 – 5.1', ports: ['TRANSPONDER-1', 'LINE-1'] },
+  /* Radio domain, RAN VNF category — O-RAN CU/DU virtualized network
+     functions. No physical port at all; "ports" here are the O-RAN
+     interface names the workflow templates render commands against
+     (F1 between CU and DU, E1 between CU-CP/CU-UP, NG to the 5G core,
+     Xn to neighbour gNBs). A disjoint vendor estate again. */
+  { vendor: 'MAVENIR', model: 'OpenRAN vRAN 4.2', kind: 'VNF', os: 'Mavenir CNF 4.2', osRange: '4.0 – 4.2', ports: ['F1', 'E1', 'NG', 'Xn'] },
+  { vendor: 'SAMSUNG', model: 'vRAN CU/DU 3.0', kind: 'VNF', os: 'Samsung vRAN 3.0', osRange: '2.8 – 3.0', ports: ['F1', 'E1', 'NG'] },
+  { vendor: 'RADISYS', model: 'Engage vRAN', kind: 'VNF', os: 'Radisys CNF 2.5', osRange: '2.2 – 2.5', ports: ['F1', 'E1', 'NG'] },
 ]
 
 /** Only Router-class devices run BGP/VRF, so only these can serve L3VPN/IBW. */
@@ -99,10 +107,13 @@ export const CPE_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.k
 export const RADIO_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'Radio').map((d) => d.vendor))]
 /** Optical-class devices are the Fiber domain's estate — DWDM wavelength circuits only. */
 export const OPTICAL_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'Optical').map((d) => d.vendor))]
+/** VNF-class functions are the RAN VNF category's estate — CU/DU only, no physical device. */
+export const VNF_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'VNF').map((d) => d.vendor))]
 /** The device estate eligible for a given service category. */
 export const modelsForCategory = (category: Category): DeviceModel[] => {
   if (category === 'Broadband') return DEVICE_MODELS.filter((d) => d.kind === 'CPE')
   if (category === 'Microwave') return DEVICE_MODELS.filter((d) => d.kind === 'Radio')
+  if (category === 'RAN VNF') return DEVICE_MODELS.filter((d) => d.kind === 'VNF')
   if (category === 'DWDM') return DEVICE_MODELS.filter((d) => d.kind === 'Optical')
   if (category === 'L2VPN') return DEVICE_MODELS.filter((d) => d.kind === 'Router' || d.kind === 'Switch')
   return DEVICE_MODELS.filter((d) => d.kind === 'Router')
@@ -175,6 +186,42 @@ const radioAcceptance: AcceptanceCriterion[] = [
   { id: 'AC-2', claim: 'Received signal level is within the planned link budget', layer: 'device', expected: 'RSL within ±3 dB of plan' },
   { id: 'AC-3', claim: 'Bit error rate stays below threshold over a sustained window', layer: 'network', expected: 'BER < 1e-9 over 15 min' },
   { id: 'AC-4', claim: 'Measured throughput is within ±5% of the ordered capacity', layer: 'service', expected: 'within tolerance band' },
+]
+
+/* ---------- Radio domain, RAN VNF category: O-RAN CU/DU lifecycle ---------- */
+/* Single-ended, same as IBW — provisioning one VNF instance, not a link
+   between two physical devices. CU and DU are separate intents: different
+   configs, different interfaces (CU: NG to the core, F1 to the DU; DU: F1
+   to the CU, cell activation), the same distinction the platform draws
+   between the Transport intents rather than lumping them into one. */
+
+const cuParams: IntentParam[] = [
+  { name: 'plmn_id', type: 'string', constraint: 'MCC-MNC, e.g. 404-01', modifiable: 'recreate', required: true },
+  { name: 'gnb_id', type: 'string', constraint: 'globally unique gNodeB identifier', modifiable: 'no', required: true },
+  { name: 'amf_ip', type: 'ipv4', constraint: 'NG-C interface · pool-allocated', modifiable: 'no', fromPool: 'IP block', required: true },
+  { name: 'f1_ip', type: 'ipv4', constraint: 'F1 interface, faces the DU · pool-allocated', modifiable: 'no', fromPool: 'IP block', required: true },
+  { name: 'max_ue_capacity', type: 'integer', constraint: '500–5000 UEs', modifiable: 'hitless', min: 500, max: 5000, default: 2000, required: true },
+]
+
+const cuAcceptance: AcceptanceCriterion[] = [
+  { id: 'AC-1', claim: 'CU VNF instance is running and healthy', layer: 'device', expected: 'state=Running, health=OK' },
+  { id: 'AC-2', claim: 'NG interface to the 5G core AMF reaches Connected', layer: 'network', expected: 'ng-c state=Connected' },
+  { id: 'AC-3', claim: 'F1 interface is up and ready to accept a DU', layer: 'network', expected: 'f1 state=Ready' },
+  { id: 'AC-4', claim: 'RRC service is available within the configured UE capacity', layer: 'service', expected: 'rrc=Available, registered <= max_ue_capacity' },
+]
+
+const duParams: IntentParam[] = [
+  { name: 'cu_f1_ip', type: 'ipv4', constraint: 'target CU\'s F1 interface address', modifiable: 'no', required: true },
+  { name: 'pci', type: 'integer', constraint: '0–503 · pool-allocated, must not collide with a neighbour', modifiable: 'no', fromPool: 'PCI', min: 0, max: 503, required: true },
+  { name: 'bandwidth_mhz', type: 'enum', constraint: '20 | 40 | 60 | 100 MHz', modifiable: 'bounce', options: ['20', '40', '60', '100'], default: '100', required: true },
+  { name: 'tx_power_dbm', type: 'integer', constraint: '20–46 dBm', modifiable: 'hitless', min: 20, max: 46, default: 40, required: true },
+]
+
+const duAcceptance: AcceptanceCriterion[] = [
+  { id: 'AC-1', claim: 'DU VNF instance is running and healthy', layer: 'device', expected: 'state=Running, health=OK' },
+  { id: 'AC-2', claim: 'F1 interface to the CU reaches Established', layer: 'network', expected: 'f1 state=Established' },
+  { id: 'AC-3', claim: 'Cell is activated and broadcasting on the assigned PCI', layer: 'network', expected: 'cell state=Active, pci matches' },
+  { id: 'AC-4', claim: 'Measured cell throughput is within ±10% of the planned capacity for the bandwidth', layer: 'service', expected: 'within tolerance band' },
 ]
 
 /* ---------- Fiber domain: DWDM wavelength circuit provisioning ---------- */
@@ -267,6 +314,18 @@ export const INTENTS: ServiceIntent[] = [
     topology: 'Two-ended', endpointArity: 'exactly 2', params: dwdmParams,
     pools: ['Wavelength'], acceptance: dwdmAcceptance, version: 1, liveServices: 90,
   },
+  /* Radio domain, RAN VNF category — CU and DU are separate VNF instances,
+     each single-ended like IBW: one lifecycle-managed function, no far end. */
+  {
+    id: 'INT-RAN-CU', name: 'RAN CU Provisioning', category: 'RAN VNF', type: 'CU',
+    topology: 'Single-ended', endpointArity: 'exactly 1', params: cuParams,
+    pools: ['IP block'], acceptance: cuAcceptance, version: 1, liveServices: 42,
+  },
+  {
+    id: 'INT-RAN-DU', name: 'RAN DU Provisioning', category: 'RAN VNF', type: 'DU',
+    topology: 'Single-ended', endpointArity: 'exactly 1', params: duParams,
+    pools: ['PCI'], acceptance: duAcceptance, version: 1, liveServices: 68,
+  },
 ]
 
 export const intentById = (id: string) => INTENTS.find((i) => i.id === id)!
@@ -319,6 +378,11 @@ const PROFILE_ROWS: Array<[Category, string, string, string, string]> = [
   // DWDM (Fiber domain)
   ['DWDM', 'Wavelength Circuit', 'Unprotected', 'DWDM wavelength profile for unprotected point-to-point lambda circuits.', 'Jayesh'],
   ['DWDM', 'Wavelength Circuit', 'Protected', 'DWDM wavelength profile for 1+1 protected lambda circuits.', 'Jayesh'],
+  // RAN VNF (Radio domain)
+  ['RAN VNF', 'CU', 'Standalone', 'RAN CU profile for 5G Standalone (SA) deployments.', 'Jayesh'],
+  ['RAN VNF', 'CU', 'Non-Standalone', 'RAN CU profile for 5G Non-Standalone (NSA) deployments anchored on LTE.', 'Jayesh'],
+  ['RAN VNF', 'DU', 'Indoor', 'RAN DU profile for indoor small-cell deployments.', 'Jayesh'],
+  ['RAN VNF', 'DU', 'Outdoor', 'RAN DU profile for outdoor macro-cell deployments.', 'Jayesh'],
 ]
 
 export const PROFILE_TYPES: ProfileType[] = PROFILE_ROWS.map(([category, type, subtype, description, creator], i) => ({
@@ -329,4 +393,4 @@ export const PROFILE_TYPES: ProfileType[] = PROFILE_ROWS.map(([category, type, s
 }))
 
 export const VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.map((d) => d.vendor))]
-export const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM']
+export const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']

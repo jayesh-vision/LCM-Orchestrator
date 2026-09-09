@@ -14,7 +14,7 @@ import { CATEGORY_TONE, CONFORMANCE_TONE, DOMAIN_TONE, inr, relTime, SERVICE_TON
 
 const STATES: ServiceState[] = ['Live', 'Activating', 'Degraded', 'Suspended', 'Ceased']
 const CONFS: Conformance[] = ['Conformant', 'Drifted', 'Never proven', 'Ghost', 'Not checked']
-const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM']
+const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
 
 export default function ServiceInventory() {
   const services = useStore((s) => s.services)

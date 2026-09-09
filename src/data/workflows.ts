@@ -9,6 +9,7 @@ export const VENDOR_LABEL: Record<Vendor, string> = {
   HUAWEI: 'Huawei', ZTE: 'ZTE', ADTRAN: 'Adtran',
   CERAGON: 'Ceragon', AVIAT: 'Aviat', NEC: 'NEC',
   CIENA: 'Ciena', INFINERA: 'Infinera', ECI: 'ECI',
+  MAVENIR: 'Mavenir', SAMSUNG: 'Samsung', RADISYS: 'Radisys',
 }
 
 /**
@@ -26,8 +27,8 @@ export function buildWorkflows(): Workflow[] {
      otherwise each vendor's slice would read as near-empty. Broadband,
      Microwave and DWDM are the newer, narrower domains — each a handful of
      intents on a 3-vendor estate, deliberately smaller than Transport's. */
-  const TARGET: Record<string, number> = { L2VPN: 148, L3VPN: 52, IBW: 76, Broadband: 24, Microwave: 18, DWDM: 15 }
-  const activeCount: Record<string, number> = { L2VPN: 0, L3VPN: 0, IBW: 0, Broadband: 0, Microwave: 0, DWDM: 0 }
+  const TARGET: Record<string, number> = { L2VPN: 148, L3VPN: 52, IBW: 76, Broadband: 24, Microwave: 18, DWDM: 15, 'RAN VNF': 20 }
+  const activeCount: Record<string, number> = { L2VPN: 0, L3VPN: 0, IBW: 0, Broadband: 0, Microwave: 0, DWDM: 0, 'RAN VNF': 0 }
 
   const push = (pt: typeof PROFILE_TYPES[number], dm: typeof DEVICE_MODELS[number], role: 'Source' | 'Destination' | undefined, state: WorkflowState, suffix: string) => {
     const isNcs = dm.model.startsWith('NCS')
@@ -44,8 +45,9 @@ export function buildWorkflows(): Workflow[] {
         : pt.category === 'Broadband' ? (pt.type === 'Business Gateway' ? 'INT-ACCESS-BUSINESS' : 'INT-ACCESS-RESIDENTIAL')
           : pt.category === 'Microwave' ? 'INT-RADIO-PTP'
             : pt.category === 'DWDM' ? 'INT-FIBER-WAVELENGTH'
-              : pt.category === 'L2VPN' ? (pt.type === 'Railwire' ? 'INT-L2-RAILWIRE' : 'INT-L2-P2P')
-                : (pt.type.startsWith('Hub') ? 'INT-L3-HUBSPOKE' : 'INT-L3-MESH')
+              : pt.category === 'RAN VNF' ? (pt.type === 'DU' ? 'INT-RAN-DU' : 'INT-RAN-CU')
+                : pt.category === 'L2VPN' ? (pt.type === 'Railwire' ? 'INT-L2-RAILWIRE' : 'INT-L2-P2P')
+                  : (pt.type.startsWith('Hub') ? 'INT-L3-HUBSPOKE' : 'INT-L3-MESH')
     const version = state === 'Active' ? between(1, 5) : 1
     n += 1
     const { stages, tasks } = templateFor(pt.category, dm.vendor, pt.type, role, pt.subtype)
@@ -89,12 +91,13 @@ export function buildWorkflows(): Workflow[] {
   /* Active templates: cycle profile types × vendor models × ends until each
      category hits its platform count. Router vendors cover every Transport
      category; Switch vendors (EdgeCore, D-Link) only ever carry L2VPN — a
-     switch has no BGP/VRF to run an L3VPN or IBW intent with. Broadband is
-     single-ended, same as IBW — a CPE has no far end to configure. */
-  for (const cat of ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM'] as const) {
+     switch has no BGP/VRF to run an L3VPN or IBW intent with. Broadband and
+     RAN VNF are single-ended, same as IBW — a CPE or a VNF instance has no
+     far end to configure. */
+  for (const cat of ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF'] as const) {
     const pts = PROFILE_TYPES.filter((p) => p.category === cat)
     const models = modelsForCategory(cat)
-    const singleEnded = cat === 'IBW' || cat === 'Broadband'
+    const singleEnded = cat === 'IBW' || cat === 'Broadband' || cat === 'RAN VNF'
     let i = 0
     while (activeCount[cat] < TARGET[cat]) {
       const pt = pts[i % pts.length]
@@ -122,7 +125,7 @@ export function buildWorkflows(): Workflow[] {
     const pt = PROFILE_TYPES[(k * 5) % PROFILE_TYPES.length]
     const models = modelsForCategory(pt.category)
     const dm = models[k % models.length]
-    const role = (pt.category === 'IBW' || pt.category === 'Broadband') ? undefined : (k % 2 ? 'Destination' : 'Source')
+    const role = (pt.category === 'IBW' || pt.category === 'Broadband' || pt.category === 'RAN VNF') ? undefined : (k % 2 ? 'Destination' : 'Source')
     push(pt, dm, role, state, String(2 + (k % 3)))
   })
 

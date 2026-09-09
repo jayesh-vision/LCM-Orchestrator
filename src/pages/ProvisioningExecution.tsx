@@ -15,7 +15,7 @@ import { ageLabel, CATEGORY_TONE, clockTime, DOMAIN_TONE, ORDER_TONE, relTime } 
 const EXEC_STATES: OrderState[] = [
   'Approved', 'Rejected', 'Queued', 'In progress', 'Ready', 'Failed', 'Reinstantiate',
 ]
-const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM']
+const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
 
 export default function ProvisioningExecution() {
   const orders = useStore((s) => s.orders)

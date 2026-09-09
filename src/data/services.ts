@@ -83,6 +83,16 @@ function attributes(intentId: string, conformance: Conformance, bandwidth: numbe
       { name: 'Wavelength channel', intent: `${1529 + (vlan % 40)}.${10 + (vlan % 90)}nm`, onDevice: dev(`${1529 + (vlan % 40)}.${10 + (vlan % 90)}nm`), source: 'Reserved', verifiedAt: verified, verdict: verdict(false) },
       { name: 'OTN FEC lock', intent: 'locked', onDevice: dev(drift ? 'unlocked' : 'locked'), source: 'Manual', verifiedAt: verified, verdict: verdict(drift) },
     )
+  } else if (intentId === 'INT-RAN-CU') {
+    base.splice(1, 0,
+      { name: 'PLMN', intent: '404-01', onDevice: dev('404-01'), source: 'Order', verifiedAt: verified, verdict: verdict(false) },
+      { name: 'NG-C interface state', intent: 'Connected', onDevice: dev(drift ? 'Disconnected' : 'Connected'), source: 'Manual', verifiedAt: verified, verdict: verdict(drift) },
+    )
+  } else if (intentId === 'INT-RAN-DU') {
+    base.splice(1, 0,
+      { name: 'PCI', intent: String(vlan % 504), onDevice: dev(String(vlan % 504)), source: 'Reserved', verifiedAt: verified, verdict: verdict(false) },
+      { name: 'Cell state', intent: 'Active', onDevice: dev(drift ? 'Inactive' : 'Active'), source: 'Manual', verifiedAt: verified, verdict: verdict(drift) },
+    )
   } else {
     base.splice(1, 0,
       { name: 'Customer ASN', intent: String(64500 + between(1, 900)), onDevice: dev(String(64500 + between(1, 900))), source: 'Order', verifiedAt: verified, verdict: verdict(false) },
@@ -111,6 +121,10 @@ function resources(intentId: string, vlan: number, eps: Endpoint[], state: Servi
     out.push({ kind: 'Frequency Channel', value: `FC-${1000 + vlan}`, pool: 'licensed microwave band', state: st })
   } else if (intentId.startsWith('INT-FIBER')) {
     out.push({ kind: 'Wavelength', value: `${1529 + (vlan % 40)}.${10 + (vlan % 90)}nm`, pool: 'ITU-T 100GHz grid', state: st })
+  } else if (intentId === 'INT-RAN-CU') {
+    out.push({ kind: 'IP block', value: `10.244.${between(1, 250)}.0/30`, pool: 'RAN NG-C/F1 transit', state: st })
+  } else if (intentId === 'INT-RAN-DU') {
+    out.push({ kind: 'PCI', value: String(vlan % 504), pool: '3GPP PCI plan', state: st })
   } else {
     out.push({ kind: 'IP block', value: `10.244.${between(1, 250)}.${between(0, 60) * 4}/30`, pool: 'WAN transit', state: st })
     out.push({ kind: 'ASN slot', value: String(64500 + between(1, 900)), pool: 'private ASN', state: st })
@@ -167,6 +181,17 @@ const FIBER_STATE_MIX: [ServiceState, number][] = [
 ]
 const FIBER_CONF_MIX: [Conformance, number][] = [
   ['Conformant', 62], ['Drifted', 8], ['Never proven', 8], ['Ghost', 2],
+]
+
+/* Radio domain, RAN VNF category — additive batch. Sums to 110. */
+const RAN_STATE_MIX: [ServiceState, number][] = [
+  ['Live', 92], ['Activating', 4], ['Degraded', 5], ['Suspended', 3], ['Ceased', 6],
+]
+const RAN_CONF_MIX: [Conformance, number][] = [
+  ['Conformant', 84], ['Drifted', 10], ['Never proven', 13], ['Ghost', 3],
+]
+const RAN_INTENT_MIX: [string, number][] = [
+  ['INT-RAN-CU', 42], ['INT-RAN-DU', 68],
 ]
 
 export function buildServices(): Service[] {
@@ -402,6 +427,57 @@ export function buildServices(): Service[] {
         ? intent.acceptance.map((a) => ({
           criterion: a.claim, layer: a.layer, expected: a.expected,
           actual: a.layer === 'service' ? `${(bandwidth * (0.98 + rnd() * 0.02)).toFixed(1)} Gbps` : 'up / locked',
+          passed: true,
+        }))
+        : undefined,
+    })
+  }
+
+  /* Radio domain, RAN VNF category — additive: 110 more services, single-ended
+     CU/DU instances (no far end — a VNF isn't a link between two devices). */
+  const vStates = shuffle(expand(RAN_STATE_MIX))
+  const vConfs = shuffle(expand(RAN_CONF_MIX))
+  const vIntents = shuffle(expand(RAN_INTENT_MIX))
+  for (let i = 0; i < 110; i += 1) {
+    const intentId = vIntents[i]
+    const intent = intentById(intentId)
+    let state = vStates[i]
+    let conformance = vConfs[i]
+    if (state === 'Ceased') conformance = 'Not checked'
+    if (state === 'Activating' && conformance === 'Drifted') conformance = 'Not checked'
+
+    const acct = pick(ACCOUNTS)
+    const vlan = between(100, 900)
+    const eps: Endpoint[] = [makeEndpoint('A', 500000 + i, intent.category)]
+    const bandwidth = pick([500, 1000, 2000, 5000])
+    const ageDays = between(3, 700)
+    const liveSince = new Date(now - ageDays * 86400000)
+    const proven = conformance === 'Never proven' || conformance === 'Ghost'
+      ? undefined
+      : new Date(now - between(1, 40) * 3600000).toISOString()
+    const years = Math.floor(ageDays / 365)
+    const months = Math.floor((ageDays % 365) / 30)
+
+    out.push({
+      id: `SVC-RAN-${pad(500000 + i * 3, 6)}`,
+      name: `${acct.name.split(' ')[0]} ${pick(SITES).city} ${intent.type === 'DU' ? 'gNB-DU' : 'gNB-CU'}`,
+      category: intent.category, type: intent.type, intentId,
+      accountId: acct.id, accountName: acct.name,
+      state, operState: OPER_FOR[state], conformance,
+      endpoints: eps,
+      attributes: attributes(intentId, conformance, bandwidth, vlan),
+      resources: resources(intentId, vlan, eps, state),
+      history: history(`v${i}`, liveSince, conformance),
+      bandwidthMbps: bandwidth,
+      monthlyValueInr: between(40000, 150000),
+      liveSince: liveSince.toISOString(),
+      lastProvenAt: proven,
+      ageLabel: years > 0 ? `${years} y ${months} m` : `${Math.max(1, months)} m`,
+      driftCount: conformance === 'Drifted' ? between(1, 2) : 0,
+      acceptanceEvidence: conformance === 'Conformant'
+        ? intent.acceptance.map((a) => ({
+          criterion: a.claim, layer: a.layer, expected: a.expected,
+          actual: a.layer === 'service' ? `${(bandwidth * (0.95 + rnd() * 0.05)).toFixed(1)} UEs / cell` : 'running / healthy',
           passed: true,
         }))
         : undefined,

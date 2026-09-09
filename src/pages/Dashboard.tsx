@@ -9,7 +9,7 @@ import { CHART, FILL, ColumnChart, StackedBar, TrendChart } from '@/components/c
 import { CATEGORY_TONE, relTime } from '@/lib/format'
 
 const DAY = 86400000
-const CATS = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM'] as const
+const CATS = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF'] as const
 const DOMAIN_ICON: Record<Domain, typeof Router> = { Transport: Router, Access: Wifi, Radio: RadioTower, Fiber: Cable }
 const DOMAIN_BLURB: Record<Domain, string> = {
   Transport: 'L2VPN, L3VPN and IBW — router/switch CLI provisioning across 8 vendors.',
