@@ -756,19 +756,24 @@ export function Note({ tone = 'info', className = '', children }: { tone?: 'info
 /* -------------------------------------------------------------- stepper */
 export function Stepper({ steps, current }: { steps: string[]; current: number }) {
   return (
-    <ol className="flex items-start gap-0 overflow-x-auto pb-1">
+    <ol className="flex items-start w-full overflow-x-auto pb-1">
       {steps.map((s, i) => {
         const done = i < current; const now = i === current
         return (
-          <li key={s} className="flex items-start shrink-0">
-            <div className="flex flex-col items-center gap-1.5 w-[104px] text-center">
-              <span className={`w-7 h-7 rounded-full grid place-items-center text-[12px] font-medium
+          /* display:contents lifts the circle+label column and the connector
+             out as direct flex children of the <ol> — semantic <li> markup
+             stays, but layout-wise the connector can flex-grow to fill
+             whatever width the card actually has, instead of the whole row
+             bunching up at a fixed width on the left of a wide card. */
+          <li key={s} className="contents">
+            <div className="flex flex-col items-center gap-1.5 text-center shrink-0 px-1" style={{ width: 132 }}>
+              <span className={`w-7 h-7 rounded-full grid place-items-center text-[12px] font-medium shrink-0
                 ${done ? 'vw-chip vw-chip--success' : now ? 'vw-chip vw-chip--info-solid' : 'vw-chip vw-chip--neutral'}`}>
                 {done ? '✓' : i + 1}
               </span>
               <span className={`text-[11px] leading-tight ${now ? 'text-ink-1 font-semibold' : 'text-ink-3'}`}>{s}</span>
             </div>
-            {i < steps.length - 1 && <span className={`h-px w-6 mt-3.5 ${done ? 'bg-good-200' : 'bg-line'}`} />}
+            {i < steps.length - 1 && <span className={`flex-1 h-px mt-3.5 min-w-6 ${done ? 'bg-good-200' : 'bg-line'}`} aria-hidden />}
           </li>
         )
       })}
