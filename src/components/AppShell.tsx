@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle, Bell, Boxes, CheckCircle2, CheckSquare, Database, FileBarChart,
-  Info, LayoutGrid, ListChecks, PanelLeftClose, PanelLeftOpen, PlayCircle, RefreshCcw, Search, Server, Workflow as WorkflowIcon, X,
+  Info, LayoutGrid, ListChecks, PanelLeftClose, PanelLeftOpen, RefreshCcw, Search, Server, Workflow as WorkflowIcon, X,
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import { Badge, Button } from './ui'
@@ -18,7 +18,6 @@ const GROUPS: { label: string | null; items: NavItem[] }[] = [
     label: 'Operate',
     items: [
       { to: '/requests', label: 'Provisioning Requests', icon: ListChecks },
-      { to: '/execution', label: 'Provisioning Execution', icon: PlayCircle },
       { to: '/inventory', label: 'Service Inventory', icon: Server },
       { to: '/change', label: 'Change & Cease', icon: RefreshCcw },
     ],
@@ -62,7 +61,6 @@ function useCounts() {
   const reports = useStore((s) => s.reports)
   return {
     '/requests': orders.length,
-    '/execution': orders.filter((o) => !['Draft', 'Planned'].includes(o.state)).length,
     '/inventory': services.length,
     '/change': orders.filter((o) => o.intent !== 'Create').length,
     '/workflows': workflows.length,

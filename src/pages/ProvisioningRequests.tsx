@@ -33,7 +33,7 @@ export default function ProvisioningRequests() {
   const [intent, setIntent] = useQueryState('intent', 'All')
   const [owner, setOwner] = useQueryState('owner', 'All')
   const [customer, setCustomer] = useQueryState('customer', '')
-  const [view, setView] = useQueryState<'listing' | 'insights'>('view', 'listing')
+  const [view, setView] = useQueryState<'listing' | 'insights'>('view', 'insights')
   const pushToast = useStore((st) => st.pushToast)
   const patch = useQueryPatch()
   const clear = useClearQuery(['q', 'domain', 'cat', 'state', 'intent', 'owner', 'customer'])
@@ -53,7 +53,7 @@ export default function ProvisioningRequests() {
     if (domain !== 'All') p.set('domain', domain)
     if (cat !== 'All') p.set('cat', cat)
     if (q) p.set('q', q)
-    if (view !== 'listing') p.set('view', view)
+    p.set('view', view)
     nav(`/execution${p.toString() ? `?${p}` : ''}`)
   }
   const [reject, setReject] = useState<Order | null>(null)

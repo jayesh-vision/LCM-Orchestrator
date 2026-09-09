@@ -51,7 +51,7 @@ export default function ProvisioningExecution() {
     if (domain !== 'All') p.set('domain', domain)
     if (cat !== 'All') p.set('cat', cat)
     if (q) p.set('q', q)
-    if (view !== 'listing') p.set('view', view)
+    p.set('view', view)
     nav(`/requests${p.toString() ? `?${p}` : ''}`)
   }
 
