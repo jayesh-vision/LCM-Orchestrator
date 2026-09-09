@@ -177,12 +177,12 @@ export function Chip({ active = false, count, children, onClick, tone }:
    any row of Stat cards on one screen stays visually symmetric by
    construction — nothing for a caller to forget to match. */
 export type StatTone = 'good' | 'warn' | 'crit' | 'plum'
-const STAT_TONE: Record<StatTone | 'brand', { value: string; iconBg: string; iconFg: string; ring: string; bar: string }> = {
-  brand: { value: '', iconBg: 'bg-brand-50', iconFg: 'text-brand-600', ring: 'ring-brand-200/60', bar: 'bg-brand-500' },
-  good: { value: 'text-good-700', iconBg: 'bg-good-50', iconFg: 'text-good-700', ring: 'ring-good-200/70', bar: 'bg-good-500' },
-  warn: { value: 'text-warn-700', iconBg: 'bg-warn-50', iconFg: 'text-warn-700', ring: 'ring-warn-200/70', bar: 'bg-warn-500' },
-  crit: { value: 'text-crit-500', iconBg: 'bg-crit-50', iconFg: 'text-crit-500', ring: 'ring-crit-200/70', bar: 'bg-crit-500' },
-  plum: { value: 'text-plum-700', iconBg: 'bg-plum-50', iconFg: 'text-plum-700', ring: 'ring-plum-200/70', bar: 'bg-plum-500' },
+const STAT_TONE: Record<StatTone | 'brand', { value: string; iconBg: string; iconFg: string; ring: string }> = {
+  brand: { value: '', iconBg: 'bg-brand-50', iconFg: 'text-brand-600', ring: 'ring-brand-200/60' },
+  good: { value: 'text-good-700', iconBg: 'bg-good-50', iconFg: 'text-good-700', ring: 'ring-good-200/70' },
+  warn: { value: 'text-warn-700', iconBg: 'bg-warn-50', iconFg: 'text-warn-700', ring: 'ring-warn-200/70' },
+  crit: { value: 'text-crit-500', iconBg: 'bg-crit-50', iconFg: 'text-crit-500', ring: 'ring-crit-200/70' },
+  plum: { value: 'text-plum-700', iconBg: 'bg-plum-50', iconFg: 'text-plum-700', ring: 'ring-plum-200/70' },
 }
 
 export function Stat({ label, value, note, tone, delta, onClick, drillLabel, icon: Icon, progress, info }:
@@ -228,10 +228,9 @@ export function Stat({ label, value, note, tone, delta, onClick, drillLabel, ico
       {/* Anchored to the bottom so the note line sits at the same height on
          every card in a KPI row, whatever the value/delta/progress above it. */}
       {note && <div className="vw-card-metric-label-sub mt-auto pt-2.5 leading-snug">{note}</div>}
-      <span className={`absolute inset-x-0 bottom-0 h-[3px] ${c.bar}`} style={{ borderRadius: '0 0 var(--radius-card) var(--radius-card)' }} aria-hidden />
     </>
   )
-  const base = 'vw-card-section vw-flex vw-flex-col relative overflow-hidden pb-[calc(var(--vw-space-lg)+3px)]'
+  const base = 'vw-card-section vw-flex vw-flex-col'
   if (!onClick) return <div className={base}>{inner}</div>
   return (
     <button
@@ -734,9 +733,17 @@ export const Mono = ({ children, className = '' }: { children: ReactNode; classN
   <span className={`font-mono text-[12.5px] ${className}`}>{children}</span>
 
 /* -------------------------------------------------------------- progress */
+/* Deliberately lighter than the badge palette (--color-good-500 etc, which
+   is really emerald/red/purple-600) — a thin bar covers more visual area
+   than a small status pill, so the 600-weight that reads fine on a chip
+   reads as glaring across a whole card. Same softening already applied to
+   the chart FILL palette in charts.tsx. */
+const PROGRESS_FILL: Record<'brand' | 'good' | 'warn' | 'crit' | 'plum', string> = {
+  brand: 'bg-brand-500', good: 'bg-[#10b981]', warn: 'bg-warn-500', crit: 'bg-[#ef4444]', plum: 'bg-[#a855f7]',
+}
 export function Progress({ value, tone = 'brand', className = '' }:
 { value: number; tone?: 'brand' | 'good' | 'warn' | 'crit' | 'plum'; className?: string }) {
-  const c = tone === 'good' ? 'bg-good-500' : tone === 'warn' ? 'bg-warn-500' : tone === 'crit' ? 'bg-crit-500' : tone === 'plum' ? 'bg-plum-500' : 'bg-brand-500'
+  const c = PROGRESS_FILL[tone]
   return (
     <div className={`h-1.5 rounded-full bg-line-soft overflow-hidden ${className}`}>
       <div className={`h-full rounded-full transition-all duration-500 ${c}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
