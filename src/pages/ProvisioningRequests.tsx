@@ -1,15 +1,15 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
-import { CheckCircle2, Download, Eye, ListChecks, Plus, SlidersHorizontal, Workflow, XCircle } from 'lucide-react'
+import { BarChart3, CheckCircle2, Download, Eye, ListChecks, Plus, SlidersHorizontal, Workflow, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { Category, Domain, Order, OrderState } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Button, CellMain, CellSub, Chip, DataTable, Field,
-  FilterBanner, Kebab, Modal, Mono, Progress, type Column,
+  FilterBanner, Kebab, Modal, Mono, Progress, SegmentedToggle, type Column,
 } from '@/components/ui'
-import { CategoryCard } from '@/components/charts'
+import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { CATEGORY_TONE, DOMAIN_TONE, ORDER_TONE } from '@/lib/format'
 
 const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
@@ -33,6 +33,7 @@ export default function ProvisioningRequests() {
   const [intent, setIntent] = useQueryState('intent', 'All')
   const [owner, setOwner] = useQueryState('owner', 'All')
   const [customer, setCustomer] = useQueryState('customer', '')
+  const [view, setView] = useQueryState<'listing' | 'insights'>('view', 'listing')
   const pushToast = useStore((st) => st.pushToast)
   const patch = useQueryPatch()
   const clear = useClearQuery(['q', 'domain', 'cat', 'state', 'intent', 'owner', 'customer'])
@@ -43,6 +44,18 @@ export default function ProvisioningRequests() {
   }
   const pickDomain = (d: Domain) => setDomainScoped(domain === d ? 'All' : d)
   const resultsRef = useScrollToResultsOnDrillIn(domain !== 'All' || cat !== 'All' || state !== 'All' || intent !== 'All' || owner !== 'All')
+  /* The Requests⟷Execution toggle is a real navigation — the two screens'
+     state vocabularies differ (Requests has Draft/Planned/Validated/Invalid,
+     Execution doesn't), so only domain/cat/q/view carry across. */
+  const switchMode = (m: 'requests' | 'execution') => {
+    if (m === 'requests') return
+    const p = new URLSearchParams()
+    if (domain !== 'All') p.set('domain', domain)
+    if (cat !== 'All') p.set('cat', cat)
+    if (q) p.set('q', q)
+    if (view !== 'listing') p.set('view', view)
+    nav(`/execution${p.toString() ? `?${p}` : ''}`)
+  }
   const [reject, setReject] = useState<Order | null>(null)
   const [rejectNote, setRejectNote] = useState('')
 
@@ -69,6 +82,24 @@ export default function ProvisioningRequests() {
     }
     return true
   }), [orders, domain, cat, state, intent, owner, customer, q]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Same scope as `filtered` but ignoring the status filter itself — the
+     Insights view breaks requests down BY status, so it needs the full
+     domain/category/search selection regardless of which status slice
+     Listing currently has open. */
+  const scoped = useMemo(() => orders.filter((o) => {
+    if (domain !== 'All' && domainOf(o.category) !== domain) return false
+    if (cat !== 'All' && o.category !== cat) return false
+    if (intent !== 'All' && o.intent !== intent) return false
+    if (owner !== 'All' && o.owner !== owner) return false
+    if (customer && !o.accountName.toLowerCase().includes(customer.toLowerCase())) return false
+    if (q) {
+      const t = q.toLowerCase()
+      if (!(o.id.toLowerCase().includes(t) || o.code.toLowerCase().includes(t)
+        || o.name.toLowerCase().includes(t) || o.accountName.toLowerCase().includes(t))) return false
+    }
+    return true
+  }), [orders, domain, cat, intent, owner, customer, q]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
   const columns: Column<Order>[] = [
@@ -134,6 +165,15 @@ export default function ProvisioningRequests() {
   return (
     <>
 
+      <div className="flex items-center justify-between vw-wrap gap-3">
+        <SegmentedToggle
+          options={[{ value: 'requests', label: 'Requests' }, { value: 'execution', label: 'Execution' }]}
+          value="requests" onChange={switchMode} />
+        <SegmentedToggle
+          options={[{ value: 'listing', label: 'Listing', icon: ListChecks }, { value: 'insights', label: 'Insights', icon: BarChart3 }]}
+          value={view} onChange={setView} />
+      </div>
+
       <FilterBanner
         count={filtered.length} noun="requests" onClear={clear}
         filters={[
@@ -153,83 +193,62 @@ export default function ProvisioningRequests() {
         ))}
       </div>
 
-      {/* category summary cards, one per service type — column count tracks
-         how many categories the selected domain actually has, so a single-
-         category domain doesn't leave empty grid columns beside its card. */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.min(domainCats.length, 4)}, minmax(240px, 1fr))` }}>
-        {domainCats.map((c) => {
-          const list = byCategory.get(c) ?? []
-          const count = (st: OrderState) => list.filter((o) => o.state === st).length
-          const seg = (label: string, value: number, fill: 'good' | 'brand' | 'none' | 'crit', states: string) =>
-            ({ label, value, fill, onClick: () => patch({ cat: c, state: states }) })
-          return (
-            <CategoryCard
-              key={c}
-              chip={<Badge tone={CATEGORY_TONE[c]}>{c}</Badge>}
-              total={list.length} noun="requests"
-              info={`All ${c} requests grouped by where they stand. Ready went live, In progress is executing or queued, Waiting has not yet been approved, Failed needs intervention. Click a legend row to open exactly those requests.`}
-              onOpen={() => patch({ cat: c, state: null })}
-              segments={[
-                seg('Ready', count('Ready'), 'good', 'Ready'),
-                seg('In progress', count('In progress') + count('Queued') + count('Approved'), 'brand', 'In progress,Queued,Approved'),
-                seg('Waiting', count('Draft') + count('Planned') + count('Validated'), 'none', 'Draft,Planned,Validated'),
-                seg('Failed', count('Failed') + count('Rejected') + count('Invalid') + count('Reinstantiate'), 'crit', 'Failed,Rejected,Invalid,Reinstantiate'),
-              ]}
-            />
-          )
-        })}
-      </div>
-
-      <div ref={resultsRef} />
-      <DataTable
-        rows={filtered}
-        total={orders.length}
-        columns={columns}
-        pageSize={12}
-        onRowClick={(r) => nav(`/requests/${r.id}`)}
-        toolbar={{
-          search: { value: q, onChange: setQ, placeholder: 'Name, Code' },
-          /* Quick chips are domain + category — every other filter lives in the popover. */
-          chips: [
-            ...DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
-            ...domainCats.map((c) => (
-              <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>
-            )),
-          ],
-          filters: [
-            { key: 'domain', label: 'Domain', value: domain, onChange: (v) => setDomainScoped(v as Domain | 'All'),
-              options: DOMAINS.map((d) => ({ value: d, label: d, count: orders.filter((o) => domainOf(o.category) === d).length })) },
-            {
-              key: 'state', label: 'Status', value: state, onChange: (v) => setState(v),
-              options: [
-                ...STATE_ORDER.filter((st) => orders.some((o) => o.state === st))
-                  .map((st) => ({ value: st, label: st, count: orders.filter((o) => o.state === st).length })),
-                { value: 'Validated', label: 'Waiting for approval' },
-                { value: 'Approved,Queued', label: 'Ready to run' },
-                { value: 'Failed,Rejected,Invalid,Reinstantiate', label: 'Blocked' },
+      {view === 'insights' ? (
+        <ProvisioningInsights mode="requests" orders={scoped} onDrill={(p) => patch({ ...p, view: 'listing' })} />
+      ) : (
+        <>
+          <div ref={resultsRef} />
+          <DataTable
+            rows={filtered}
+            total={orders.length}
+            columns={columns}
+            pageSize={12}
+            onRowClick={(r) => nav(`/requests/${r.id}`)}
+            toolbar={{
+              search: { value: q, onChange: setQ, placeholder: 'Name, Code' },
+              /* Quick chips are domain + category — every other filter lives in the popover. */
+              chips: [
+                ...DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
+                ...domainCats.map((c) => (
+                  <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>
+                )),
               ],
-            },
-            { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
-              options: domainCats.map((c) => ({ value: c, label: c, count: (byCategory.get(c) ?? []).length })) },
-            { key: 'intent', label: 'Intent', value: intent, onChange: setIntent,
-              options: ['Create', 'Modify', 'Suspend', 'Resume', 'Cease', 'Re-prove']
-                .filter((i) => orders.some((o) => o.intent === i))
-                .map((i) => ({ value: i, label: i, count: orders.filter((o) => o.intent === i).length })) },
-            { key: 'owner', label: 'Owner', value: owner, onChange: setOwner,
-              options: [...new Set(orders.map((o) => o.owner).filter(Boolean))].sort()
-                .map((o) => ({ value: o as string, label: o as string, count: orders.filter((x) => x.owner === o).length })) },
-            { key: 'customer', label: 'Customer Name', type: 'text', value: customer, onChange: setCustomer },
-            { key: 'q', label: 'Name / Code', type: 'text', value: q, onChange: setQ },
-          ],
-          onResetFilters: clear,
-          onRefresh: () => pushToast('info', 'Request list refreshed.'),
-          actions: [
-            { label: 'New network service', icon: Plus, onClick: () => nav('/requests/new') },
-            { label: 'Export to CSV', icon: Download, onClick: () => pushToast('info', 'Export queued — the file will appear in Reports.') },
-            { label: 'Column settings', icon: SlidersHorizontal, onClick: () => pushToast('info', 'Column settings are not wired in this prototype.') },
-          ],
-        }}
-      />
+              filters: [
+                { key: 'domain', label: 'Domain', value: domain, onChange: (v) => setDomainScoped(v as Domain | 'All'),
+                  options: DOMAINS.map((d) => ({ value: d, label: d, count: orders.filter((o) => domainOf(o.category) === d).length })) },
+                {
+                  key: 'state', label: 'Status', value: state, onChange: (v) => setState(v),
+                  options: [
+                    ...STATE_ORDER.filter((st) => orders.some((o) => o.state === st))
+                      .map((st) => ({ value: st, label: st, count: orders.filter((o) => o.state === st).length })),
+                    { value: 'Validated', label: 'Waiting for approval' },
+                    { value: 'Approved,Queued', label: 'Ready to run' },
+                    { value: 'Failed,Rejected,Invalid,Reinstantiate', label: 'Blocked' },
+                  ],
+                },
+                { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
+                  options: domainCats.map((c) => ({ value: c, label: c, count: (byCategory.get(c) ?? []).length })) },
+                { key: 'intent', label: 'Intent', value: intent, onChange: setIntent,
+                  options: ['Create', 'Modify', 'Suspend', 'Resume', 'Cease', 'Re-prove']
+                    .filter((i) => orders.some((o) => o.intent === i))
+                    .map((i) => ({ value: i, label: i, count: orders.filter((o) => o.intent === i).length })) },
+                { key: 'owner', label: 'Owner', value: owner, onChange: setOwner,
+                  options: [...new Set(orders.map((o) => o.owner).filter(Boolean))].sort()
+                    .map((o) => ({ value: o as string, label: o as string, count: orders.filter((x) => x.owner === o).length })) },
+                { key: 'customer', label: 'Customer Name', type: 'text', value: customer, onChange: setCustomer },
+                { key: 'q', label: 'Name / Code', type: 'text', value: q, onChange: setQ },
+              ],
+              onResetFilters: clear,
+              onRefresh: () => pushToast('info', 'Request list refreshed.'),
+              actions: [
+                { label: 'New network service', icon: Plus, onClick: () => nav('/requests/new') },
+                { label: 'Export to CSV', icon: Download, onClick: () => pushToast('info', 'Export queued — the file will appear in Reports.') },
+                { label: 'Column settings', icon: SlidersHorizontal, onClick: () => pushToast('info', 'Column settings are not wired in this prototype.') },
+              ],
+            }}
+          />
+        </>
+      )}
 
       {/* -------- reject -------- */}
       <Modal

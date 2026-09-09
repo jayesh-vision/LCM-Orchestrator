@@ -1,15 +1,15 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
-import { Download, Eye, ListChecks, PlayCircle, Plus, ShieldCheck, Workflow } from 'lucide-react'
+import { BarChart3, Download, Eye, ListChecks, PlayCircle, Plus, ShieldCheck, Workflow } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { Category, Domain, Order, OrderState } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Button, CellMain, CellSub, Chip, DataTable, Drawer,
-  FilterBanner, KV, Kebab, Modal, Mono, Note, Progress, type Column,
+  FilterBanner, KV, Kebab, Modal, Mono, Note, Progress, SegmentedToggle, type Column,
 } from '@/components/ui'
-import { CategoryCard } from '@/components/charts'
+import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { ageLabel, CATEGORY_TONE, clockTime, DOMAIN_TONE, ORDER_TONE, relTime } from '@/lib/format'
 
 const EXEC_STATES: OrderState[] = [
@@ -19,6 +19,7 @@ const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave
 
 export default function ProvisioningExecution() {
   const orders = useStore((s) => s.orders)
+  const runs = useStore((s) => s.runs)
   const runsForOrder = useStore((s) => s.runsForOrder)
   const startRun = useStore((s) => s.startRun)
   const retryOrder = useStore((s) => s.retryOrder)
@@ -30,6 +31,7 @@ export default function ProvisioningExecution() {
   const [cat, setCat] = useQueryState<Category | 'All'>('cat', 'All')
   const [state, setState] = useQueryState<OrderState | 'All' | string>('state', 'All')
   const stateList = state === 'All' ? [] : state.split(',')
+  const [view, setView] = useQueryState<'listing' | 'insights'>('view', 'listing')
   const patch = useQueryPatch()
   const clear = useClearQuery(['q', 'domain', 'cat', 'state'])
   const domainCats = domain === 'All' ? CATEGORIES : CATEGORIES_BY_DOMAIN[domain]
@@ -41,6 +43,17 @@ export default function ProvisioningExecution() {
   const resultsRef = useScrollToResultsOnDrillIn(domain !== 'All' || cat !== 'All' || state !== 'All')
   const [verify, setVerify] = useState<Order | null>(null)
   const [creds, setCreds] = useState<Order | null>(null)
+  /* The Requests⟷Execution toggle is a real navigation — the two screens'
+     state vocabularies differ, so only domain/cat/q/view carry across. */
+  const switchMode = (m: 'requests' | 'execution') => {
+    if (m === 'execution') return
+    const p = new URLSearchParams()
+    if (domain !== 'All') p.set('domain', domain)
+    if (cat !== 'All') p.set('cat', cat)
+    if (q) p.set('q', q)
+    if (view !== 'listing') p.set('view', view)
+    nav(`/requests${p.toString() ? `?${p}` : ''}`)
+  }
 
   /* Execution is the post-decision queue: drafts and anything still mid
      pre-validation (Planned) or awaiting a decision (Validated, Invalid)
@@ -57,6 +70,20 @@ export default function ProvisioningExecution() {
     }
     return true
   }), [pool, domain, cat, state, q]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Same scope as `filtered` but ignoring the status filter itself — the
+     Insights view breaks orders down BY status, so it needs the full
+     domain/category/search selection regardless of which status slice
+     Listing currently has open. */
+  const scoped = useMemo(() => pool.filter((o) => {
+    if (domain !== 'All' && domainOf(o.category) !== domain) return false
+    if (cat !== 'All' && o.category !== cat) return false
+    if (q) {
+      const t = q.toLowerCase()
+      if (!(o.id.toLowerCase().includes(t) || o.name.toLowerCase().includes(t) || o.accountName.toLowerCase().includes(t))) return false
+    }
+    return true
+  }), [pool, domain, cat, q]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const n = (s: OrderState) => pool.filter((o) => o.state === s).length
 
@@ -111,6 +138,15 @@ export default function ProvisioningExecution() {
   return (
     <>
 
+      <div className="flex items-center justify-between vw-wrap gap-3">
+        <SegmentedToggle
+          options={[{ value: 'requests', label: 'Requests' }, { value: 'execution', label: 'Execution' }]}
+          value="execution" onChange={switchMode} />
+        <SegmentedToggle
+          options={[{ value: 'listing', label: 'Listing', icon: ListChecks }, { value: 'insights', label: 'Insights', icon: BarChart3 }]}
+          value={view} onChange={setView} />
+      </div>
+
       <FilterBanner
         count={filtered.length} noun="requests" onClear={clear}
         filters={[
@@ -127,56 +163,41 @@ export default function ProvisioningExecution() {
         ))}
       </div>
 
-      <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.min(domainCats.length, 4)}, minmax(240px, 1fr))` }}>
-        {domainCats.map((c) => {
-          const list = pool.filter((o) => o.category === c)
-          const cnt = (st: OrderState) => list.filter((o) => o.state === st).length
-          const seg = (label: string, value: number, fill: 'good' | 'brand' | 'none' | 'crit', states: string) =>
-            ({ label, value, fill, onClick: () => patch({ cat: c, state: states }) })
-          return (
-            <CategoryCard
-              key={c}
-              chip={<Badge tone={CATEGORY_TONE[c]}>{c}</Badge>}
-              total={list.length} noun="in execution"
-              info={`${c} orders in the execution pool. Ready finished successfully, In progress is running or queued behind a change window, Failed was rolled back and can be retried. Click a legend row to open exactly those orders.`}
-              onOpen={() => patch({ cat: c, state: null })}
-              segments={[
-                seg('Ready', cnt('Ready'), 'good', 'Ready'),
-                seg('In progress', cnt('In progress') + cnt('Queued') + cnt('Approved'), 'brand', 'In progress,Queued,Approved'),
-                seg('Failed', cnt('Failed') + cnt('Rejected') + cnt('Reinstantiate'), 'crit', 'Failed,Rejected,Reinstantiate'),
-              ]}
-            />
-          )
-        })}
-      </div>
-
-      <div ref={resultsRef} />
-      <DataTable
-        rows={filtered} total={pool.length} columns={columns} pageSize={12}
-        onRowClick={(r) => nav(`/execution/${r.id}?tab=lifecycle`)}
-        toolbar={{
-          search: { value: q, onChange: setQ, placeholder: 'Name, Code' },
-          chips: [
-            ...DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
-            ...domainCats.map((c) => <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>),
-          ],
-          filters: [
-            { key: 'domain', label: 'Domain', value: domain, onChange: (v) => setDomainScoped(v as Domain | 'All'),
-              options: DOMAINS.map((d) => ({ value: d, label: d, count: pool.filter((o) => domainOf(o.category) === d).length })) },
-            { key: 'state', label: 'Status', value: state, onChange: (v) => setState(v),
-              options: [
-                ...EXEC_STATES.filter((st) => n(st) > 0).map((st) => ({ value: st, label: st, count: n(st) })),
-                { value: 'Approved,Queued', label: 'Ready to run' },
-              ] },
-            { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
-              options: domainCats.map((c) => ({ value: c, label: c, count: pool.filter((o) => o.category === c).length })) },
-            { key: 'q', label: 'Name / Code', type: 'text', value: q, onChange: setQ },
-          ],
-          onResetFilters: clear,
-          onRefresh: () => pushToast('info', 'Execution queue refreshed.'),
-          actions: [{ label: 'New network service', icon: Plus, onClick: () => nav('/requests/new') }, { label: 'Export to CSV', icon: Download, onClick: () => pushToast('info', 'Export queued — the file will appear in Reports.') }],
-        }}
-      />
+      {view === 'insights' ? (
+        <ProvisioningInsights mode="execution" orders={scoped} runs={runs} onDrill={(p) => patch({ ...p, view: 'listing' })} />
+      ) : (
+        <>
+          <div ref={resultsRef} />
+          <DataTable
+            rows={filtered} total={pool.length} columns={columns} pageSize={12}
+            onRowClick={(r) => nav(`/execution/${r.id}?tab=lifecycle`)}
+            toolbar={{
+              search: { value: q, onChange: setQ, placeholder: 'Name, Code' },
+              chips: [
+                ...DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
+                ...domainCats.map((c) => (
+                  <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>
+                )),
+              ],
+              filters: [
+                { key: 'domain', label: 'Domain', value: domain, onChange: (v) => setDomainScoped(v as Domain | 'All'),
+                  options: DOMAINS.map((d) => ({ value: d, label: d, count: pool.filter((o) => domainOf(o.category) === d).length })) },
+                { key: 'state', label: 'Status', value: state, onChange: (v) => setState(v),
+                  options: [
+                    ...EXEC_STATES.filter((st) => n(st) > 0).map((st) => ({ value: st, label: st, count: n(st) })),
+                    { value: 'Approved,Queued', label: 'Ready to run' },
+                  ] },
+                { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
+                  options: domainCats.map((c) => ({ value: c, label: c, count: pool.filter((o) => o.category === c).length })) },
+                { key: 'q', label: 'Name / Code', type: 'text', value: q, onChange: setQ },
+              ],
+              onResetFilters: clear,
+              onRefresh: () => pushToast('info', 'Execution queue refreshed.'),
+              actions: [{ label: 'New network service', icon: Plus, onClick: () => nav('/requests/new') }, { label: 'Export to CSV', icon: Download, onClick: () => pushToast('info', 'Export queued — the file will appear in Reports.') }],
+            }}
+          />
+        </>
+      )}
 
       {/* -------- verify details -------- */}
       <Drawer

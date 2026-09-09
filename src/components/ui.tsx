@@ -148,6 +148,33 @@ export function Tabs<T extends string>({ tabs, value, onChange }:
   )
 }
 
+/* ------------------------------------------------------------ segmented
+   toggle. A compact 2 (or 3) option switch — inline-track pill container,
+   the active option lifted onto a white "thumb". For mode/view switches
+   that live in a page header, not a form. */
+export function SegmentedToggle<T extends string>({ options, value, onChange, size = 'md' }:
+{ options: { value: T; label: string; icon?: IconType }[]; value: T; onChange: (v: T) => void; size?: 'sm' | 'md' }) {
+  return (
+    <div role="tablist" className={`inline-flex items-center gap-0.5 rounded-full bg-plane p-0.5 shrink-0 ${size === 'sm' ? 'text-[12px]' : 'text-[13px]'}`}>
+      {options.map((o) => {
+        const active = o.value === value
+        return (
+          <button
+            key={o.value} type="button" role="tab" aria-selected={active}
+            onClick={() => onChange(o.value)}
+            className={`flex items-center gap-1.5 rounded-full font-medium whitespace-nowrap transition-colors
+              ${size === 'sm' ? 'px-2.5 py-1' : 'px-3.5 py-1.5'}
+              ${active ? 'bg-white text-ink-1 shadow-sm' : 'text-ink-3 hover:text-ink-1'}`}
+          >
+            {o.icon && <o.icon size={13} />}
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 /* ----------------------------------------------------------------- chips */
 /* NST registry: .vw-chip.is-clickable; the selected state uses the solid
    variant rather than an invented active colour. */
