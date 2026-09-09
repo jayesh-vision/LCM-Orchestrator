@@ -11,7 +11,7 @@ import {
 } from '@/components/ui'
 import { CATEGORY_TONE, DOMAIN_TONE, shortDate } from '@/lib/format'
 
-const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband']
+const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM']
 
 export default function ProfileTypes() {
   const profileTypes = useStore((s) => s.profileTypes)

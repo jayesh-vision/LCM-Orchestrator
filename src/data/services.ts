@@ -73,6 +73,16 @@ function attributes(intentId: string, conformance: Conformance, bandwidth: numbe
       { name: 'WAN VLAN', intent: String(vlan), onDevice: dev(String(vlan)), source: 'Reserved', verifiedAt: verified, verdict: verdict(false) },
       { name: 'SSID broadcasting', intent: 'true', onDevice: dev(drift ? 'false' : 'true'), source: 'Order', verifiedAt: verified, verdict: verdict(drift) },
     )
+  } else if (intentId.startsWith('INT-RADIO')) {
+    base.splice(1, 0,
+      { name: 'Frequency channel', intent: `FC-${1000 + vlan}`, onDevice: dev(`FC-${1000 + vlan}`), source: 'Reserved', verifiedAt: verified, verdict: verdict(false) },
+      { name: 'Received signal level', intent: 'within budget', onDevice: dev(drift ? 'out of range' : 'within budget'), source: 'Manual', verifiedAt: verified, verdict: verdict(drift) },
+    )
+  } else if (intentId.startsWith('INT-FIBER')) {
+    base.splice(1, 0,
+      { name: 'Wavelength channel', intent: `${1529 + (vlan % 40)}.${10 + (vlan % 90)}nm`, onDevice: dev(`${1529 + (vlan % 40)}.${10 + (vlan % 90)}nm`), source: 'Reserved', verifiedAt: verified, verdict: verdict(false) },
+      { name: 'OTN FEC lock', intent: 'locked', onDevice: dev(drift ? 'unlocked' : 'locked'), source: 'Manual', verifiedAt: verified, verdict: verdict(drift) },
+    )
   } else {
     base.splice(1, 0,
       { name: 'Customer ASN', intent: String(64500 + between(1, 900)), onDevice: dev(String(64500 + between(1, 900))), source: 'Order', verifiedAt: verified, verdict: verdict(false) },
@@ -97,6 +107,10 @@ function resources(intentId: string, vlan: number, eps: Endpoint[], state: Servi
   } else if (intentId.startsWith('INT-ACCESS')) {
     out.push({ kind: 'VLAN', value: String(vlan), pool: 'Access WAN VLAN', state: st })
     out.push({ kind: 'CPE Serial', value: `SN-${between(100000, 999999)}`, pool: 'CPE stock', state: st })
+  } else if (intentId.startsWith('INT-RADIO')) {
+    out.push({ kind: 'Frequency Channel', value: `FC-${1000 + vlan}`, pool: 'licensed microwave band', state: st })
+  } else if (intentId.startsWith('INT-FIBER')) {
+    out.push({ kind: 'Wavelength', value: `${1529 + (vlan % 40)}.${10 + (vlan % 90)}nm`, pool: 'ITU-T 100GHz grid', state: st })
   } else {
     out.push({ kind: 'IP block', value: `10.244.${between(1, 250)}.${between(0, 60) * 4}/30`, pool: 'WAN transit', state: st })
     out.push({ kind: 'ASN slot', value: String(64500 + between(1, 900)), pool: 'private ASN', state: st })
@@ -137,6 +151,22 @@ const ACCESS_CONF_MIX: [Conformance, number][] = [
 ]
 const ACCESS_INTENT_MIX: [string, number][] = [
   ['INT-ACCESS-RESIDENTIAL', 200], ['INT-ACCESS-BUSINESS', 60],
+]
+
+/* Radio domain — additive batch. Sums to 120. */
+const RADIO_STATE_MIX: [ServiceState, number][] = [
+  ['Live', 100], ['Activating', 3], ['Degraded', 6], ['Suspended', 4], ['Ceased', 7],
+]
+const RADIO_CONF_MIX: [Conformance, number][] = [
+  ['Conformant', 92], ['Drifted', 12], ['Never proven', 13], ['Ghost', 3],
+]
+
+/* Fiber domain — additive batch. Sums to 80. */
+const FIBER_STATE_MIX: [ServiceState, number][] = [
+  ['Live', 68], ['Activating', 2], ['Degraded', 4], ['Suspended', 2], ['Ceased', 4],
+]
+const FIBER_CONF_MIX: [Conformance, number][] = [
+  ['Conformant', 62], ['Drifted', 8], ['Never proven', 8], ['Ghost', 2],
 ]
 
 export function buildServices(): Service[] {
@@ -274,6 +304,104 @@ export function buildServices(): Service[] {
         ? intent.acceptance.map((a) => ({
           criterion: a.claim, layer: a.layer, expected: a.expected,
           actual: a.layer === 'service' ? `${(bandwidth * (0.9 + rnd() * 0.1)).toFixed(1)} Mbps` : 'Online / broadcasting',
+          passed: true,
+        }))
+        : undefined,
+    })
+  }
+
+  /* Radio domain — additive: 120 more services, two-ended microwave links. */
+  const rStates = shuffle(expand(RADIO_STATE_MIX))
+  const rConfs = shuffle(expand(RADIO_CONF_MIX))
+  for (let i = 0; i < 120; i += 1) {
+    const intentId = 'INT-RADIO-PTP'
+    const intent = intentById(intentId)
+    let state = rStates[i]
+    let conformance = rConfs[i]
+    if (state === 'Ceased') conformance = 'Not checked'
+    if (state === 'Activating' && conformance === 'Drifted') conformance = 'Not checked'
+
+    const acct = pick(ACCOUNTS)
+    const vlan = between(100, 900)
+    const eps: Endpoint[] = [makeEndpoint('A', 300000 + i * 2, intent.category), makeEndpoint('Z', 300000 + i * 2 + 1, intent.category)]
+    const bandwidth = pick([50, 100, 200, 500, 1000])
+    const ageDays = between(3, 1200)
+    const liveSince = new Date(now - ageDays * 86400000)
+    const proven = conformance === 'Never proven' || conformance === 'Ghost'
+      ? undefined
+      : new Date(now - between(1, 40) * 3600000).toISOString()
+    const years = Math.floor(ageDays / 365)
+    const months = Math.floor((ageDays % 365) / 30)
+
+    out.push({
+      id: `SVC-RAD-${pad(300000 + i * 3, 6)}`,
+      name: `${acct.name.split(' ')[0]} ${pick(SITES).city} microwave hop`,
+      category: intent.category, type: intent.type, intentId,
+      accountId: acct.id, accountName: acct.name,
+      state, operState: OPER_FOR[state], conformance,
+      endpoints: eps,
+      attributes: attributes(intentId, conformance, bandwidth, vlan),
+      resources: resources(intentId, vlan, eps, state),
+      history: history(`r${i}`, liveSince, conformance),
+      bandwidthMbps: bandwidth,
+      monthlyValueInr: between(20000, 80000),
+      liveSince: liveSince.toISOString(),
+      lastProvenAt: proven,
+      ageLabel: years > 0 ? `${years} y ${months} m` : `${Math.max(1, months)} m`,
+      driftCount: conformance === 'Drifted' ? between(1, 2) : 0,
+      acceptanceEvidence: conformance === 'Conformant'
+        ? intent.acceptance.map((a) => ({
+          criterion: a.claim, layer: a.layer, expected: a.expected,
+          actual: a.layer === 'service' ? `${(bandwidth * (0.95 + rnd() * 0.05)).toFixed(1)} Mbps` : 'up / within budget',
+          passed: true,
+        }))
+        : undefined,
+    })
+  }
+
+  /* Fiber domain — additive: 80 more services, two-ended DWDM circuits. */
+  const fStates = shuffle(expand(FIBER_STATE_MIX))
+  const fConfs = shuffle(expand(FIBER_CONF_MIX))
+  for (let i = 0; i < 80; i += 1) {
+    const intentId = 'INT-FIBER-WAVELENGTH'
+    const intent = intentById(intentId)
+    let state = fStates[i]
+    let conformance = fConfs[i]
+    if (state === 'Ceased') conformance = 'Not checked'
+    if (state === 'Activating' && conformance === 'Drifted') conformance = 'Not checked'
+
+    const acct = pick(ACCOUNTS)
+    const vlan = between(100, 900)
+    const eps: Endpoint[] = [makeEndpoint('A', 400000 + i * 2, intent.category), makeEndpoint('Z', 400000 + i * 2 + 1, intent.category)]
+    const bandwidth = pick([10, 100, 200, 400])
+    const ageDays = between(3, 1200)
+    const liveSince = new Date(now - ageDays * 86400000)
+    const proven = conformance === 'Never proven' || conformance === 'Ghost'
+      ? undefined
+      : new Date(now - between(1, 40) * 3600000).toISOString()
+    const years = Math.floor(ageDays / 365)
+    const months = Math.floor((ageDays % 365) / 30)
+
+    out.push({
+      id: `SVC-FIB-${pad(400000 + i * 3, 6)}`,
+      name: `${acct.name.split(' ')[0]} ${pick(SITES).city} DWDM circuit`,
+      category: intent.category, type: intent.type, intentId,
+      accountId: acct.id, accountName: acct.name,
+      state, operState: OPER_FOR[state], conformance,
+      endpoints: eps,
+      attributes: attributes(intentId, conformance, bandwidth, vlan),
+      resources: resources(intentId, vlan, eps, state),
+      history: history(`f${i}`, liveSince, conformance),
+      bandwidthMbps: bandwidth,
+      monthlyValueInr: between(50000, 300000),
+      liveSince: liveSince.toISOString(),
+      lastProvenAt: proven,
+      ageLabel: years > 0 ? `${years} y ${months} m` : `${Math.max(1, months)} m`,
+      driftCount: conformance === 'Drifted' ? between(1, 2) : 0,
+      acceptanceEvidence: conformance === 'Conformant'
+        ? intent.acceptance.map((a) => ({
+          criterion: a.claim, layer: a.layer, expected: a.expected,
+          actual: a.layer === 'service' ? `${(bandwidth * (0.98 + rnd() * 0.02)).toFixed(1)} Gbps` : 'up / locked',
           passed: true,
         }))
         : undefined,

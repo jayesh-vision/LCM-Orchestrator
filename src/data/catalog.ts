@@ -77,6 +77,16 @@ export const DEVICE_MODELS: DeviceModel[] = [
   { vendor: 'HUAWEI', model: 'EG8145V5', kind: 'CPE', os: 'HW CPE FW 5.2', osRange: '5.0 – 5.2', ports: ['LAN1', 'LAN2', 'WAN'] },
   { vendor: 'ZTE', model: 'ZXHN F670L', kind: 'CPE', os: 'ZTE CPE FW 3.1', osRange: '2.9 – 3.1', ports: ['LAN1', 'LAN2', 'WAN'] },
   { vendor: 'ADTRAN', model: '411', kind: 'CPE', os: 'Adtran OS 6.4', osRange: '6.0 – 6.4', ports: ['LAN1', 'LAN2', 'WAN'] },
+  /* Radio domain — point-to-point microwave backhaul units. A disjoint
+     estate again; a radio has no BGP/VLAN vocabulary at all. */
+  { vendor: 'CERAGON', model: 'IP-20C', kind: 'Radio', os: 'CeraOS 10.9', osRange: '10.4 – 10.9', ports: ['RF-1', 'GE-1', 'GE-2'] },
+  { vendor: 'AVIAT', model: 'WTM 4000', kind: 'Radio', os: 'Aviat OS 6.1', osRange: '5.8 – 6.1', ports: ['RF-1', 'ETH-1'] },
+  { vendor: 'NEC', model: 'iPASOLINK VR', kind: 'Radio', os: 'NEC OS 4.3', osRange: '4.0 – 4.3', ports: ['RF-1', 'GE-1'] },
+  /* Fiber domain — DWDM transponders/ROADMs carrying wavelength circuits.
+     A disjoint estate again; an optical port has no VLAN/BGP vocabulary. */
+  { vendor: 'CIENA', model: '6500-D8', kind: 'Optical', os: 'SAOS 10.2', osRange: '9.8 – 10.2', ports: ['TRANSPONDER-1', 'TRANSPONDER-2', 'LINE-1'] },
+  { vendor: 'INFINERA', model: 'GX G30', kind: 'Optical', os: 'GX OS 6.4', osRange: '6.0 – 6.4', ports: ['CLIENT-1', 'CLIENT-2', 'LINE-1'] },
+  { vendor: 'ECI', model: 'Apollo ODM', kind: 'Optical', os: 'ECI NPT 5.1', osRange: '4.8 – 5.1', ports: ['TRANSPONDER-1', 'LINE-1'] },
 ]
 
 /** Only Router-class devices run BGP/VRF, so only these can serve L3VPN/IBW. */
@@ -85,9 +95,15 @@ export const ROUTER_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => 
 export const SWITCH_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'Switch').map((d) => d.vendor))]
 /** CPE-class devices are the Access domain's estate — never eligible for a Transport intent. */
 export const CPE_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'CPE').map((d) => d.vendor))]
+/** Radio-class devices are the Radio domain's estate — microwave backhaul only. */
+export const RADIO_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'Radio').map((d) => d.vendor))]
+/** Optical-class devices are the Fiber domain's estate — DWDM wavelength circuits only. */
+export const OPTICAL_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'Optical').map((d) => d.vendor))]
 /** The device estate eligible for a given service category. */
 export const modelsForCategory = (category: Category): DeviceModel[] => {
   if (category === 'Broadband') return DEVICE_MODELS.filter((d) => d.kind === 'CPE')
+  if (category === 'Microwave') return DEVICE_MODELS.filter((d) => d.kind === 'Radio')
+  if (category === 'DWDM') return DEVICE_MODELS.filter((d) => d.kind === 'Optical')
   if (category === 'L2VPN') return DEVICE_MODELS.filter((d) => d.kind === 'Router' || d.kind === 'Switch')
   return DEVICE_MODELS.filter((d) => d.kind === 'Router')
 }
@@ -141,6 +157,40 @@ const ibwAcceptance: AcceptanceCriterion[] = [
   { id: 'AC-2', claim: 'BGP session reaches Established', layer: 'device', expected: 'state=Established' },
   { id: 'AC-3', claim: 'At least one prefix received from the customer', layer: 'network', expected: 'received > 0' },
   { id: 'AC-4', claim: 'Measured throughput within ±5% of the ordered rate', layer: 'service', expected: 'within tolerance band' },
+]
+
+/* ---------- Radio domain: point-to-point microwave backhaul ---------- */
+
+const radioParams: IntentParam[] = [
+  { name: 'frequency_band', type: 'enum', constraint: 'L6 | U6 | L7 | L8 | E-band', modifiable: 'recreate', options: ['L6', 'U6', 'L7', 'L8', 'E-band'], default: 'L7', required: true },
+  { name: 'channel_bandwidth_mhz', type: 'enum', constraint: '7 | 14 | 28 | 40 | 56 MHz', modifiable: 'bounce', options: ['7', '14', '28', '40', '56'], default: '28', required: true },
+  { name: 'modulation', type: 'enum', constraint: 'QPSK | 16QAM | 64QAM | 256QAM, adaptive', modifiable: 'hitless', options: ['QPSK', '16QAM', '64QAM', '256QAM'], default: '256QAM', required: true },
+  { name: 'tx_power_dbm', type: 'integer', constraint: '0–30 dBm', modifiable: 'hitless', min: 0, max: 30, default: 20, required: true },
+  { name: 'frequency_channel', type: 'string', constraint: 'pool-allocated · licensed frequency slot', modifiable: 'no', fromPool: 'Frequency Channel', required: true },
+  { name: 'capacity_mbps', type: 'integer', constraint: '50–1000', modifiable: 'hitless', min: 50, max: 1000, default: 200, required: true },
+]
+
+const radioAcceptance: AcceptanceCriterion[] = [
+  { id: 'AC-1', claim: 'Both radio units are admin-up and RF-up', layer: 'device', expected: 'admin=up, rf=up on both ends' },
+  { id: 'AC-2', claim: 'Received signal level is within the planned link budget', layer: 'device', expected: 'RSL within ±3 dB of plan' },
+  { id: 'AC-3', claim: 'Bit error rate stays below threshold over a sustained window', layer: 'network', expected: 'BER < 1e-9 over 15 min' },
+  { id: 'AC-4', claim: 'Measured throughput is within ±5% of the ordered capacity', layer: 'service', expected: 'within tolerance band' },
+]
+
+/* ---------- Fiber domain: DWDM wavelength circuit provisioning ---------- */
+
+const dwdmParams: IntentParam[] = [
+  { name: 'wavelength_channel', type: 'string', constraint: 'pool-allocated · ITU-T 100GHz grid', modifiable: 'no', fromPool: 'Wavelength', required: true },
+  { name: 'otn_framing', type: 'enum', constraint: 'OTU2 | OTU4', modifiable: 'recreate', options: ['OTU2', 'OTU4'], default: 'OTU4', required: true },
+  { name: 'protection', type: 'enum', constraint: 'Unprotected | Protected (1+1)', modifiable: 'recreate', options: ['Unprotected', 'Protected'], default: 'Unprotected', required: true },
+  { name: 'capacity_gbps', type: 'integer', constraint: '10–400', modifiable: 'bounce', min: 10, max: 400, default: 100, required: true },
+]
+
+const dwdmAcceptance: AcceptanceCriterion[] = [
+  { id: 'AC-1', claim: 'Both transponders are admin-up and the optical line is up', layer: 'device', expected: 'admin=up, line=up on both ends' },
+  { id: 'AC-2', claim: 'Received optical power is within the span loss budget', layer: 'device', expected: 'Rx power within ±2 dB of plan' },
+  { id: 'AC-3', claim: 'OTN frame achieves sync with no uncorrected errors', layer: 'network', expected: 'FEC locked, 0 uncorrectable errors' },
+  { id: 'AC-4', claim: 'Measured throughput is within ±2% of the ordered capacity', layer: 'service', expected: 'within tolerance band' },
 ]
 
 const l3Params: IntentParam[] = [
@@ -203,6 +253,20 @@ export const INTENTS: ServiceIntent[] = [
     topology: 'Single-ended', endpointArity: 'exactly 1', params: cpeParams,
     pools: ['VLAN', 'CPE Serial'], acceptance: cpeAcceptance, version: 1, liveServices: 60,
   },
+  /* Radio domain — microwave backhaul. Two-ended: a link is always a pair
+     of radio units, same shape as an L2VPN point-to-point circuit. */
+  {
+    id: 'INT-RADIO-PTP', name: 'Microwave Point-to-Point Link', category: 'Microwave', type: 'Point-to-Point',
+    topology: 'Two-ended', endpointArity: 'exactly 2', params: radioParams,
+    pools: ['Frequency Channel'], acceptance: radioAcceptance, version: 1, liveServices: 140,
+  },
+  /* Fiber domain — DWDM wavelength circuits. Two-ended: a lambda always
+     terminates on a transponder at each end. */
+  {
+    id: 'INT-FIBER-WAVELENGTH', name: 'DWDM Wavelength Circuit', category: 'DWDM', type: 'Wavelength Circuit',
+    topology: 'Two-ended', endpointArity: 'exactly 2', params: dwdmParams,
+    pools: ['Wavelength'], acceptance: dwdmAcceptance, version: 1, liveServices: 90,
+  },
 ]
 
 export const intentById = (id: string) => INTENTS.find((i) => i.id === id)!
@@ -248,6 +312,13 @@ const PROFILE_ROWS: Array<[Category, string, string, string, string]> = [
   ['Broadband', 'Residential Gateway', 'DSL', 'Broadband Residential Gateway profile for DSL connectivity.', 'Jayesh'],
   ['Broadband', 'Business Gateway', 'FTTH', 'Broadband Business Gateway profile for fibre-to-the-home connectivity.', 'Jayesh'],
   ['Broadband', 'Business Gateway', 'Other', 'Broadband Business Gateway profile for standard connectivity.', 'Jayesh'],
+  // Microwave (Radio domain)
+  ['Microwave', 'Point-to-Point', 'All-IP', 'Microwave PtP profile for all-IP Ethernet backhaul links.', 'Jayesh'],
+  ['Microwave', 'Point-to-Point', 'Hybrid', 'Microwave PtP profile for hybrid TDM/Ethernet backhaul links.', 'Jayesh'],
+  ['Microwave', 'Point-to-Point', 'E-band', 'Microwave PtP profile for E-band high-capacity short-haul links.', 'Jayesh'],
+  // DWDM (Fiber domain)
+  ['DWDM', 'Wavelength Circuit', 'Unprotected', 'DWDM wavelength profile for unprotected point-to-point lambda circuits.', 'Jayesh'],
+  ['DWDM', 'Wavelength Circuit', 'Protected', 'DWDM wavelength profile for 1+1 protected lambda circuits.', 'Jayesh'],
 ]
 
 export const PROFILE_TYPES: ProfileType[] = PROFILE_ROWS.map(([category, type, subtype, description, creator], i) => ({
@@ -258,4 +329,4 @@ export const PROFILE_TYPES: ProfileType[] = PROFILE_ROWS.map(([category, type, s
 }))
 
 export const VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.map((d) => d.vendor))]
-export const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband']
+export const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM']

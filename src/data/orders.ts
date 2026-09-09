@@ -80,6 +80,40 @@ export function bindEndpoints(
     })
   }
 
+  /* Radio domain — a microwave hop has no VLAN/VRF vocabulary either;
+     frequency/modulation/power is its own vocabulary shared by both ends
+     of the same link. */
+  if (category === 'Microwave') {
+    return eps.map((e) => {
+      const wf = find(e)
+      const radioParams: OrderParamValue[] = [
+        { name: 'Frequency Channel', value: val('frequency_channel') ?? `FC-${between(1000, 9999)}`, source: 'pool' },
+        { name: 'Frequency Band', value: val('frequency_band') ?? 'L7', source: 'user' },
+        { name: 'Channel Bandwidth', value: val('channel_bandwidth_mhz') ?? '28', source: 'user' },
+        { name: 'Modulation', value: val('modulation') ?? '256QAM', source: 'user' },
+        { name: 'TX Power', value: val('tx_power_dbm') ?? '20', source: 'user' },
+        { name: 'Capacity', value: val('capacity_mbps') ?? String(bandwidth), source: 'user' },
+      ]
+      return { ...e, workflowId: wf?.id, params: radioParams }
+    })
+  }
+
+  /* Fiber domain — a DWDM lambda has no VLAN/VRF vocabulary either;
+     wavelength/framing/protection is its own vocabulary shared by both
+     transponders on the same circuit. */
+  if (category === 'DWDM') {
+    return eps.map((e) => {
+      const wf = find(e)
+      const dwdmParams: OrderParamValue[] = [
+        { name: 'Wavelength Channel', value: val('wavelength_channel') ?? `${1529 + between(0, 40)}.${between(10, 99)}nm`, source: 'pool' },
+        { name: 'OTN Framing', value: val('otn_framing') ?? 'OTU4', source: 'user' },
+        { name: 'Protection', value: val('protection') ?? 'Unprotected', source: 'user' },
+        { name: 'Capacity', value: val('capacity_gbps') ?? String(bandwidth), source: 'user' },
+      ]
+      return { ...e, workflowId: wf?.id, params: dwdmParams }
+    })
+  }
+
   const vlan = val('vlan') ?? String(between(100, 900))
   const vcId = val('pw_id') ?? String(between(90000, 99999))
   const rd = val('rd') ?? `65001:${between(100, 900)}`
@@ -133,10 +167,11 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
   const states = shuffle(expand(ORDER_MIX))
   const intents = shuffle(expand(INTENT_MIX))
   const active = workflows.filter((w) => w.state === 'Active')
-  /* Transport-only — the Access domain's services get their own additive
-     batch below with their own existing-service pool, so this loop (fixed
-     at 170 Transport orders) never accidentally binds to a Broadband service. */
-  const liveServices = services.filter((s) => s.state === 'Live' && !s.intentId.startsWith('INT-ACCESS'))
+  /* Transport-only — every other domain gets its own additive batch below
+     with its own existing-service pool, so this loop (fixed at 170 Transport
+     orders) never accidentally binds to a service from another domain. */
+  const liveServices = services.filter((s) => s.state === 'Live'
+    && !s.intentId.startsWith('INT-ACCESS') && !s.intentId.startsWith('INT-RADIO') && !s.intentId.startsWith('INT-FIBER'))
   const now = Date.now()
   const out: Order[] = []
 
@@ -330,6 +365,137 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
       notes: undefined,
     })
   }
+
+  /* Radio domain — additive: 16 more orders, two-ended microwave links. */
+  const RADIO_ORDER_MIX: [OrderState, number][] = [
+    ['Draft', 2], ['Planned', 1], ['Validated', 3], ['Invalid', 1], ['Approved', 1],
+    ['Rejected', 1], ['Queued', 1], ['In progress', 1], ['Ready', 4], ['Failed', 1],
+  ]
+  const RADIO_INTENT_MIX: [OrderIntent, number][] = [['Create', 12], ['Modify', 2], ['Suspend', 1], ['Cease', 1]]
+  const rStates = shuffle(expand(RADIO_ORDER_MIX))
+  const rOrderIntents = shuffle(expand(RADIO_INTENT_MIX))
+  const radioLive = services.filter((s) => s.state === 'Live' && s.intentId === 'INT-RADIO-PTP')
+  for (let i = 0; i < 16; i += 1) {
+    const state = rStates[i]
+    const orderIntent = rOrderIntents[i]
+    const existing = orderIntent === 'Create' ? undefined : radioLive[i % Math.max(1, radioLive.length)]
+    const intentId = 'INT-RADIO-PTP'
+    const intent = intentById(intentId)
+    const acct = existing ? ACCOUNTS.find((a) => a.id === existing.accountId)! : pick(ACCOUNTS)
+    const wf = active.find((w) => w.intentId === intentId) ?? active[0]
+
+    const eps = existing?.endpoints ?? [endpointFor('A', 50000 + i * 2, intent.category), endpointFor('Z', 50000 + i * 2 + 1, intent.category)]
+    const bandwidth = existing?.bandwidthMbps ?? pick([50, 100, 200, 500, 1000])
+    const params: OrderParamValue[] = intent.params.map((p) => ({
+      name: p.name,
+      value: p.name === 'capacity_mbps' ? String(bandwidth)
+        : p.fromPool ? `FC-${between(1000, 9999)}`
+          : p.default !== undefined ? String(p.default) : 'value',
+      source: p.fromPool ? 'pool' : p.default !== undefined ? 'template' : 'user',
+    }))
+    const boundEps = bindEndpoints(eps, intent.category, intent.type, '', workflows, params, bandwidth)
+
+    const ageDays = between(0, 30)
+    const created = new Date(now - ageDays * 86400000)
+
+    out.push({
+      id: `ORD-2026-${pad(7000 - i * 2, 6)}`,
+      code: `NS-${pad(700 + i, 6)}`,
+      name: `${intent.name}${orderIntent !== 'Create' ? ` · ${orderIntent.toLowerCase()}` : ''}`,
+      intent: orderIntent, intentId,
+      category: intent.category,
+      type: intent.type,
+      subtype: pick(['All-IP', 'Hybrid', 'E-band']),
+      accountId: acct.id, accountName: acct.name,
+      serviceId: existing?.id,
+      state,
+      workflowId: state === 'Draft' ? undefined : (boundEps[0]?.workflowId ?? wf?.id),
+      endpoints: boundEps,
+      params,
+      createdAt: created.toISOString(),
+      updatedAt: new Date(now - between(0, ageDays) * 86400000).toISOString(),
+      ageDays,
+      owner: pick(OWNERS),
+      waitingOn: WAITING[state],
+      runIds: [],
+      approvals: ['Ready', 'Approved', 'In progress', 'Queued', 'Reinstantiate', 'Failed'].includes(state)
+        ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Approved' }]
+        : state === 'Rejected'
+          ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Rejected', comment: 'Frequency channel unavailable at the requested band.' }]
+          : [{ role: 'NOC lead' }],
+      delta: orderIntent === 'Modify'
+        ? [{ attribute: 'Link capacity', current: `${bandwidth} Mbps`, requested: `${bandwidth * 2} Mbps` }]
+        : undefined,
+      slaBreached: (state === 'Failed' || state === 'Reinstantiate') && ageDays > 10,
+      notes: undefined,
+    })
+  }
+
+  /* Fiber domain — additive: 12 more orders, two-ended DWDM circuits. */
+  const FIBER_ORDER_MIX: [OrderState, number][] = [
+    ['Draft', 1], ['Planned', 1], ['Validated', 2], ['Approved', 1],
+    ['Queued', 1], ['In progress', 1], ['Ready', 4], ['Failed', 1],
+  ]
+  const FIBER_INTENT_MIX: [OrderIntent, number][] = [['Create', 9], ['Modify', 2], ['Cease', 1]]
+  const fStates = shuffle(expand(FIBER_ORDER_MIX))
+  const fOrderIntents = shuffle(expand(FIBER_INTENT_MIX))
+  const fiberLive = services.filter((s) => s.state === 'Live' && s.intentId === 'INT-FIBER-WAVELENGTH')
+  for (let i = 0; i < 12; i += 1) {
+    const state = fStates[i]
+    const orderIntent = fOrderIntents[i]
+    const existing = orderIntent === 'Create' ? undefined : fiberLive[i % Math.max(1, fiberLive.length)]
+    const intentId = 'INT-FIBER-WAVELENGTH'
+    const intent = intentById(intentId)
+    const acct = existing ? ACCOUNTS.find((a) => a.id === existing.accountId)! : pick(ACCOUNTS)
+    const wf = active.find((w) => w.intentId === intentId) ?? active[0]
+
+    const eps = existing?.endpoints ?? [endpointFor('A', 60000 + i * 2, intent.category), endpointFor('Z', 60000 + i * 2 + 1, intent.category)]
+    const bandwidth = existing?.bandwidthMbps ?? pick([10, 100, 200, 400])
+    const params: OrderParamValue[] = intent.params.map((p) => ({
+      name: p.name,
+      value: p.name === 'capacity_gbps' ? String(bandwidth)
+        : p.fromPool ? `${1529 + between(0, 40)}.${between(10, 99)}nm`
+          : p.default !== undefined ? String(p.default) : 'value',
+      source: p.fromPool ? 'pool' : p.default !== undefined ? 'template' : 'user',
+    }))
+    const boundEps = bindEndpoints(eps, intent.category, intent.type, '', workflows, params, bandwidth)
+
+    const ageDays = between(0, 30)
+    const created = new Date(now - ageDays * 86400000)
+
+    out.push({
+      id: `ORD-2026-${pad(8000 - i * 2, 6)}`,
+      code: `NS-${pad(800 + i, 6)}`,
+      name: `${intent.name}${orderIntent !== 'Create' ? ` · ${orderIntent.toLowerCase()}` : ''}`,
+      intent: orderIntent, intentId,
+      category: intent.category,
+      type: intent.type,
+      subtype: pick(['Unprotected', 'Protected']),
+      accountId: acct.id, accountName: acct.name,
+      serviceId: existing?.id,
+      state,
+      workflowId: state === 'Draft' ? undefined : (boundEps[0]?.workflowId ?? wf?.id),
+      endpoints: boundEps,
+      params,
+      createdAt: created.toISOString(),
+      updatedAt: new Date(now - between(0, ageDays) * 86400000).toISOString(),
+      ageDays,
+      owner: pick(OWNERS),
+      waitingOn: WAITING[state],
+      runIds: [],
+      approvals: ['Ready', 'Approved', 'In progress', 'Queued', 'Reinstantiate', 'Failed'].includes(state)
+        ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Approved' }]
+        : state === 'Rejected'
+          ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Rejected', comment: 'Wavelength channel unavailable on this span.' }]
+          : [{ role: 'NOC lead' }],
+      delta: orderIntent === 'Modify'
+        ? [{ attribute: 'Circuit capacity', current: `${bandwidth} Gbps`, requested: `${bandwidth * 2} Gbps` }]
+        : undefined,
+      slaBreached: (state === 'Failed' || state === 'Reinstantiate') && ageDays > 10,
+      notes: undefined,
+    })
+  }
+
   return out
 }
 

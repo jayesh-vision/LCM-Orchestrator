@@ -39,12 +39,15 @@ export const WORKFLOW_TONE: Record<WorkflowState, Tone> = {
   Active: 'good', Rejected: 'crit', Retired: 'none',
 }
 
-export const CATEGORY_TONE: Record<string, Tone> = { L2VPN: 'info', L3VPN: 'plum', IBW: 'teal', Broadband: 'good' }
+export const CATEGORY_TONE: Record<string, Tone> = {
+  L2VPN: 'info', L3VPN: 'plum', IBW: 'teal', Broadband: 'good', Microwave: 'warn', DWDM: 'crit',
+}
 
-/** Domain badge tone — one per Domain, deliberately disjoint from every tone
- *  CATEGORY_TONE uses so a domain chip and a category chip never render the
- *  same colour on the same screen. */
-export const DOMAIN_TONE: Record<string, Tone> = { Transport: 'none', Access: 'warn' }
+/** Domain badge tone — one per Domain. With 7 tones and now 4 domains + 6
+ *  categories, full disjointness from CATEGORY_TONE no longer fits the
+ *  palette; each chip is text-labelled, so a colour repeating across an
+ *  unrelated domain and category isn't ambiguous in context. */
+export const DOMAIN_TONE: Record<string, Tone> = { Transport: 'none', Access: 'warn', Radio: 'info', Fiber: 'teal' }
 
 export const INTENT_TONE: Record<string, Tone> = {
   Create: 'info', Modify: 'plum', Suspend: 'warn', Resume: 'good', Cease: 'crit', 'Re-prove': 'teal',

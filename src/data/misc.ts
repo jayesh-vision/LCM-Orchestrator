@@ -60,6 +60,18 @@ export function buildPools(services: Service[]): ResourcePool[] {
     total: 400, allocated: 260, quarantined: 14, reserved: 6,
     entries: entries(400, 260, 14, (n) => `SN-${100000 + n}`, services),
   })
+  // Radio domain — licensed microwave frequency channels.
+  pools.push({
+    id: 'POOL-FREQ-001', kind: 'Frequency Channel', scope: 'licensed bands · L6/U6/L7/L8/E-band',
+    total: 200, allocated: 122, quarantined: 4, reserved: 3,
+    entries: entries(200, 122, 4, (n) => `FC-${1000 + n}`, services),
+  })
+  // Fiber domain — ITU-T 100GHz DWDM wavelength grid.
+  pools.push({
+    id: 'POOL-WL-001', kind: 'Wavelength', scope: 'ITU-T 100GHz grid · C-band 1529–1569nm',
+    total: 96, allocated: 84, quarantined: 3, reserved: 2,
+    entries: entries(96, 84, 3, (n) => `${1529 + Math.floor(n / 2)}.${(n % 2) * 50 + 12}nm`, services),
+  })
   return pools
 }
 

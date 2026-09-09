@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CheckCircle2, ClipboardList, PlayCircle, Router, Wifi, XCircle } from 'lucide-react'
+import { Cable, CheckCircle2, ClipboardList, PlayCircle, RadioTower, Router, Wifi, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { Domain, Order, OrderState } from '@/types'
 import { DOMAINS, domainOf } from '@/types'
@@ -9,12 +9,15 @@ import { CHART, FILL, ColumnChart, StackedBar, TrendChart } from '@/components/c
 import { CATEGORY_TONE, relTime } from '@/lib/format'
 
 const DAY = 86400000
-const CATS = ['L2VPN', 'L3VPN', 'IBW', 'Broadband'] as const
-const DOMAIN_ICON: Record<Domain, typeof Router> = { Transport: Router, Access: Wifi }
+const CATS = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM'] as const
+const DOMAIN_ICON: Record<Domain, typeof Router> = { Transport: Router, Access: Wifi, Radio: RadioTower, Fiber: Cable }
 const DOMAIN_BLURB: Record<Domain, string> = {
   Transport: 'L2VPN, L3VPN and IBW — router/switch CLI provisioning across 8 vendors.',
   Access: 'Broadband CPE activation — the platform\'s newest domain, 3 CPE vendors.',
+  Radio: 'Microwave point-to-point backhaul links — Ceragon, Aviat, NEC.',
+  Fiber: 'DWDM wavelength circuits over optical transport — Ciena, Infinera, ECI.',
 }
+const DOMAIN_STAT_TONE: Record<Domain, StatTone | undefined> = { Transport: undefined, Access: 'warn', Radio: 'plum', Fiber: 'good' }
 
 /** Count per calendar day over the last `days`, oldest first. */
 function perDay(dates: string[], days: number) {
@@ -48,9 +51,9 @@ export default function Dashboard() {
     return `/requests${p.toString() ? `?${p}` : ''}`
   }
 
-  /* ---- multi-domain split: Transport (L2VPN/L3VPN/IBW) vs Access (Broadband) ---- */
+  /* ---- multi-domain split across every domain the platform provisions ---- */
   const domainCounts = useMemo(() => {
-    const out: Record<Domain, number> = { Transport: 0, Access: 0 }
+    const out: Record<Domain, number> = { Transport: 0, Access: 0, Radio: 0, Fiber: 0 }
     orders.forEach((o) => { out[domainOf(o.category)] += 1 })
     return out
   }, [orders])
@@ -108,11 +111,11 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* ---------------- by domain — Transport vs Access ---------------- */}
-      <div className="grid gap-4 grid-cols-2">
+      {/* ---------------- by domain ---------------- */}
+      <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
         {DOMAINS.map((d) => (
           <Stat key={d} label={`${d} requests`} icon={DOMAIN_ICON[d]} value={domainCounts[d]}
-            tone={d === 'Access' ? 'warn' : undefined}
+            tone={DOMAIN_STAT_TONE[d]}
             progress={(domainCounts[d] / Math.max(1, orders.length)) * 100}
             note={`${Math.round((domainCounts[d] / Math.max(1, orders.length)) * 100)}% of all requests · ${DOMAIN_BLURB[d]}`}
             info={`Every request belongs to exactly one domain. ${DOMAIN_BLURB[d]}`}

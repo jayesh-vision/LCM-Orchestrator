@@ -12,7 +12,7 @@ import {
 import { CategoryCard } from '@/components/charts'
 import { CATEGORY_TONE, DOMAIN_TONE, ORDER_TONE } from '@/lib/format'
 
-const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband']
+const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM']
 
 const STATE_ORDER: OrderState[] = [
   'Draft', 'Planned', 'Validated', 'Invalid', 'Approved', 'Rejected',

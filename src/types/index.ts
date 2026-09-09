@@ -3,17 +3,23 @@
    ============================================================ */
 
 /** The provisioning domain a service belongs to. Sits above Category — Transport's
- *  categories are L2VPN/L3VPN/IBW; Access brings its own category set (Broadband). */
-export type Domain = 'Transport' | 'Access'
-export const DOMAINS: Domain[] = ['Transport', 'Access']
+ *  categories are L2VPN/L3VPN/IBW; each other domain brings its own category set. */
+export type Domain = 'Transport' | 'Access' | 'Radio' | 'Fiber'
+export const DOMAINS: Domain[] = ['Transport', 'Access', 'Radio', 'Fiber']
 
-export type Category = 'L2VPN' | 'L3VPN' | 'IBW' | 'Broadband'
+export type Category = 'L2VPN' | 'L3VPN' | 'IBW' | 'Broadband' | 'Microwave' | 'DWDM'
 /** Which categories exist under each domain — drives every domain→category cascade in the UI. */
 export const CATEGORIES_BY_DOMAIN: Record<Domain, Category[]> = {
   Transport: ['L2VPN', 'L3VPN', 'IBW'],
   Access: ['Broadband'],
+  Radio: ['Microwave'],
+  Fiber: ['DWDM'],
 }
-export const domainOf = (category: Category): Domain => (category === 'Broadband' ? 'Access' : 'Transport')
+const CATEGORY_DOMAIN: Record<Category, Domain> = {
+  L2VPN: 'Transport', L3VPN: 'Transport', IBW: 'Transport',
+  Broadband: 'Access', Microwave: 'Radio', DWDM: 'Fiber',
+}
+export const domainOf = (category: Category): Domain => CATEGORY_DOMAIN[category]
 
 /** Contractual state of a service. Changed only by orders. */
 export type ServiceState =
@@ -73,22 +79,28 @@ export interface ValidationRule {
   type: ValidationType
 }
 
-/* Transport vendors: CISCO..DLINK. Access/CPE vendors: HUAWEI..ADTRAN — a
-   distinct estate, never bound to a Transport workflow or vice versa. */
+/* Each domain owns a disjoint vendor estate, never bound to another domain's
+   workflow: Transport CISCO..DLINK, Access HUAWEI..ADTRAN, Radio CERAGON..NEC,
+   Fiber CIENA..ECI. */
 export type Vendor =
   | 'CISCO' | 'JUNIPER' | 'NOKIA' | 'ADVA' | 'TEJAS' | 'TECHROUTE' | 'EDGECORE' | 'DLINK'
   | 'HUAWEI' | 'ZTE' | 'ADTRAN'
+  | 'CERAGON' | 'AVIAT' | 'NEC'
+  | 'CIENA' | 'INFINERA' | 'ECI'
 
 /** What the device actually is. Router-class devices carry BGP/VRF/L3 routing
  *  and are the only kind that can serve an L3VPN or IBW intent; a Switch is
  *  Ethernet/VLAN-only and can only carry the L2VPN family. CPE is the Access
- *  domain's device class — a residential/business gateway, never eligible
- *  for a Transport intent. */
-export type DeviceKind = 'Router' | 'Switch' | 'CPE'
+ *  domain's device class. Radio is a microwave backhaul unit (Radio domain);
+ *  Optical is a DWDM transponder/ROADM (Fiber domain) — each is only ever
+ *  eligible for its own domain's intent. */
+export type DeviceKind = 'Router' | 'Switch' | 'CPE' | 'Radio' | 'Optical'
 
 export type WorkflowState = 'Draft' | 'Assigned' | 'Awaiting approval' | 'Active' | 'Rejected' | 'Retired'
 
-export type PoolKind = 'VLAN' | 'RD/RT' | 'Pseudowire ID' | 'IP block' | 'Sub-interface' | 'ASN slot' | 'CPE Serial'
+export type PoolKind =
+  | 'VLAN' | 'RD/RT' | 'Pseudowire ID' | 'IP block' | 'Sub-interface' | 'ASN slot' | 'CPE Serial'
+  | 'Frequency Channel' | 'Wavelength'
 
 export type AssertionForm =
   | 'exists' | 'absent' | 'equals' | 'in_range' | 'count' | 'matches' | 'unchanged'

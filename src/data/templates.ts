@@ -353,15 +353,84 @@ function cpeProvisioning(): StageSeed[] {
   ]
 }
 
+/* ---- Microwave | Point-to-Point | * | CERAGON · AVIAT · NEC
+   (Pre-Validation 3 · Service configuration 3 · Post-Validation 3). Radio
+   domain — set the licensed frequency, modulation and power on both radio
+   units, then prove the link is up within its planned RSL/BER budget. One
+   template covers every radio vendor, same convention as CPE/Cisco above. */
+function radioPtpProvisioning(): StageSeed[] {
+  const CH = '${Frequency Channel}', BAND = '${Frequency Band}', BW = '${Channel Bandwidth}', MOD = '${Modulation}', TXP = '${TX Power}', CAP = '${Capacity}'
+  return [
+    { name: 'Pre-Validation', kind: 'Pre validation', tasks: [
+      { name: 'Check frequency channel availability', set: `show radio frequency-channel ${CH}`, rules: [rule('in use', 'Not contains')] },
+      { name: 'Check remote radio reachability', set: 'ping remote-radio count 5', rules: [rule('Success rate is 100 percent', 'Contains')], retry: true },
+      { name: 'Check RF interface status', set: 'show interface RF-1 status', rules: [rule('down', 'Not contains'), rule('error')] },
+    ] },
+    { name: 'Service configuration', kind: 'Configuration', tasks: [
+      { name: 'Set frequency and channel plan',
+        set: `radio band ${BAND}\n radio channel ${CH}\n radio channel-bandwidth ${BW}MHz\nexit`,
+        rollback: `radio channel ${CH}\n no radio channel-bandwidth\nexit`, timeoutMs: 90000, breaker: true },
+      { name: 'Set modulation and power',
+        set: `radio modulation ${MOD} adaptive\n radio tx-power ${TXP}\nexit`,
+        rules: [rule('error'), rule('invalid')],
+        rollback: `radio modulation QPSK\n radio tx-power 0\nexit` },
+      { name: 'Bind link capacity',
+        set: `radio channel ${CH}\n capacity ${CAP}Mbps\n commit`,
+        rules: [rule('commit complete', 'Contains'), rule('error')],
+        rollback: `radio channel ${CH}\n no capacity\nexit`, timeoutMs: 90000, breaker: true },
+    ] },
+    { name: 'Post-Validation', kind: 'Post validation', tasks: [
+      { name: 'Verify RF link up', set: 'show interface RF-1 status', rules: [rule('rf=up', 'Contains'), rule('down')], retry: true, timeoutMs: 90000 },
+      { name: 'Verify received signal level', set: 'show radio rsl', rules: [rule('within budget', 'Contains'), rule('out of range')], retry: true },
+      { name: 'Verify bit error rate', set: 'show radio ber 15min', rules: [rule('BER < 1e-9', 'Contains'), rule('degraded')], retry: true, timeoutMs: 90000 },
+    ] },
+  ]
+}
+
+/* ---- DWDM | Wavelength Circuit | * | CIENA · INFINERA · ECI
+   (Pre-Validation 3 · Service configuration 3 · Post-Validation 3). Fiber
+   domain — assign the ITU-T wavelength, frame it as OTN, then prove optical
+   power and FEC lock. One template covers every optical vendor. */
+function dwdmWavelengthProvisioning(): StageSeed[] {
+  const WL = '${Wavelength Channel}', FRAME = '${OTN Framing}', PROT = '${Protection}', CAP = '${Capacity}'
+  return [
+    { name: 'Pre-Validation', kind: 'Pre validation', tasks: [
+      { name: 'Check wavelength channel availability', set: `show optical wavelength ${WL}`, rules: [rule('in use', 'Not contains')] },
+      { name: 'Check transponder status', set: 'show transponder-1 status', rules: [rule('down', 'Not contains'), rule('error')] },
+      { name: 'Check line-side optical power', set: 'show optical power line-1', rules: [rule('out of range', 'Not contains')] },
+    ] },
+    { name: 'Service configuration', kind: 'Configuration', tasks: [
+      { name: 'Set wavelength assignment',
+        set: `transponder-1 wavelength ${WL}\n transponder-1 otn-framing ${FRAME}\nexit`,
+        rollback: `transponder-1 wavelength none\nexit`, timeoutMs: 90000, breaker: true },
+      { name: 'Set protection scheme',
+        set: `circuit protection ${PROT}\nexit`,
+        rules: [rule('error'), rule('invalid')],
+        rollback: `circuit protection Unprotected\nexit` },
+      { name: 'Bind circuit capacity',
+        set: `transponder-1 capacity ${CAP}Gbps\n commit`,
+        rules: [rule('commit complete', 'Contains'), rule('error')],
+        rollback: `transponder-1 capacity 0\nexit`, timeoutMs: 90000, breaker: true },
+    ] },
+    { name: 'Post-Validation', kind: 'Post validation', tasks: [
+      { name: 'Verify optical line up', set: 'show transponder-1 status', rules: [rule('line=up', 'Contains'), rule('down')], retry: true, timeoutMs: 90000 },
+      { name: 'Verify received optical power', set: 'show optical power line-1', rules: [rule('within budget', 'Contains'), rule('out of range')], retry: true },
+      { name: 'Verify OTN FEC lock', set: 'show otn fec-status', rules: [rule('locked', 'Contains'), rule('unlocked')], retry: true, timeoutMs: 90000 },
+    ] },
+  ]
+}
+
 /* -------------------------------------------------------------- picker */
 
 /** The platform workflow for a profile + vendor. `role` only affects naming; both ends run the same sequence. */
 export function templateFor(category: Category, vendor: Vendor, type: string, _role?: EndpointRole, subtype = '') {
   const seeds =
     category === 'Broadband' ? cpeProvisioning()
-      : category === 'L2VPN' ? (vendor === 'JUNIPER' ? l2vpnJuniper(subtype) : l2vpnCisco(subtype))
-        : category === 'L3VPN' ? (vendor === 'JUNIPER' ? (/hub/i.test(type) ? l3vpnHubSpokeJuniper() : l3vpnMeshJuniper()) : l3vpnCisco(type))
-          : (vendor === 'JUNIPER' ? (/bgp|ospf|vrf/i.test(type) ? ibwBgpJuniper() : ibwStaticJuniper()) : ibwCisco(type))
+      : category === 'Microwave' ? radioPtpProvisioning()
+        : category === 'DWDM' ? dwdmWavelengthProvisioning()
+          : category === 'L2VPN' ? (vendor === 'JUNIPER' ? l2vpnJuniper(subtype) : l2vpnCisco(subtype))
+            : category === 'L3VPN' ? (vendor === 'JUNIPER' ? (/hub/i.test(type) ? l3vpnHubSpokeJuniper() : l3vpnMeshJuniper()) : l3vpnCisco(type))
+              : (vendor === 'JUNIPER' ? (/bgp|ospf|vrf/i.test(type) ? ibwBgpJuniper() : ibwStaticJuniper()) : ibwCisco(type))
   return materialise(seeds)
 }
 
@@ -416,4 +485,6 @@ export const KNOWN_PARAMS: Record<Category, string[]> = {
   L3VPN: ['Interface', 'Vlan-ID', 'Neighbor IP', 'Description', 'Bandwidth', 'VRF', 'RD', 'RT', 'Interface IP', 'Peer AS'],
   IBW: ['Interface', 'Vlan-ID', 'Neighbor IP', 'Description', 'Bandwidth', 'VRF', 'Interface IP', 'Customer prefix', 'Peer AS'],
   Broadband: ['CPE Serial', 'SSID', 'WiFi Password', 'WAN VLAN', 'Bandwidth'],
+  Microwave: ['Frequency Channel', 'Frequency Band', 'Channel Bandwidth', 'Modulation', 'TX Power', 'Capacity'],
+  DWDM: ['Wavelength Channel', 'OTN Framing', 'Protection', 'Capacity'],
 }

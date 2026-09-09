@@ -19,6 +19,22 @@ interface EndpointDraft { role: 'A' | 'Z' | 'hub' | 'spoke'; siteCode: string; p
 
 const roleOf = (i: number): EndpointRole => (i === 0 ? 'Source' : 'Destination')
 
+const DOMAIN_HINT: Record<Domain, string> = {
+  Transport: 'Router/switch network services.',
+  Access: 'Customer-premises device provisioning.',
+  Radio: 'Point-to-point microwave backhaul link provisioning.',
+  Fiber: 'DWDM wavelength circuit provisioning over optical transport.',
+}
+const DOMAIN_SUBTYPES: Record<Domain, string[]> = {
+  Transport: ['Tagged', 'Untagged', 'BGP', 'Static', 'OSPF', 'VRF', 'Other'],
+  Access: ['FTTH', 'DSL', 'Other'],
+  Radio: ['All-IP', 'Hybrid', 'E-band'],
+  Fiber: ['Unprotected', 'Protected'],
+}
+const DOMAIN_PORT_LABEL: Record<Domain, string> = {
+  Transport: 'Router port', Access: 'CPE port', Radio: 'Radio port', Fiber: 'Optical port',
+}
+
 export default function NewServiceWizard() {
   const nav = useNavigate()
   const intents = useStore((s) => s.intents)
@@ -52,7 +68,7 @@ export default function NewServiceWizard() {
     setCategory(c)
     const first = intents.find((i) => i.category === c)!
     setIntentId(first.id)
-    setSubtype(d === 'Access' ? 'FTTH' : 'Tagged')
+    setSubtype(DOMAIN_SUBTYPES[d][0])
   }
 
   const endpointCount = intent.topology === 'Single-ended' ? 1 : intent.topology === 'Two-ended' ? 2 : eps.length
@@ -197,7 +213,7 @@ export default function NewServiceWizard() {
           {step === 0 && (
             <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
               <div className="grid gap-5 sm:grid-cols-2">
-                <Field label="Domain" required hint={domain === 'Access' ? 'Customer-premises device provisioning.' : 'Router/switch network services.'}>
+                <Field label="Domain" required hint={DOMAIN_HINT[domain]}>
                   <Select value={domain} onChange={(e) => setDomainCascade(e.target.value as Domain)}>
                     {DOMAINS.map((d) => <option key={d} value={d}>{d}</option>)}
                   </Select>
@@ -219,7 +235,7 @@ export default function NewServiceWizard() {
                 </Field>
                 <Field label="Catalog subtype">
                   <Select value={subtype} onChange={(e) => setSubtype(e.target.value)}>
-                    {(domain === 'Access' ? ['FTTH', 'DSL', 'Other'] : ['Tagged', 'Untagged', 'BGP', 'Static', 'OSPF', 'VRF', 'Other']).map((s) => <option key={s}>{s}</option>)}
+                    {DOMAIN_SUBTYPES[domain].map((s) => <option key={s}>{s}</option>)}
                   </Select>
                 </Field>
                 <Field label="Customer" required hint="A reference to the account master, not free text.">
@@ -288,7 +304,7 @@ export default function NewServiceWizard() {
                             {SITES.map((s) => <option key={s.code} value={s.code}>{s.code} — {s.city}</option>)}
                           </Select>
                         </Field>
-                        <Field label={domain === 'Access' ? 'CPE port' : 'Router port'} required>
+                        <Field label={DOMAIN_PORT_LABEL[domain]} required>
                           <Select value={e.port} onChange={(ev) => {
                             const next = [...eps]; next[i] = { ...e, port: ev.target.value }; setEps(next)
                           }}>
