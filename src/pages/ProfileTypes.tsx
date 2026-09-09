@@ -1,14 +1,14 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus } from 'lucide-react'
+import { ChevronRight, CircleAlert, Eye, FolderTree, Layers, Pencil, Plus, Shapes } from 'lucide-react'
 import { useQueryState } from '@/lib/useQueryState'
 import { useStore } from '@/store/useStore'
 import type { Category, ProfileType } from '@/types'
 import {
-  Badge, Button, Card, CardBody, CardHead, CellMain, Chip, DataTable,
-  Field, Modal, Note, Select, Stat, TextInput, type Column,
+  Badge, Button, Card, CardBody, CardHead, CellMain, Chip, DataTable, Drawer,
+  Field, Kebab, KV, Modal, Note, Select, Stat, TextInput, type Column,
 } from '@/components/ui'
-import { CATEGORY_TONE } from '@/lib/format'
+import { CATEGORY_TONE, shortDate } from '@/lib/format'
 
 const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW']
 
@@ -16,6 +16,7 @@ export default function ProfileTypes() {
   const profileTypes = useStore((s) => s.profileTypes)
   const workflows = useStore((s) => s.workflows)
   const add = useStore((s) => s.addProfileType)
+  const update = useStore((s) => s.updateProfileType)
 
   const nav = useNavigate()
   const pushToast = useStore((st) => st.pushToast)
@@ -24,6 +25,14 @@ export default function ProfileTypes() {
   const [ptype, setPtype] = useQueryState('type', 'All')
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ category: 'L2VPN' as Category, type: '', subtype: '', description: '' })
+  const [view, setView] = useState<ProfileType | null>(null)
+  const [edit, setEdit] = useState<ProfileType | null>(null)
+  const [editForm, setEditForm] = useState({ category: 'L2VPN' as Category, type: '', subtype: '', description: '' })
+
+  const startEdit = (p: ProfileType) => {
+    setEditForm({ category: p.category, type: p.type, subtype: p.subtype, description: p.description })
+    setEdit(p)
+  }
 
   const filtered = useMemo(() => profileTypes.filter((p) => {
     if (cat !== 'All' && p.category !== cat) return false
@@ -64,48 +73,67 @@ export default function ProfileTypes() {
         return n ? <span className="font-medium tnum">{n}</span> : <Badge tone="none">unused</Badge>
       },
     },
+    {
+      key: 'act', header: '', width: '48px',
+      render: (r) => (
+        <Kebab items={[
+          { label: 'View details', icon: Eye, onClick: () => setView(r) },
+          { label: 'Edit', icon: Pencil, onClick: () => startEdit(r) },
+        ]} />
+      ),
+    },
   ]
 
   return (
     <>
 
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
-        <Stat label="Profile types" value={profileTypes.length} note="Category → Type → Subtype combinations"
+        <Stat label="Profile types" icon={Layers} value={profileTypes.length} note="Category → Type → Subtype combinations"
+          info="The master hierarchy of service profiles. Each row is one Category → Type → Subtype combination that workflows are scoped to and provisioning requests select from."
           drillLabel="every profile type" onClick={() => { setCat('All'); }} />
-        <Stat label="Categories" value={CATS.length} note="L2VPN · L3VPN · IBW"
+        <Stat label="Categories" icon={FolderTree} value={CATS.length} note="L2VPN · L3VPN · IBW"
+          info="The top level of the hierarchy — the broad service families the platform provisions. Every profile type belongs to exactly one category."
           drillLabel="L2VPN profile types" onClick={() => setCat('L2VPN')} />
-        <Stat label="Distinct types" value={types} note="Functional classifications across all categories"
+        <Stat label="Distinct types" icon={Shapes} value={types} note="Functional classifications across all categories"
+          info="The middle level of the hierarchy — functional classifications such as Hub & Spoke or Point-to-point. One type can carry several subtypes."
           drillLabel="the workflows that consume these types" onClick={() => nav('/workflows')} />
-        <Stat label="Unused" value={unused} tone={unused > 0 ? 'warn' : undefined}
-          note="No workflow references these yet"
+        <Stat label="Unused" icon={CircleAlert} value={unused} tone={unused > 0 ? 'warn' : 'good'}
+          note={unused > 0 ? 'No workflow references these yet' : 'Every profile is referenced by a workflow'}
+          info="Profile types no workflow references yet. An order that selects one of these cannot be fulfilled until a workflow is mapped to it — either build the workflow or retire the profile."
           drillLabel="the workflow coverage matrix" onClick={() => nav('/workflows')} />
       </div>
 
       <Card>
-        <CardHead title="How the hierarchy is used" sub="Profile Type is admin configuration; workflows and provisioning consume it" />
+        <CardHead title="How the hierarchy is used" sub="Profile Type is admin configuration; workflows and provisioning consume it"
+          info="Profile types are created once by an admin and then consumed twice: a workflow is scoped to one hierarchy (plus vendor and model), and a provisioning request picks a category and type to be offered the matching workflows. Each step card below ends with a worked example." />
         <CardBody>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="flex flex-col gap-3 md:grid md:grid-cols-[1fr_28px_1fr_28px_1fr] md:items-stretch md:gap-0">
             {[
-              ['Step 1', 'Create the hierarchy', 'Category → Type → Subtype, as an admin action.'],
-              ['Step 2', 'Create the workflow', 'The hierarchy scopes the workflow along with vendor and model.'],
-              ['Step 3', 'Provision a service', 'The request picks a category and type; matching workflows are offered.'],
-            ].map(([s, t, d]) => (
-              <div key={s} className="border border-line rounded-lg px-4 py-3.5">
-                <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3">{s}</div>
-                <div className="text-[13px] font-medium mt-1">{t}</div>
-                <div className="text-[12px] text-ink-3 mt-1 leading-snug">{d}</div>
+              { n: '1', title: 'Create the hierarchy', desc: 'Category → Type → Subtype, as an admin action.', ex: ['L3VPN', 'Fully-Mesh', 'BGP'] },
+              { n: '2', title: 'Create the workflow', desc: 'The hierarchy scopes the workflow along with vendor and model.', ex: ['IBW', 'VRF', 'Static'] },
+              { n: '3', title: 'Provision a service', desc: 'The request picks a category and type; matching workflows are offered.', ex: ['L2VPN', 'Railwire', 'Tagged'] },
+            ].map((step, i) => (
+              <div key={step.n} className="contents">
+                {i > 0 && (
+                  <div className="hidden md:grid place-items-center" aria-hidden>
+                    <ChevronRight size={18} className="text-ink-3" />
+                  </div>
+                )}
+                <div className="flex flex-col border border-line rounded-lg px-4 py-4">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-7 h-7 rounded-full bg-brand-500 text-white grid place-items-center text-[12px] font-semibold shrink-0">{step.n}</span>
+                    <span className="text-[13px] font-semibold text-ink-1">{step.title}</span>
+                  </div>
+                  <p className="text-[12px] text-ink-3 mt-2 mb-0 leading-snug flex-1">{step.desc}</p>
+                  <div className="flex items-center flex-wrap gap-x-2 gap-y-1 text-[12px] font-mono mt-3 pt-3 border-t border-line-soft">
+                    <Badge tone={CATEGORY_TONE[step.ex[0]]}>{step.ex[0]}</Badge><span className="text-ink-3">→</span>
+                    <span>{step.ex[1]}</span><span className="text-ink-3">→</span><span className="font-semibold">{step.ex[2]}</span>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            {[['L3VPN', 'Fully-Mesh', 'BGP'], ['IBW', 'VRF', 'Static'], ['L2VPN', 'Railwire', 'Tagged']].map(([c, t, s]) => (
-              <div key={c + t} className="flex items-center gap-2 text-[12.5px] font-mono border border-line rounded-lg px-3.5 py-2.5">
-                <Badge tone={CATEGORY_TONE[c]}>{c}</Badge><span className="text-ink-3">→</span>
-                <span>{t}</span><span className="text-ink-3">→</span><span className="font-semibold">{s}</span>
-              </div>
-            ))}
-          </div>
-          <Note>
+          <Note className="mt-4">
             Keep Type and Subtype naming consistent, and reuse an existing profile before creating another —
             a token that appears at two levels of the hierarchy makes workflow mapping ambiguous.
           </Note>
@@ -117,7 +145,7 @@ export default function ProfileTypes() {
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Category, Type, Subtype' },
           chips: CATS.map((c) => (
-            <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} count={profileTypes.filter((p) => p.category === c).length} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>
+            <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>
           )),
           filters: [
             { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
@@ -169,6 +197,81 @@ export default function ProfileTypes() {
           </Field>
           {profileTypes.some((p) => p.category === form.category && p.type === form.type.trim() && p.subtype === form.subtype.trim()) && (
             <Note tone="warn">A profile type with this exact hierarchy already exists. Reuse it rather than creating a duplicate.</Note>
+          )}
+        </div>
+      </Modal>
+
+      {/* -------- view details -------- */}
+      <Drawer
+        open={!!view} onClose={() => setView(null)}
+        title={view ? `${view.category} · ${view.type} · ${view.subtype}` : ''}
+        sub={view?.id}
+        width={520}
+        footer={view && (
+          <Button variant="primary" onClick={() => { startEdit(view); setView(null) }}>
+            <Pencil size={15} />Edit
+          </Button>
+        )}
+      >
+        {view && (
+          <div className="flex flex-col gap-5">
+            <KV items={[
+              ['Category', <Badge key="c" tone={CATEGORY_TONE[view.category]}>{view.category}</Badge>],
+              ['Type', view.type],
+              ['Subtype', view.subtype],
+              ['Description', view.description],
+              ['Creator', view.creator],
+              ['Created', shortDate(view.createdAt)],
+              ['Workflows using this', usage.get(`${view.category}|${view.type}|${view.subtype}`) ?? 0],
+            ]} />
+          </div>
+        )}
+      </Drawer>
+
+      {/* -------- edit -------- */}
+      <Modal
+        open={!!edit} onClose={() => setEdit(null)}
+        title="Edit profile template" sub={edit?.id}
+        footer={
+          <>
+            <Button onClick={() => setEdit(null)}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={!editForm.type.trim() || !editForm.subtype.trim() || !editForm.description.trim()}
+              onClick={() => {
+                if (edit) {
+                  update(edit.id, {
+                    category: editForm.category,
+                    type: editForm.type.trim(),
+                    subtype: editForm.subtype.trim(),
+                    description: editForm.description.trim(),
+                  })
+                }
+                setEdit(null)
+              }}
+            >Save</Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <Field label="Profile category" required>
+            <Select value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value as Category })}>
+              {CATS.map((c) => <option key={c}>{c}</option>)}
+            </Select>
+          </Field>
+          <Field label="Profile type" required hint="Functional classification, for example Hub & Spoke or Transparent.">
+            <TextInput value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} placeholder="Hub & Spoke" />
+          </Field>
+          <Field label="Subtype" required hint="Specialisation used during workflow mapping, for example BGP or Tagged.">
+            <TextInput value={editForm.subtype} onChange={(e) => setEditForm({ ...editForm, subtype: e.target.value })} placeholder="BGP" />
+          </Field>
+          <Field label="Description" required>
+            <TextInput value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} placeholder="L3VPN Hub and Spoke profile for BGP-based connectivity." />
+          </Field>
+          {edit && (usage.get(`${edit.category}|${edit.type}|${edit.subtype}`) ?? 0) > 0 && (
+            <Note tone="warn">
+              {usage.get(`${edit.category}|${edit.type}|${edit.subtype}`)} workflow(s) are mapped to this exact hierarchy — changing Category, Type or Subtype breaks that mapping.
+            </Note>
           )}
         </div>
       </Modal>

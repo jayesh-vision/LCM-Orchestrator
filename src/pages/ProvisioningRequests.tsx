@@ -1,29 +1,31 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
-import { Download, Eye, ListChecks, Plus, SlidersHorizontal, Workflow } from 'lucide-react'
+import { CheckCircle2, Download, Eye, ListChecks, Plus, SlidersHorizontal, Workflow, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { Category, Order, OrderState } from '@/types'
 import {
-  Badge, CellMain, CellSub, Chip, DataTable,
-  FilterBanner, Kebab, Mono, Progress, type Column,
+  Badge, Button, CellMain, CellSub, Chip, DataTable, Field,
+  FilterBanner, Kebab, Modal, Mono, Progress, type Column,
 } from '@/components/ui'
 import { CategoryCard } from '@/components/charts'
-import { ageLabel, CATEGORY_TONE, INTENT_TONE, ORDER_TONE } from '@/lib/format'
+import { CATEGORY_TONE, ORDER_TONE } from '@/lib/format'
 
 const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW']
 
 const STATE_ORDER: OrderState[] = [
-  'Draft', 'Designed', 'Awaiting approval', 'Approved', 'Queued',
-  'Executing', 'Activated', 'Failed', 'Rejected', 'Unrouted',
+  'Draft', 'Planned', 'Validated', 'Invalid', 'Approved', 'Rejected',
+  'Queued', 'In progress', 'Ready', 'Failed', 'Reinstantiate',
 ]
 
 export default function ProvisioningRequests() {
   const orders = useStore((s) => s.orders)
+  const approveOrder = useStore((s) => s.approveOrder)
+  const rejectOrder = useStore((s) => s.rejectOrder)
   const nav = useNavigate()
   const [q, setQ] = useQueryState('q', '')
   const [cat, setCat] = useQueryState<Category | 'All'>('cat', 'All')
-  /* `state` may carry several stages, e.g. state=Failed,Rejected,Unrouted */
+  /* `state` may carry several stages, e.g. state=Failed,Rejected,Invalid */
   const [state, setState] = useQueryState<OrderState | 'All' | string>('state', 'All')
   const stateList = state === 'All' ? [] : state.split(',')
   const [intent, setIntent] = useQueryState('intent', 'All')
@@ -33,6 +35,10 @@ export default function ProvisioningRequests() {
   const patch = useQueryPatch()
   const clear = useClearQuery(['q', 'cat', 'state', 'intent', 'owner', 'customer'])
   const resultsRef = useScrollToResultsOnDrillIn(cat !== 'All' || state !== 'All' || intent !== 'All' || owner !== 'All')
+  const [reject, setReject] = useState<Order | null>(null)
+  const [rejectNote, setRejectNote] = useState('')
+
+  const doApprove = (o: Order) => { approveOrder(o.id, 'Ravi K.'); pushToast('good', `${o.id} approved — ready to run in Provisioning Execution.`) }
 
   const byCategory = useMemo(() => {
     const m = new Map<Category, Order[]>()
@@ -58,6 +64,17 @@ export default function ProvisioningRequests() {
 
   const columns: Column<Order>[] = [
     {
+      key: 'state', header: 'Status', width: '170px',
+      sortValue: (r) => STATE_ORDER.indexOf(r.state),
+      render: (r) => (
+        <>
+          <Badge tone={ORDER_TONE[r.state]} dot>{r.state}</Badge>
+          {r.state === 'In progress' && <Progress value={45} className="mt-2 w-24" />}
+          {r.slaBreached && <CellSub><span className="text-crit-700">SLA breached</span></CellSub>}
+        </>
+      ),
+    },
+    {
       key: 'order', header: 'Request', width: '168px',
       sortValue: (r) => r.id,
       render: (r) => (<><CellMain><Mono>{r.id}</Mono></CellMain><CellSub>{r.code}</CellSub></>),
@@ -65,17 +82,17 @@ export default function ProvisioningRequests() {
     {
       key: 'name', header: 'Name', width: '190px',
       sortValue: (r) => r.name,
-      render: (r) => (<><CellMain>{r.name}</CellMain><CellSub>{r.type} · {r.subtype}</CellSub></>),
+      render: (r) => (<><CellMain>{r.name}</CellMain><CellSub>{r.subtype}</CellSub></>),
     },
     {
-      key: 'category', header: 'Category', width: '110px',
+      key: 'category', header: 'Category / Type', width: '132px',
       sortValue: (r) => r.category,
-      render: (r) => <Badge tone={CATEGORY_TONE[r.category]}>{r.category}</Badge>,
-    },
-    {
-      key: 'intent', header: 'Intent', width: '106px',
-      sortValue: (r) => r.intent,
-      render: (r) => <Badge tone={INTENT_TONE[r.intent]}>{r.intent}</Badge>,
+      render: (r) => (
+        <div className="text-center">
+          <Badge tone={CATEGORY_TONE[r.category]}>{r.category}</Badge>
+          <CellSub>{r.type}</CellSub>
+        </div>
+      ),
     },
     {
       key: 'customer', header: 'Customer', width: '190px',
@@ -90,25 +107,16 @@ export default function ProvisioningRequests() {
           <CellSub>{r.endpoints.length > 2 ? `+${r.endpoints.length - 2} more sites` : r.endpoints.map((e) => e.port).join(' · ')}</CellSub></>)),
     },
     {
-      key: 'state', header: 'Status', width: '170px',
-      sortValue: (r) => STATE_ORDER.indexOf(r.state),
-      render: (r) => (
-        <>
-          <Badge tone={ORDER_TONE[r.state]} dot>{r.state}</Badge>
-          {r.state === 'Executing' && <Progress value={45} className="mt-2 w-24" />}
-          {r.slaBreached && <CellSub><span className="text-crit-700">SLA breached</span></CellSub>}
-        </>
-      ),
-    },
-    { key: 'age', header: 'Age', align: 'right', width: '76px', sortValue: (r) => r.ageDays, render: (r) => ageLabel(r.ageDays) },
-    { key: 'owner', header: 'Owner', width: '116px', sortValue: (r) => r.owner ?? '', render: (r) => r.owner ?? <span className="text-ink-3">unassigned</span> },
-    {
       key: 'act', header: '', width: '48px',
       render: (r) => (
         <Kebab items={[
           { label: 'View details', icon: Eye, onClick: () => nav(`/requests/${r.id}`) },
           { label: 'Life cycle operation', icon: Workflow, onClick: () => nav(`/requests/${r.id}?tab=lifecycle`) },
           { label: 'View jobs', icon: ListChecks, onClick: () => nav(`/requests/${r.id}?tab=runs`) },
+          ...(r.state === 'Validated'
+            ? [{ label: 'Approve', icon: CheckCircle2, onClick: () => doApprove(r) },
+              { label: 'Reject', icon: XCircle, onClick: () => { setReject(r); setRejectNote('') }, danger: true }]
+            : []),
         ]} />
       ),
     },
@@ -141,12 +149,13 @@ export default function ProvisioningRequests() {
               key={c}
               chip={<Badge tone={CATEGORY_TONE[c]}>{c}</Badge>}
               total={list.length} noun="requests"
+              info={`All ${c} requests grouped by where they stand. Ready went live, In progress is executing or queued, Waiting has not yet been approved, Failed needs intervention. Click a legend row to open exactly those requests.`}
               onOpen={() => patch({ cat: c, state: null })}
               segments={[
-                seg('Activated', count('Activated'), 'good', 'Activated'),
-                seg('In flight', count('Executing') + count('Queued') + count('Approved'), 'brand', 'Executing,Queued,Approved'),
-                seg('Awaiting', count('Designed') + count('Awaiting approval') + count('Draft'), 'none', 'Draft,Designed,Awaiting approval'),
-                seg('Failed', count('Failed') + count('Rejected') + count('Unrouted'), 'crit', 'Failed,Rejected,Unrouted'),
+                seg('Ready', count('Ready'), 'good', 'Ready'),
+                seg('In progress', count('In progress') + count('Queued') + count('Approved'), 'brand', 'In progress,Queued,Approved'),
+                seg('Waiting', count('Draft') + count('Planned') + count('Validated'), 'none', 'Draft,Planned,Validated'),
+                seg('Failed', count('Failed') + count('Rejected') + count('Invalid') + count('Reinstantiate'), 'crit', 'Failed,Rejected,Invalid,Reinstantiate'),
               ]}
             />
           )
@@ -160,12 +169,11 @@ export default function ProvisioningRequests() {
         columns={columns}
         pageSize={12}
         onRowClick={(r) => nav(`/requests/${r.id}`)}
-        rowTone={(r) => (r.state === 'Failed' ? 'crit' : r.state === 'Unrouted' || r.slaBreached ? 'warn' : undefined)}
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Name, Code' },
           /* Quick chips are categories only — every other filter lives in the popover. */
           chips: CATEGORIES.map((c) => (
-            <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} count={(byCategory.get(c) ?? []).length} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>
+            <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>
           )),
           filters: [
             {
@@ -173,9 +181,9 @@ export default function ProvisioningRequests() {
               options: [
                 ...STATE_ORDER.filter((st) => orders.some((o) => o.state === st))
                   .map((st) => ({ value: st, label: st, count: orders.filter((o) => o.state === st).length })),
-                { value: 'Designed,Awaiting approval', label: 'Waiting for approval' },
+                { value: 'Validated', label: 'Waiting for approval' },
                 { value: 'Approved,Queued', label: 'Ready to run' },
-                { value: 'Failed,Rejected,Unrouted', label: 'Blocked' },
+                { value: 'Failed,Rejected,Invalid,Reinstantiate', label: 'Blocked' },
               ],
             },
             { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
@@ -199,6 +207,29 @@ export default function ProvisioningRequests() {
           ],
         }}
       />
+
+      {/* -------- reject -------- */}
+      <Modal
+        open={!!reject} onClose={() => setReject(null)}
+        title="Reject request" sub={reject?.id}
+        footer={
+          <>
+            <Button onClick={() => setReject(null)}>Cancel</Button>
+            <Button variant="danger" disabled={!rejectNote.trim()}
+              onClick={() => { if (reject) rejectOrder(reject.id, 'Ravi K.', rejectNote); setReject(null) }}>
+              Reject request
+            </Button>
+          </>
+        }
+      >
+        <Field label="Reason" required hint="Recorded on the approval trail and shown to the requester.">
+          <textarea
+            value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} rows={4}
+            placeholder="Uplink headroom insufficient at the A-end…"
+            className="w-full px-3 py-2.5 border border-line rounded-md text-[13px] outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-100 resize-y"
+          />
+        </Field>
+      </Modal>
     </>
   )
 }

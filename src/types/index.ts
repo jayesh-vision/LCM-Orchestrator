@@ -15,10 +15,15 @@ export type OperState = 'Up' | 'Down' | 'Degraded' | 'Unknown'
 /** Computed by comparing intent to the device. Never typed by a human. */
 export type Conformance = 'Conformant' | 'Drifted' | 'Never proven' | 'Ghost' | 'Not checked'
 
-/** Lifecycle state of an order. */
+/** Lifecycle state of an order — the platform's own vocabulary end to end:
+ *  Draft (params only, no check run yet) → Planned (pre-validation running) →
+ *  Validated / Invalid (pre-validation outcome) → Approved / Rejected (human
+ *  decision on a Validated request) → Queued (sent to the execution queue) →
+ *  In progress (workflow executing) → Ready / Failed (workflow outcome) →
+ *  Reinstantiate (a Failed request re-entering the queue for another attempt). */
 export type OrderState =
-  | 'Draft' | 'Designed' | 'Awaiting approval' | 'Approved' | 'Queued'
-  | 'Executing' | 'Activated' | 'Failed' | 'Rejected' | 'Unrouted'
+  | 'Draft' | 'Planned' | 'Validated' | 'Invalid' | 'Approved' | 'Rejected'
+  | 'Queued' | 'In progress' | 'Ready' | 'Failed' | 'Reinstantiate'
 
 export type OrderIntent = 'Create' | 'Modify' | 'Suspend' | 'Resume' | 'Cease' | 'Re-prove'
 
@@ -57,7 +62,12 @@ export interface ValidationRule {
   type: ValidationType
 }
 
-export type Vendor = 'CISCO' | 'JUNIPER' | 'NOKIA' | 'SAMSUNG'
+export type Vendor = 'CISCO' | 'JUNIPER' | 'NOKIA' | 'ADVA' | 'TEJAS' | 'TECHROUTE' | 'EDGECORE' | 'DLINK'
+
+/** What the device actually is. Router-class devices carry BGP/VRF/L3 routing
+ *  and are the only kind that can serve an L3VPN or IBW intent; a Switch is
+ *  Ethernet/VLAN-only and can only carry the L2VPN family. */
+export type DeviceKind = 'Router' | 'Switch'
 
 export type WorkflowState = 'Draft' | 'Assigned' | 'Awaiting approval' | 'Active' | 'Rejected' | 'Retired'
 
@@ -178,6 +188,7 @@ export interface Workflow {
   type: string
   subtype: string
   vendor: Vendor
+  kind: DeviceKind             // Router or Switch — denormalised from the bound device model
   model: string               // first model, for grids
   models: string[]            // every model this template may run on
   osRange: string

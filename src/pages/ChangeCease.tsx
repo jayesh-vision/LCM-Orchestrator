@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryState } from '@/lib/useQueryState'
-import { CheckCircle2, Eye, Plus, Server, XCircle } from 'lucide-react'
+import { CalendarClock, CheckCircle2, CircleOff, Eye, PauseCircle, Pencil, Plus, Server, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { Order, OrderIntent } from '@/types'
 import {
@@ -90,7 +90,7 @@ export default function ChangeCease() {
         <Kebab items={[
           { label: 'View details', icon: Eye, onClick: () => nav(`/execution/${r.id}`) },
           ...(r.serviceId ? [{ label: 'Open service', icon: Server, onClick: () => nav(`/inventory/${r.serviceId}`) }] : []),
-          ...(r.state === 'Awaiting approval' || r.state === 'Designed'
+          ...(r.state === 'Validated'
             ? [{ label: 'Approve', icon: CheckCircle2, onClick: () => approve(r.id, 'Ravi K.') },
               { label: 'Reject', icon: XCircle, onClick: () => reject(r.id, 'Ravi K.', 'Rejected from Change & Cease.'), danger: true }]
             : []),
@@ -103,50 +103,22 @@ export default function ChangeCease() {
     <>
 
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
-        <Stat label="Open modify orders" value={n('Modify')} accent="var(--vw-color-purple-600)"
+        <Stat label="Open modify orders" icon={Pencil} value={n('Modify')}
           note="Delta only — the renderer emits just the lines the change implies"
+          info="Orders that change an attribute of an existing live service, such as bandwidth. Only the delta is written to the device, and the change is hitless on this platform."
           drillLabel="modify orders" onClick={() => setIntent('Modify')} />
-        <Stat label="Suspend & resume" value={n('Suspend') + n('Resume')} accent="var(--vw-color-amber-500)" note="Billing-driven"
+        <Stat label="Suspend & resume" icon={PauseCircle} value={n('Suspend') + n('Resume')} tone="warn"
+          note="Billing-driven · configuration retained for resume"
+          info="Billing-driven stops and restarts. A suspend zeroes the policer but keeps the configuration, so a later resume restores exactly the revision that was live. Both interrupt service."
           drillLabel="suspend orders" onClick={() => setIntent('Suspend')} />
-        <Stat label="Cease orders" value={n('Cease')} accent="var(--vw-color-red-600)" note="Resources quarantined for 30 days"
+        <Stat label="Cease orders" icon={CircleOff} value={n('Cease')} tone="crit" note="Resources quarantined for 30 days"
+          info="Permanent decommissions. Configuration is fully removed, absence is proven, and the service's resources move to quarantine — not straight back to the pool — so nothing stale can leak."
           drillLabel="cease orders" onClick={() => setIntent('Cease')} />
-        <Stat label="Next change window" value="01:00" accent="var(--vw-color-emerald-600)"
+        <Stat label="Next change window" icon={CalendarClock} value="01:00" tone="good"
           note="Tonight, IST · traffic-affecting changes only run inside a window"
+          info="Traffic-affecting changes (suspend, resume, cease) only execute inside the nightly maintenance window. Approved orders queue until it opens; hitless changes run any time."
           drillLabel="the execution queue waiting on a window" onClick={() => nav('/execution?state=Approved,Queued')} />
       </div>
-
-      <Card>
-        <CardHead title="Lifecycle operations available after Create"
-          sub="One order carries exactly one intent against exactly one service" />
-        <div className="overflow-x-auto">
-          <table className="w-full text-[13px]">
-            <thead><tr>
-              {['Intent', 'Produces', 'Configuration written', 'Traffic impact', 'Approval', 'Open'].map((h) => (
-                <th key={h} scope="col" className="text-left px-[18px] py-3 border-b border-line text-[12px] font-medium text-ink-3">{h}</th>
-              ))}
-            </tr></thead>
-            <tbody>
-              {([
-                ['Create', 'A new service instance', 'Full render', false, 'NOC lead', orders.filter((o) => o.intent === 'Create').length],
-                ['Modify', 'A new revision of the same service', 'Delta only', false, 'NOC lead if traffic-affecting', n('Modify')],
-                ['Suspend', 'Same service, Suspended', 'Policer to zero', true, 'Billing + NOC lead', n('Suspend')],
-                ['Resume', 'Same service, Live', 'Restore prior revision', true, 'Billing', n('Resume')],
-                ['Cease', 'Ceased, then Purged at day 90', 'Full removal + pool release', true, 'NOC lead + account owner', n('Cease')],
-                ['Re-prove', 'Fresh evidence, no state change', 'None — read only', false, 'Not required', n('Re-prove')],
-              ] as [OrderIntent, string, string, boolean, string, number][]).map(([i, produces, cfg, bounce, appr, count]) => (
-                <tr key={i} className="border-b border-line-soft last:border-0">
-                  <td className="px-[18px] py-3"><Badge tone={INTENT_TONE[i]}>{i}</Badge></td>
-                  <td className="px-[18px] py-3">{produces}</td>
-                  <td className="px-[18px] py-3 text-ink-3">{cfg}</td>
-                  <td className="px-[18px] py-3">{bounce ? <Badge tone="crit">Interrupts service</Badge> : <Badge tone="good">Hitless</Badge>}</td>
-                  <td className="px-[18px] py-3 text-ink-3">{appr}</td>
-                  <td className="px-[18px] py-3 tnum font-semibold">{count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
 
       <DataTable
         rows={filtered} total={changes.length} columns={columns} pageSize={10}
@@ -154,7 +126,7 @@ export default function ChangeCease() {
         empty="No change orders yet. Raise one from a service, or with the button above."
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Service, Customer' },
-          chips: INTENTS.filter((i) => n(i) > 0).map((i) => <Chip key={i} active={intent === i} count={n(i)} onClick={() => setIntent(intent === i ? 'All' : i)}>{i}</Chip>),
+          chips: INTENTS.filter((i) => n(i) > 0).map((i) => <Chip key={i} active={intent === i} onClick={() => setIntent(intent === i ? 'All' : i)}>{i}</Chip>),
           filters: [
             { key: 'intent', label: 'Operation', value: intent, onChange: (v) => setIntent(v as OrderIntent | 'All'),
               options: INTENTS.filter((i) => n(i) > 0).map((i) => ({ value: i, label: i, count: n(i) })) },
@@ -171,7 +143,8 @@ export default function ChangeCease() {
       />
 
       <Card>
-        <CardHead title="Cease completion checklist" sub="A cease is not complete when the commands return — it is complete when absence is proven" />
+        <CardHead title="Cease completion checklist" sub="A cease is not complete when the commands return — it is complete when absence is proven"
+          info="The five gates every cease must pass before it closes. Removing configuration and proving it is gone are different acts — discovery re-checks at day 7 and reopens the cease if residue is found, and billing only stops once the whole chain completes." />
         <CardBody>
           <div className="grid gap-3 md:grid-cols-5">
             {[
@@ -182,13 +155,13 @@ export default function ChangeCease() {
               ['5', 'Billing stop-date', 'Written back, closes the order'],
             ].map(([n2, t, s]) => (
               <div key={n2} className="border border-line rounded-lg px-3.5 py-3">
-                <div className="w-6 h-6 rounded-full bg-plane text-ink-3 grid place-items-center text-[11px] font-semibold mb-2">{n2}</div>
+                <div className="w-6 h-6 rounded-full bg-brand-50 text-brand-600 grid place-items-center text-[11px] font-semibold mb-2">{n2}</div>
                 <div className="text-[12.5px] font-medium leading-snug">{t}</div>
                 <div className="text-[11.5px] text-ink-3 mt-1 leading-snug">{s}</div>
               </div>
             ))}
           </div>
-          <Note tone="warn">
+          <Note tone="warn" className="mt-4">
             A ceased service sits in <b>Ceased</b>, not Purged, for 90 days precisely so discovery has time to contradict it.
             If configuration is still found at day 7 the cease reopens as a failed cease with the residue itemised.
           </Note>

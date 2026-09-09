@@ -1,9 +1,12 @@
 import type { Vendor, Workflow, WorkflowState } from '@/types'
-import { DEVICE_MODELS, PROFILE_TYPES, between, pad, rnd } from './catalog'
+import { DEVICE_MODELS, PROFILE_TYPES, between, modelsForCategory, pad, rnd } from './catalog'
 import { templateFor } from './templates'
 
 /* Vendor as it appears in a workflow name on the platform. */
-const VENDOR_LABEL: Record<Vendor, string> = { CISCO: 'Cisco', JUNIPER: 'Juniper', NOKIA: 'Nokia', SAMSUNG: 'Samsung' }
+export const VENDOR_LABEL: Record<Vendor, string> = {
+  CISCO: 'Cisco', JUNIPER: 'Juniper', NOKIA: 'Nokia', ADVA: 'Adva', TEJAS: 'Tejas',
+  TECHROUTE: 'TechRoute', EDGECORE: 'EdgeCore', DLINK: 'D-Link',
+}
 
 /**
  * Workflow templates, named the way the platform names them:
@@ -15,10 +18,11 @@ const VENDOR_LABEL: Record<Vendor, string> = { CISCO: 'Cisco', JUNIPER: 'Juniper
  */
 export function buildWorkflows(): Workflow[] {
   const out: Workflow[] = []
-  const TARGET: Record<string, number> = { L2VPN: 74, L3VPN: 26, IBW: 38 }
+  /* Doubled from the platform's original 2-vendor counts (74/26/38) now that
+     eight vendors — six Router, two Switch — share the same coverage grid;
+     otherwise each vendor's slice would read as near-empty. */
+  const TARGET: Record<string, number> = { L2VPN: 148, L3VPN: 52, IBW: 76 }
   const activeCount: Record<string, number> = { L2VPN: 0, L3VPN: 0, IBW: 0 }
-  const VENDOR_MODELS = DEVICE_MODELS.filter((d) => d.vendor === 'CISCO' || d.vendor === 'JUNIPER')
-  let n = 0
 
   const push = (pt: typeof PROFILE_TYPES[number], dm: typeof DEVICE_MODELS[number], role: 'Source' | 'Destination' | undefined, state: WorkflowState, suffix: string) => {
     const isNcs = dm.model.startsWith('NCS')
@@ -37,14 +41,14 @@ export function buildWorkflows(): Workflow[] {
     const version = state === 'Active' ? between(1, 5) : 1
     n += 1
     const { stages, tasks } = templateFor(pt.category, dm.vendor, pt.type, role, pt.subtype)
-    /* Most templates cover one model; every fourth covers both models of its vendor. */
-    const siblings = VENDOR_MODELS.filter((m) => m.vendor === dm.vendor).map((m) => m.model)
+    /* Most templates cover one model; every fourth covers every model of its vendor. */
+    const siblings = DEVICE_MODELS.filter((m) => m.vendor === dm.vendor).map((m) => m.model)
     const models = n % 4 === 0 ? siblings : [dm.model]
     out.push({
       id: `CF-${pad(400 - n, 6)}`,
       name, displayName: name,
       category: pt.category, type: pt.type, subtype: pt.subtype,
-      vendor: dm.vendor, model: dm.model, models, osRange: dm.osRange,
+      vendor: dm.vendor, kind: dm.kind, model: dm.model, models, osRange: dm.osRange,
       intentId, endpointRole: role, state, version,
       modifiedOn: new Date(2025, 11 - (n % 12), 1 + (n % 27)).toISOString(),
       createdBy: n % 4 === 0 ? 'Priya S.' : n % 3 === 0 ? 'Ravi K.' : 'Jayesh',
@@ -54,11 +58,12 @@ export function buildWorkflows(): Workflow[] {
     })
     if (state === 'Active') activeCount[pt.category] += 1
   }
+  let n = 0
 
   /* The workflows Jayesh's lifecycle screenshots show, seeded first so the
      prototype's requests bind to the very templates the platform runs. */
   const find = (cat: string, type: string, subtype: string) => PROFILE_TYPES.find((p) => p.category === cat && p.type === type && p.subtype === subtype)!
-  const model = (m: string) => VENDOR_MODELS.find((d) => d.model === m)!
+  const model = (m: string) => DEVICE_MODELS.find((d) => d.model === m)!
   const PLATFORM: Array<[string, string, string, string, boolean]> = [
     ['L2VPN', 'Transparent', 'Untagged', 'NCS-540', true],
     ['L2VPN', 'Transparent', 'Tagged', 'MX204', true],
@@ -74,17 +79,20 @@ export function buildWorkflows(): Workflow[] {
   })
 
   /* Active templates: cycle profile types × vendor models × ends until each
-     category hits its platform count. */
+     category hits its platform count. Router vendors cover every category;
+     Switch vendors (EdgeCore, D-Link) only ever carry L2VPN — a switch has
+     no BGP/VRF to run an L3VPN or IBW intent with. */
   for (const cat of ['L2VPN', 'L3VPN', 'IBW'] as const) {
     const pts = PROFILE_TYPES.filter((p) => p.category === cat)
+    const models = modelsForCategory(cat)
     let i = 0
     while (activeCount[cat] < TARGET[cat]) {
       const pt = pts[i % pts.length]
-      /* Vendor/model rotates with every profile type, so both vendors are covered
-         for every category from the first generation on. */
+      /* Vendor/model rotates with every profile type, so every eligible
+         vendor is covered for every category from the first generation on. */
       const pass = Math.floor(i / pts.length)
-      const dm = VENDOR_MODELS[(i + pass) % VENDOR_MODELS.length]
-      const gen = Math.floor(pass / VENDOR_MODELS.length) + 1
+      const dm = models[(i + pass) % models.length]
+      const gen = Math.floor(pass / models.length) + 1
       if (cat === 'IBW') {
         push(pt, dm, undefined, 'Active', gen > 1 ? String(gen) : '')
       } else {
@@ -102,7 +110,8 @@ export function buildWorkflows(): Workflow[] {
   ]
   TAIL.forEach((state, k) => {
     const pt = PROFILE_TYPES[(k * 5) % PROFILE_TYPES.length]
-    const dm = VENDOR_MODELS[k % VENDOR_MODELS.length]
+    const models = modelsForCategory(pt.category)
+    const dm = models[k % models.length]
     const role = pt.category === 'IBW' ? undefined : (k % 2 ? 'Destination' : 'Source')
     push(pt, dm, role, state, String(2 + (k % 3)))
   })

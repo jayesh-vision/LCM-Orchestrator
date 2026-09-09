@@ -9,7 +9,8 @@ import type {
   Category, EndpointRole, StageKind, ValidationRule, ValidationType, Vendor, Workflow, WorkflowStage, WorkflowTaskDef,
 } from '@/types'
 import { STAGE_KINDS, VALIDATION_TYPES } from '@/types'
-import { CATEGORIES, DEVICE_MODELS, PROFILE_TYPES, VENDORS } from '@/data/catalog'
+import { CATEGORIES, DEVICE_MODELS, PROFILE_TYPES, modelsForCategory } from '@/data/catalog'
+import { VENDOR_LABEL } from '@/data/workflows'
 import { KNOWN_PARAMS, emptyStages, newRule, newStage, newTask, paramsIn, templateFor } from '@/data/templates'
 import { Badge, Button, Card, CardBody, Field, Mono, Note, Select, TextInput, Toggle } from '@/components/ui'
 import { CATEGORY_TONE, WORKFLOW_TONE, shortDate } from '@/lib/format'
@@ -21,8 +22,6 @@ import { CATEGORY_TONE, WORKFLOW_TONE, shortDate } from '@/lib/format'
    stage's task table or the selected task's editor. Below: the
    parameters the commands use and the checks that gate publishing.
    ------------------------------------------------------------------ */
-
-const VENDOR_LABEL: Record<Vendor, string> = { CISCO: 'Cisco', JUNIPER: 'Juniper', NOKIA: 'Nokia', SAMSUNG: 'Samsung' }
 const KIND_CHIP: Record<StageKind, string> = { 'Pre validation': 'vw-chip--cyan', Configuration: 'vw-chip--info', 'Post validation': 'vw-chip--warning' }
 const KIND_HINT: Record<StageKind, string> = {
   'Pre validation': 'Read-only checks before anything is written. A failure stops the run before the device changes.',
@@ -43,6 +42,7 @@ function blankWorkflow(from?: Workflow): Workflow {
     type: from?.type ?? firstType?.type ?? '',
     subtype: from?.subtype ?? firstType?.subtype ?? '',
     vendor: from?.vendor ?? 'JUNIPER',
+    kind: from?.kind ?? 'Router',
     model: from?.model ?? '',
     models: from ? [...from.models] : [],
     osRange: from?.osRange ?? '',
@@ -92,6 +92,9 @@ export default function WorkflowBuilder() {
   /* -------- definition helpers -------- */
   const types = useMemo(() => [...new Set(PROFILE_TYPES.filter((p) => p.category === wf.category).map((p) => p.type))], [wf.category])
   const subtypes = useMemo(() => [...new Set(PROFILE_TYPES.filter((p) => p.category === wf.category && p.type === wf.type).map((p) => p.subtype))], [wf.category, wf.type])
+  /* A Switch has no BGP/VRF, so it can only ever carry L2VPN — the vendor
+     list narrows to what the current category can actually run on. */
+  const categoryVendors = [...new Set(modelsForCategory(wf.category).map((d) => d.vendor))]
   const vendorModels = DEVICE_MODELS.filter((d) => d.vendor === wf.vendor)
   const siblings = workflows.filter((w) => w.id !== wf.id && w.category === wf.category && w.type === wf.type && w.subtype === wf.subtype && w.vendor === wf.vendor && w.endpointRole === wf.endpointRole)
   const suggested = composeName(wf, siblings.length + 1)
@@ -100,13 +103,26 @@ export default function WorkflowBuilder() {
   const setCategory = (category: Category) => {
     const t = [...new Set(PROFILE_TYPES.filter((p) => p.category === category).map((p) => p.type))]
     const st = [...new Set(PROFILE_TYPES.filter((p) => p.category === category && p.type === t[0]).map((p) => p.subtype))]
-    patch({ category, type: t[0] ?? '', subtype: st[0] ?? '', endpointRole: category === 'IBW' ? undefined : (wf.endpointRole ?? 'Source'), intentId: category === 'IBW' ? 'INT-IBW-ACCESS' : category === 'L2VPN' ? 'INT-L2-P2P' : 'INT-L3-MESH' })
+    /* Switching away from L2VPN strands a Switch-bound vendor with no valid
+       device — fall back to the first Router vendor for the new category. */
+    const validVendors = modelsForCategory(category).map((d) => d.vendor)
+    const vendor = validVendors.includes(wf.vendor) ? wf.vendor : validVendors[0]
+    const kind = DEVICE_MODELS.find((d) => d.vendor === vendor)?.kind ?? 'Router'
+    patch({
+      category, type: t[0] ?? '', subtype: st[0] ?? '', vendor, kind,
+      ...(vendor !== wf.vendor ? { models: [], model: '' } : {}),
+      endpointRole: category === 'IBW' ? undefined : (wf.endpointRole ?? 'Source'),
+      intentId: category === 'IBW' ? 'INT-IBW-ACCESS' : category === 'L2VPN' ? 'INT-L2-P2P' : 'INT-L3-MESH',
+    })
   }
   const setType = (type: string) => {
     const st = [...new Set(PROFILE_TYPES.filter((p) => p.category === wf.category && p.type === type).map((p) => p.subtype))]
     patch({ type, subtype: st[0] ?? '' })
   }
-  const setVendor = (vendor: Vendor) => patch({ vendor, models: [], model: '' })
+  const setVendor = (vendor: Vendor) => {
+    const kind = DEVICE_MODELS.find((d) => d.vendor === vendor)?.kind ?? 'Router'
+    patch({ vendor, kind, models: [], model: '' })
+  }
   const addModel = (m: string) => {
     if (!m || wf.models.includes(m)) return
     const dm = DEVICE_MODELS.find((d) => d.model === m)
@@ -282,9 +298,9 @@ export default function WorkflowBuilder() {
                 {subtypes.map((t) => <option key={t}>{t}</option>)}
               </Select>
             </Field>
-            <Field label="Vendor" required>
+            <Field label="Vendor" required hint={wf.category === 'L2VPN' ? undefined : 'Router vendors only — this category needs BGP/VRF, which a Switch does not run.'}>
               <Select value={wf.vendor} onChange={(e) => setVendor(e.target.value as Vendor)}>
-                {VENDORS.map((v) => <option key={v} value={v}>{VENDOR_LABEL[v]}</option>)}
+                {categoryVendors.map((v) => <option key={v} value={v}>{VENDOR_LABEL[v]}</option>)}
               </Select>
             </Field>
             <Field label="Model" required hint={wf.models.length ? undefined : 'Pick every model this template may run on.'}>

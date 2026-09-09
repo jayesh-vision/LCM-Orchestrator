@@ -2,19 +2,21 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, CheckCircle2, PlayCircle, Save } from 'lucide-react'
 import { useStore, type WizardDraft } from '@/store/useStore'
-import { ACCOUNTS, DEVICE_MODELS, SITES } from '@/data/catalog'
-import type { Category, OrderParamValue } from '@/types'
+import { ACCOUNTS, DEVICE_MODELS, SITES, modelsForCategory } from '@/data/catalog'
+import type { Category, EndpointRole, OrderParamValue } from '@/types'
 import {
   Badge, Button, Card, CardBody, CardHead, Field, KV, Mono, Note, PageHead,
   Select, Stepper, TextInput, Toggle,
 } from '@/components/ui'
+import { CATEGORY_TONE } from '@/lib/format'
 
 const STEPS = [
-  'Category & type', 'Source & destination', 'Workflow template',
-  'Parameters', 'Values', 'Preview & validate', 'Planned',
+  'Category & type', 'Source, destination & workflow', 'Parameters & values', 'Preview & validate', 'Planned',
 ]
 
 interface EndpointDraft { role: 'A' | 'Z' | 'hub' | 'spoke'; siteCode: string; port: string }
+
+const roleOf = (i: number): EndpointRole => (i === 0 ? 'Source' : 'Destination')
 
 export default function NewServiceWizard() {
   const nav = useNavigate()
@@ -22,7 +24,6 @@ export default function NewServiceWizard() {
   const workflows = useStore((s) => s.workflows)
   const pools = useStore((s) => s.pools)
   const createOrder = useStore((s) => s.createOrder)
-  const startRun = useStore((s) => s.startRun)
 
   const [step, setStep] = useState(0)
   const [category, setCategory] = useState<Category>('L2VPN')
@@ -34,25 +35,38 @@ export default function NewServiceWizard() {
     { role: 'A', siteCode: SITES[0].code, port: DEVICE_MODELS[2].ports[0] },
     { role: 'Z', siteCode: SITES[1].code, port: DEVICE_MODELS[2].ports[2] },
   ])
-  const [workflowId, setWorkflowId] = useState('')
+  /** One chosen workflow per role — Source and Destination devices run different templates. */
+  const [workflowByRole, setWorkflowByRole] = useState<Partial<Record<EndpointRole, string>>>({})
   const [values, setValues] = useState<Record<string, string>>({})
-  const [autoExecute, setAutoExecute] = useState(true)
   const [createdId, setCreatedId] = useState<string | null>(null)
 
   const intent = intents.find((i) => i.id === intentId)!
   const catIntents = intents.filter((i) => i.category === category)
+  const portsPool = useMemo(() => modelsForCategory(category), [category])
 
-  const candidateWorkflows = useMemo(
-    () => workflows.filter((w) => w.intentId === intentId && w.state === 'Active'),
-    [workflows, intentId],
-  )
+  const endpointCount = intent.topology === 'Single-ended' ? 1 : intent.topology === 'Two-ended' ? 2 : eps.length
+  const roles: EndpointRole[] = intent.topology === 'Single-ended' ? ['Source'] : ['Source', 'Destination']
+  const vendorForRole = (role: EndpointRole) => {
+    const i = role === 'Source' ? 0 : 1
+    return DEVICE_MODELS.find((d) => d.ports.includes(eps[i]?.port ?? ''))?.vendor
+  }
+  const candidatesFor = (role: EndpointRole) => {
+    const v = vendorForRole(role)
+    return workflows.filter((w) => w.intentId === intentId && w.state === 'Active'
+      && (w.endpointRole === role || !w.endpointRole) && (!v || w.vendor === v))
+  }
 
-  /* Templates are auto-populated from the inputs: the best-performing active
-     workflow for this intent is preselected, and the operator can override. */
+  /* The best-performing active template for each role is preselected; the
+     operator can override either side independently. */
   useEffect(() => {
-    const best = [...candidateWorkflows].sort((a, b) => b.firstPassRate - a.firstPassRate)[0]
-    setWorkflowId(best?.id ?? '')
-  }, [candidateWorkflows])
+    const next: Partial<Record<EndpointRole, string>> = {}
+    roles.forEach((role) => {
+      const best = [...candidatesFor(role)].sort((a, b) => b.firstPassRate - a.firstPassRate)[0]
+      if (best) next[role] = best.id
+    })
+    setWorkflowByRole(next)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intentId, eps[0]?.port, eps[1]?.port])
 
   /* Parameters come from the intent; pool-backed ones are allocated, not typed. */
   const params: OrderParamValue[] = useMemo(() => intent.params.map((p) => {
@@ -66,9 +80,9 @@ export default function NewServiceWizard() {
     return { name: p.name, value: '', source: 'user' as const }
   }), [intent, values, pools])
 
-  const endpointCount = intent.topology === 'Single-ended' ? 1 : intent.topology === 'Two-ended' ? 2 : eps.length
   const endpointsOk = eps.slice(0, endpointCount).every((e) => e.siteCode && e.port)
     && (intent.topology !== 'Two-ended' || (eps[0].siteCode !== eps[1]?.siteCode))
+  const workflowsOk = roles.every((r) => !!workflowByRole[r])
   const valuesOk = params.every((p) => p.value !== '' && p.value !== '—')
 
   const problems: string[] = []
@@ -77,15 +91,14 @@ export default function NewServiceWizard() {
       ? 'A two-ended service needs two different sites.'
       : `This intent needs ${intent.endpointArity} endpoint(s), all with a site and a port.`)
   }
-  if (!workflowId) problems.push('No workflow template selected.')
+  if (!workflowsOk) problems.push(`No workflow template selected for ${roles.filter((r) => !workflowByRole[r]).join(' and ')}.`)
   if (!valuesOk) problems.push('Every parameter needs a value before the request can be submitted.')
 
   const canNext = () => {
     if (step === 0) return !!intentId && !!accountId
-    if (step === 1) return endpointsOk
-    if (step === 2) return !!workflowId
-    if (step === 4) return valuesOk
-    if (step === 5) return problems.length === 0
+    if (step === 1) return endpointsOk && workflowsOk
+    if (step === 2) return valuesOk
+    if (step === 3) return problems.length === 0
     return true
   }
 
@@ -95,27 +108,60 @@ export default function NewServiceWizard() {
       category, type: intent.type, subtype,
       accountId: acct.id, accountName: acct.name,
       name: name || `${intent.name}`,
-      intentId, workflowId,
-      endpoints: eps.slice(0, endpointCount).map((e) => {
+      intentId, workflowId: workflowByRole.Source ?? workflowByRole.Destination ?? '',
+      endpoints: eps.slice(0, endpointCount).map((e, i) => {
         const dm = DEVICE_MODELS.find((d) => d.ports.includes(e.port)) ?? DEVICE_MODELS[0]
         return {
           role: e.role, siteCode: e.siteCode, deviceName: dm.model, vendor: dm.vendor,
           mgmtIp: `172.31.33.${20 + eps.indexOf(e) * 80}`, port: e.port,
+          workflowId: workflowByRole[roleOf(i)],
         }
       }),
       params,
     }
     const order = createOrder(draft)
     setCreatedId(order.id)
-    setStep(6)
-    if (autoExecute) setTimeout(() => startRun(order.id), 700)
+    setStep(4)
+  }
+
+  const workflowPicker = (role: EndpointRole) => {
+    const candidates = candidatesFor(role)
+    const chosen = workflowByRole[role]
+    return (
+      <div key={role} className="border border-line rounded-lg p-3.5">
+        <div className="flex items-center justify-between gap-2 mb-2.5">
+          <div className="text-[12.5px] font-semibold">{role} workflow</div>
+          {vendorForRole(role) && <Badge tone="none">{vendorForRole(role)}</Badge>}
+        </div>
+        {candidates.length === 0 && (
+          <Note tone="crit" className="!py-2 !px-2.5 text-[12px]">No active workflow matches this vendor for {intent.name}.</Note>
+        )}
+        <div className="flex flex-col gap-1.5">
+          {candidates.slice(0, 4).map((w) => (
+            <button
+              key={w.id}
+              type="button"
+              onClick={() => setWorkflowByRole({ ...workflowByRole, [role]: w.id })}
+              className={`text-left border rounded-md px-3 py-2 transition-colors
+                ${chosen === w.id ? 'border-brand-500 bg-brand-50 ring-[2px] ring-brand-100' : 'border-line hover:bg-plane'}`}
+            >
+              <div className="text-[12.5px] font-medium truncate">{w.name}</div>
+              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                <Mono className="text-[10.5px] text-ink-3">{w.model}</Mono>
+                <Badge tone={w.firstPassRate >= 80 ? 'good' : 'warn'} className="!text-[10px] !py-0">{w.firstPassRate}% first-pass</Badge>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    )
   }
 
   return (
     <>
       <PageHead
         title="New network service"
-        sub="Seven steps from category to a planned service. Pre-validation runs automatically once the request is created."
+        sub="Five steps from category to a planned service. Pre-validation runs automatically once the request is created."
         actions={<Button onClick={() => nav('/requests')}>Cancel</Button>}
       />
 
@@ -123,205 +169,216 @@ export default function NewServiceWizard() {
         <CardBody className="pb-4"><Stepper steps={STEPS} current={step} /></CardBody>
       </Card>
 
-      <Card>
-        <CardHead title={`Step ${Math.min(step + 1, 7)} · ${STEPS[step]}`} sub={
+      {/* Plain vw-card-section, not <Card> — Card clips with overflow-hidden,
+         which breaks the footer's position:sticky. Content scrolls with the
+         page as normal; only the footer pins to the viewport bottom. */}
+      <div className="vw-card-section p-0 flex flex-col">
+        <CardHead title={`Step ${Math.min(step + 1, 5)} · ${STEPS[step]}`} sub={
           step === 0 ? 'Choose the service category and the intent it is built from.'
-            : step === 1 ? 'Pick the routers this service terminates on.'
-              : step === 2 ? 'Workflow templates are filtered by the intent you chose.'
-                : step === 3 ? 'These parameters come from the intent definition, not from the form.'
-                  : step === 4 ? 'Pool-backed values are allocated for you and held by a reservation.'
-                    : step === 5 ? 'Everything is validated before submission.'
-                      : 'The service exists and pre-validation has been triggered.'
+            : step === 1 ? 'Pick the routers this service terminates on, and the template that runs on each.'
+              : step === 2 ? 'These parameters come from the intent definition — fill in what the template needs.'
+                : step === 3 ? 'Everything is validated before submission.'
+                  : 'The service exists and pre-validation has been triggered.'
         } />
         <CardBody>
 
           {/* ---- 1 category & type ---- */}
           {step === 0 && (
-            <div className="grid gap-5 md:grid-cols-2 max-w-[880px]">
-              <Field label="Service category" required>
-                <Select value={category} onChange={(e) => {
-                  const c = e.target.value as Category
-                  setCategory(c)
-                  const first = intents.find((i) => i.category === c)!
-                  setIntentId(first.id)
-                }}>
-                  {(['L2VPN', 'L3VPN', 'IBW'] as Category[]).map((c) => <option key={c} value={c}>{c}</option>)}
-                </Select>
-              </Field>
-              <Field label="Type" required hint={`${intent.topology} · ${intent.endpointArity}`}>
-                <Select value={intentId} onChange={(e) => setIntentId(e.target.value)}>
-                  {catIntents.map((i) => <option key={i.id} value={i.id}>{i.type} — {i.name}</option>)}
-                </Select>
-              </Field>
-              <Field label="Catalog subtype">
-                <Select value={subtype} onChange={(e) => setSubtype(e.target.value)}>
-                  {['Tagged', 'Untagged', 'BGP', 'Static', 'OSPF', 'VRF', 'Other'].map((s) => <option key={s}>{s}</option>)}
-                </Select>
-              </Field>
-              <Field label="Customer" required hint="A reference to the account master, not free text.">
-                <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-                  {ACCOUNTS.map((a) => <option key={a.id} value={a.id}>{a.name} — {a.id}</option>)}
-                </Select>
-              </Field>
-              <Field label="Network service name" hint="Leave blank to use the intent name.">
-                <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder={intent.name} maxLength={100} />
-              </Field>
-              <div className="md:col-span-2">
-                <Note>
-                  <b>{intent.name}</b> draws from {intent.pools.join(', ')} and is accepted only when
-                  all {intent.acceptance.length} criteria pass, {intent.acceptance.filter((a) => a.layer === 'service').length} of them at the service layer.
-                </Note>
+            <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+              <div className="grid gap-5 sm:grid-cols-2">
+                <Field label="Service category" required>
+                  <Select value={category} onChange={(e) => {
+                    const c = e.target.value as Category
+                    setCategory(c)
+                    const first = intents.find((i) => i.category === c)!
+                    setIntentId(first.id)
+                  }}>
+                    {(['L2VPN', 'L3VPN', 'IBW'] as Category[]).map((c) => <option key={c} value={c}>{c}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Type" required hint={`${intent.topology} · ${intent.endpointArity}`}>
+                  <Select value={intentId} onChange={(e) => setIntentId(e.target.value)}>
+                    {catIntents.map((i) => <option key={i.id} value={i.id}>{i.type} — {i.name}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Catalog subtype">
+                  <Select value={subtype} onChange={(e) => setSubtype(e.target.value)}>
+                    {['Tagged', 'Untagged', 'BGP', 'Static', 'OSPF', 'VRF', 'Other'].map((s) => <option key={s}>{s}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Customer" required hint="A reference to the account master, not free text.">
+                  <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+                    {ACCOUNTS.map((a) => <option key={a.id} value={a.id}>{a.name} — {a.id}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Network service name" hint="Leave blank to use the intent name.">
+                  <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder={intent.name} maxLength={100} />
+                </Field>
+              </div>
+
+              <div className="border border-line rounded-lg p-4 bg-plane/50 flex flex-col gap-4 h-fit">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[.08em] text-ink-3 mb-1.5">This intent</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge tone={CATEGORY_TONE[category]}>{category}</Badge>
+                    <span className="text-[13.5px] font-semibold text-ink-1">{intent.name}</span>
+                  </div>
+                  <div className="text-[12px] text-ink-3 mt-1.5">{intent.topology} topology · {intent.endpointArity} endpoint(s)</div>
+                </div>
+                <div className="h-px bg-line-soft" />
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[.08em] text-ink-3 mb-1.5">Resource pools used</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {intent.pools.map((p) => <Badge key={p} tone="info">{p}</Badge>)}
+                  </div>
+                </div>
+                <div className="h-px bg-line-soft" />
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[.08em] text-ink-3 mb-1.5">Acceptance criteria · {intent.acceptance.length}</div>
+                  <div className="flex flex-col gap-1.5">
+                    {(['device', 'network', 'service'] as const).map((layer) => {
+                      const n = intent.acceptance.filter((a) => a.layer === layer).length
+                      if (!n) return null
+                      return (
+                        <div key={layer} className="flex items-center justify-between text-[12px]">
+                          <span className="text-ink-2 capitalize">{layer} layer</span>
+                          <span className="font-semibold tnum text-ink-1">{n}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
-          {/* ---- 2 source & destination ---- */}
+          {/* ---- 2 source, destination & workflow (merged) ---- */}
           {step === 1 && (
-            <div className="flex flex-col gap-4 max-w-[880px]">
-              {Array.from({ length: endpointCount }).map((_, i) => {
-                const e = eps[i] ?? { role: 'Z' as const, siteCode: SITES[0].code, port: DEVICE_MODELS[0].ports[0] }
-                const label = intent.topology === 'Star' ? (i === 0 ? 'Hub' : `Spoke ${i}`) : i === 0 ? 'Source (A-end)' : 'Destination (Z-end)'
-                return (
-                  <div key={i} className="border border-line rounded-lg p-4">
-                    <div className="text-[12.5px] font-semibold mb-3">{label}</div>
-                    <div className="grid gap-4 md:grid-cols-3">
-                      <Field label="Site" required>
-                        <Select value={e.siteCode} onChange={(ev) => {
-                          const next = [...eps]; next[i] = { ...e, siteCode: ev.target.value }; setEps(next)
-                        }}>
-                          {SITES.map((s) => <option key={s.code} value={s.code}>{s.code} — {s.city}</option>)}
-                        </Select>
-                      </Field>
-                      <Field label="Router port" required>
-                        <Select value={e.port} onChange={(ev) => {
-                          const next = [...eps]; next[i] = { ...e, port: ev.target.value }; setEps(next)
-                        }}>
-                          {DEVICE_MODELS.flatMap((d) => d.ports).map((p) => <option key={p} value={p}>{p}</option>)}
-                        </Select>
-                      </Field>
-                      <Field label="Management IP" hint="Derived from the site and port you chose.">
-                        <TextInput readOnly value={`172.31.33.${20 + i * 80}`} className="bg-plane text-ink-3" />
-                      </Field>
-                    </div>
-                  </div>
-                )
-              })}
-              {intent.topology === 'Star' && (
-                <div>
-                  <Button size="sm" onClick={() => setEps([...eps, { role: 'spoke', siteCode: SITES[2].code, port: DEVICE_MODELS[0].ports[0] }])}>
-                    Add spoke
-                  </Button>
-                </div>
-              )}
-              {!endpointsOk && <Note tone="warn">{problems[0]}</Note>}
-            </div>
-          )}
-
-          {/* ---- 3 workflow template ---- */}
-          {step === 2 && (
-            <div className="max-w-[880px] flex flex-col gap-3">
-              {candidateWorkflows.length === 0 && (
-                <Note tone="crit">No active workflow is bound to {intent.name}. A request cannot be created until one is published.</Note>
-              )}
-              {candidateWorkflows.slice(0, 6).map((w) => (
-                <button
-                  key={w.id}
-                  onClick={() => setWorkflowId(w.id)}
-                  className={`text-left border rounded-lg px-4 py-3.5 flex items-center justify-between gap-4 transition-colors
-                    ${workflowId === w.id ? 'border-brand-500 bg-brand-50 ring-[3px] ring-brand-100' : 'border-line hover:bg-plane'}`}
-                >
-                  <div>
-                    <div className="text-[13px] font-medium">{w.name}</div>
-                    <div className="text-[11.5px] text-ink-3 font-mono mt-0.5">{w.id} · v{w.version} · {w.model} · {w.osRange}</div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Badge tone="none">{w.tasks.length} tasks</Badge>
-                    <Badge tone={w.firstPassRate >= 80 ? 'good' : 'warn'}>{w.firstPassRate}% first-pass</Badge>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* ---- 4 parameters ---- */}
-          {step === 3 && (
-            <div className="max-w-[980px]">
-              <table className="w-full text-[13px] border border-line rounded-lg overflow-hidden">
-                <thead><tr className="bg-plane">
-                  {['Parameter', 'Type', 'Constraint', 'Source', 'Modifiable later'].map((h) => (
-                    <th key={h} scope="col" className="text-left px-4 py-2.5 text-[11px] uppercase tracking-wide text-ink-3 font-semibold">{h}</th>
-                  ))}
-                </tr></thead>
-                <tbody>
-                  {intent.params.map((p) => (
-                    <tr key={p.name} className="border-t border-line-soft">
-                      <td className="px-4 py-2.5 font-mono">{p.name}{p.required && <span className="text-crit-500">*</span>}</td>
-                      <td className="px-4 py-2.5 text-ink-3">{p.type}</td>
-                      <td className="px-4 py-2.5 text-ink-3">{p.constraint}</td>
-                      <td className="px-4 py-2.5">{p.fromPool ? <Badge tone="info">{p.fromPool} pool</Badge> : <Badge tone="none">operator</Badge>}</td>
-                      <td className="px-4 py-2.5">
-                        <Badge tone={p.modifiable === 'hitless' ? 'good' : p.modifiable === 'bounce' ? 'warn' : 'crit'}>{p.modifiable}</Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <Note><b>The form on the next step is generated from this table.</b> A parameter cannot appear in the form and be missing from validation, or carry different bounds in the two places.</Note>
-            </div>
-          )}
-
-          {/* ---- 5 values ---- */}
-          {step === 4 && (
-            <div className="grid gap-5 md:grid-cols-2 max-w-[880px]">
-              {intent.params.map((p) => {
-                const v = params.find((x) => x.name === p.name)!
-                if (p.fromPool) {
+            <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
+              <div className="flex flex-col gap-4">
+                {Array.from({ length: endpointCount }).map((_, i) => {
+                  const e = eps[i] ?? { role: 'Z' as const, siteCode: SITES[0].code, port: portsPool[0].ports[0] }
+                  const label = intent.topology === 'Single-ended' ? 'Access device'
+                    : intent.topology === 'Star' ? (i === 0 ? 'Hub' : `Spoke ${i}`)
+                      : i === 0 ? 'Source (A-end)' : 'Destination (Z-end)'
                   return (
-                    <Field key={p.name} label={p.name} hint={`Allocated from the ${p.fromPool} pool and held for 72 hours.`}>
-                      <div className="flex items-center gap-2">
-                        <TextInput readOnly value={v.value} className="bg-plane font-mono" />
-                        <Badge tone="info">reserved</Badge>
+                    <div key={i} className="border border-line rounded-lg p-4">
+                      <div className="text-[12.5px] font-semibold mb-3">{label}</div>
+                      <div className="grid gap-4 sm:grid-cols-3">
+                        <Field label="Site" required>
+                          <Select value={e.siteCode} onChange={(ev) => {
+                            const next = [...eps]; next[i] = { ...e, siteCode: ev.target.value }; setEps(next)
+                          }}>
+                            {SITES.map((s) => <option key={s.code} value={s.code}>{s.code} — {s.city}</option>)}
+                          </Select>
+                        </Field>
+                        <Field label="Router port" required>
+                          <Select value={e.port} onChange={(ev) => {
+                            const next = [...eps]; next[i] = { ...e, port: ev.target.value }; setEps(next)
+                          }}>
+                            {portsPool.flatMap((d) => d.ports).map((p) => <option key={p} value={p}>{p}</option>)}
+                          </Select>
+                        </Field>
+                        <Field label="Management IP" hint="Derived from the site and port you chose.">
+                          <TextInput readOnly value={`172.31.33.${20 + i * 80}`} className="bg-plane text-ink-3" />
+                        </Field>
                       </div>
-                    </Field>
-                  )
-                }
-                if (p.options) {
-                  return (
-                    <Field key={p.name} label={p.name} required={p.required} hint={p.constraint}>
-                      <Select value={v.value} onChange={(e) => setValues({ ...values, [p.name]: e.target.value })}>
-                        {p.options.map((o) => <option key={o}>{o}</option>)}
-                      </Select>
-                    </Field>
-                  )
-                }
-                if (p.type === 'boolean') {
-                  return (
-                    <div key={p.name} className="pt-6">
-                      <Toggle
-                        checked={v.value === 'true'}
-                        onChange={(on) => setValues({ ...values, [p.name]: String(on) })}
-                        label={p.name} hint={p.constraint}
-                      />
                     </div>
                   )
-                }
-                return (
-                  <Field key={p.name} label={p.name} required={p.required} hint={p.constraint}>
-                    <TextInput
-                      value={v.value}
-                      type={p.type === 'integer' ? 'number' : 'text'}
-                      min={p.min} max={p.max}
-                      onChange={(e) => setValues({ ...values, [p.name]: e.target.value })}
-                    />
-                  </Field>
-                )
-              })}
+                })}
+                {intent.topology === 'Star' && (
+                  <div>
+                    <Button size="sm" onClick={() => setEps([...eps, { role: 'spoke', siteCode: SITES[2].code, port: portsPool[0].ports[0] }])}>
+                      Add spoke
+                    </Button>
+                  </div>
+                )}
+                {!endpointsOk && <Note tone="warn">{problems[0]}</Note>}
+
+                <div className="border border-line rounded-lg p-4 bg-plane/50">
+                  <div className="text-[11px] font-semibold uppercase tracking-[.08em] text-ink-3 mb-2.5">Request so far</div>
+                  <KV items={[
+                    ['Category', <Badge key="c" tone={CATEGORY_TONE[category]}>{category}</Badge>],
+                    ['Intent', intent.name],
+                    ['Subtype', subtype],
+                    ['Customer', ACCOUNTS.find((a) => a.id === accountId)?.name ?? '—'],
+                    ['Service name', name || <span className="text-ink-3">{intent.name} (default)</span>],
+                  ]} />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-4">
+                {roles.map((r) => workflowPicker(r))}
+              </div>
             </div>
           )}
 
-          {/* ---- 6 preview ---- */}
-          {step === 5 && (
-            <div className="grid gap-5 lg:grid-cols-2 max-w-[1080px]">
+          {/* ---- 3 parameters & values (merged) ---- */}
+          {step === 2 && (
+            <div className="flex flex-col gap-4">
+              <Note>
+                <b>{intent.params.filter((p) => p.required).length} required</b> · {intent.params.filter((p) => p.fromPool).length} pool-allocated ·
+                every field below is generated from {intent.name}'s parameter definition, so nothing here can drift from what validation checks.
+              </Note>
+              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                {intent.params.map((p) => {
+                  const v = params.find((x) => x.name === p.name)!
+                  const modTone = p.modifiable === 'hitless' ? 'good' : p.modifiable === 'bounce' ? 'warn' : 'crit'
+                  const label = (
+                    <span className="flex items-center gap-1.5">
+                      <span className="font-mono">{p.name}</span>
+                      <Badge tone={modTone} className="!text-[9.5px] !py-0">{p.modifiable}</Badge>
+                    </span>
+                  )
+                  const hint = `${p.type} · ${p.constraint}`
+                  if (p.fromPool) {
+                    return (
+                      <Field key={p.name} label={label} hint={`Allocated from the ${p.fromPool} pool and held for 72 hours.`}>
+                        <div className="flex items-center gap-2">
+                          <TextInput readOnly value={v.value} className="bg-plane font-mono" />
+                          <Badge tone="info">reserved</Badge>
+                        </div>
+                      </Field>
+                    )
+                  }
+                  if (p.options) {
+                    return (
+                      <Field key={p.name} label={label} required={p.required} hint={hint}>
+                        <Select value={v.value} onChange={(e) => setValues({ ...values, [p.name]: e.target.value })}>
+                          {p.options.map((o) => <option key={o}>{o}</option>)}
+                        </Select>
+                      </Field>
+                    )
+                  }
+                  if (p.type === 'boolean') {
+                    return (
+                      <div key={p.name} className="pt-6">
+                        <Toggle
+                          checked={v.value === 'true'}
+                          onChange={(on) => setValues({ ...values, [p.name]: String(on) })}
+                          label={p.name} hint={hint}
+                        />
+                      </div>
+                    )
+                  }
+                  return (
+                    <Field key={p.name} label={label} required={p.required} hint={hint}>
+                      <TextInput
+                        value={v.value}
+                        type={p.type === 'integer' ? 'number' : 'text'}
+                        min={p.min} max={p.max}
+                        onChange={(e) => setValues({ ...values, [p.name]: e.target.value })}
+                      />
+                    </Field>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ---- 4 preview ---- */}
+          {step === 3 && (
+            <div className="grid gap-6 lg:grid-cols-2">
               <div className="flex flex-col gap-5">
                 <div>
                   <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">Service</div>
@@ -329,23 +386,26 @@ export default function NewServiceWizard() {
                     ['Name', name || intent.name],
                     ['Category / type', `${category} · ${intent.type} · ${subtype}`],
                     ['Customer', ACCOUNTS.find((a) => a.id === accountId)?.name ?? '—'],
-                    ['Workflow', <Mono key="w">{workflowId || 'none'}</Mono>],
                   ]} />
                 </div>
                 <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">Endpoints</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">Endpoints & workflows</div>
                   <div className="flex flex-col gap-2">
-                    {eps.slice(0, endpointCount).map((e, i) => (
-                      <div key={i} className="border border-line rounded-lg px-3.5 py-2.5 text-[12.5px] flex items-center justify-between">
-                        <span className="font-medium">{e.siteCode}</span>
-                        <Mono className="text-ink-3">{e.port}</Mono>
-                      </div>
-                    ))}
+                    {eps.slice(0, endpointCount).map((e, i) => {
+                      const wf = workflows.find((w) => w.id === workflowByRole[roleOf(i)])
+                      return (
+                        <div key={i} className="border border-line rounded-lg px-3.5 py-2.5 text-[12.5px]">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium">{e.siteCode}</span>
+                            <Mono className="text-ink-3">{e.port}</Mono>
+                          </div>
+                          <div className="text-[11.5px] text-ink-3 mt-1 truncate">{wf ? wf.name : 'no workflow selected'}</div>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
-                <Toggle checked={autoExecute} onChange={setAutoExecute}
-                  label="Run pre-validation immediately"
-                  hint="Auto-triggered validation tasks execute on the device. Success moves the request to Validated; failure rolls back and reports why." />
+                <Note>Pre-validation starts automatically the moment this request is created — no separate step needed. Success moves it to <b>Validated</b>, ready for approval; failure moves it to <b>Invalid</b>, back with the requester.</Note>
               </div>
 
               <div className="flex flex-col gap-4">
@@ -365,21 +425,21 @@ export default function NewServiceWizard() {
                 </div>
                 {problems.length > 0
                   ? <Note tone="crit"><b>{problems.length} problem(s) block submission.</b><ul className="list-disc pl-5 mt-1.5">{problems.map((p) => <li key={p}>{p}</li>)}</ul></Note>
-                  : <Note tone="good"><b>Validation passed.</b> All parameters resolve, endpoints are distinct, and an active workflow is bound.</Note>}
+                  : <Note tone="good"><b>Validation passed.</b> All parameters resolve, endpoints are distinct, and an active workflow is bound to every endpoint.</Note>}
               </div>
             </div>
           )}
 
-          {/* ---- 7 planned ---- */}
-          {step === 6 && createdId && (
+          {/* ---- 5 planned ---- */}
+          {step === 4 && createdId && (
             <div className="py-8 text-center max-w-[560px] mx-auto">
               <div className="w-14 h-14 rounded-full bg-good-50 border border-good-200 grid place-items-center mx-auto mb-4">
                 <CheckCircle2 size={26} className="text-good-500" />
               </div>
               <div className="text-[18px] font-semibold mb-1.5">Service created</div>
               <p className="text-[13px] text-ink-2 mb-5">
-                <Mono className="font-semibold">{createdId}</Mono> is in <b>Designed</b> state with its resources reserved.
-                {autoExecute ? ' Pre-validation is running on the device now.' : ' Approve it to begin execution.'}
+                <Mono className="font-semibold">{createdId}</Mono> is in <b>Draft</b>, with its resources reserved.
+                Pre-validation starts automatically and moves it to <b>Validated</b> (or <b>Invalid</b>) within moments.
               </p>
               <div className="flex items-center justify-center gap-2">
                 <Button onClick={() => nav('/requests')}>Back to requests</Button>
@@ -391,18 +451,21 @@ export default function NewServiceWizard() {
           )}
         </CardBody>
 
-        {step < 6 && (
-          <div className="px-5 py-3.5 border-t border-line-soft flex items-center justify-between gap-3">
+        {step < 4 && (
+          <div
+            className="sticky bottom-0 z-10 bg-white px-5 py-3.5 border-t border-line-soft flex items-center justify-between gap-3 shadow-[0_-6px_12px_-8px_rgba(15,23,42,0.12)]"
+            style={{ borderRadius: '0 0 var(--radius-card) var(--radius-card)' }}
+          >
             <Button disabled={step === 0} onClick={() => setStep(step - 1)}><ArrowLeft size={15} />Back</Button>
             <div className="flex items-center gap-2">
               <Button onClick={() => nav('/requests')}><Save size={15} />Save as draft</Button>
-              {step < 5
+              {step < 3
                 ? <Button variant="primary" disabled={!canNext()} onClick={() => setStep(step + 1)}>Next<ArrowRight size={15} /></Button>
                 : <Button variant="primary" disabled={!canNext()} onClick={submit}><CheckCircle2 size={15} />Create service</Button>}
             </div>
           </div>
         )}
-      </Card>
+      </div>
     </>
   )
 }

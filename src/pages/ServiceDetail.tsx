@@ -168,7 +168,7 @@ export default function ServiceDetail() {
               </tr></thead>
               <tbody>
                 {svc.attributes.map((a) => (
-                  <tr key={a.name} className={`border-b border-line-soft last:border-0 ${a.verdict === 'Drift' ? 'bg-warn-50' : a.verdict === 'Absent' ? 'bg-crit-50' : ''}`}>
+                  <tr key={a.name} className="border-b border-line-soft last:border-0">
                     <td className="px-[18px] py-3 font-medium">{a.name}</td>
                     <td className="px-[18px] py-3 font-mono">{a.intent}</td>
                     <td className={`px-[18px] py-3 font-mono ${a.verdict === 'Drift' ? 'text-warn-700 font-semibold' : a.verdict === 'Absent' ? 'text-crit-700' : ''}`}>{a.onDevice}</td>
@@ -238,7 +238,7 @@ export default function ServiceDetail() {
               </tr></thead>
               <tbody>
                 {svc.history.map((h, i) => (
-                  <tr key={i} className={`border-b border-line-soft last:border-0 ${h.outOfBand ? 'bg-warn-50' : ''}`}>
+                  <tr key={i} className="border-b border-line-soft last:border-0">
                     <td className="px-[18px] py-3 whitespace-nowrap">{shortDate(h.at)}</td>
                     <td className="px-[18px] py-3">{h.orderId ? <Mono>{h.orderId}</Mono> : <span className="text-ink-3">none</span>}</td>
                     <td className="px-[18px] py-3">

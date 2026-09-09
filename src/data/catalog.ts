@@ -1,5 +1,5 @@
 import type {
-  AcceptanceCriterion, Category, IntentParam, ProfileType, ServiceIntent, Vendor,
+  AcceptanceCriterion, Category, DeviceKind, IntentParam, ProfileType, ServiceIntent, Vendor,
 } from '@/types'
 
 /* ---------- deterministic RNG so every reload shows the same data ---------- */
@@ -51,13 +51,36 @@ export const SITES: Site[] = [
   { code: 'GJ-AMD-0733', city: 'Ahmedabad', region: 'West' },
 ]
 
-export interface DeviceModel { vendor: Vendor; model: string; os: string; osRange: string; ports: string[] }
+export interface DeviceModel { vendor: Vendor; model: string; kind: DeviceKind; os: string; osRange: string; ports: string[] }
+/**
+ * The vendor estate this platform provisions against. Router-class devices
+ * carry BGP/VRF/L3 routing and can serve any intent; Switch-class devices are
+ * Ethernet/VLAN-only, so they only ever appear under the L2VPN family — see
+ * `ROUTER_VENDORS` / `SWITCH_VENDORS` below and their use in workflows.ts.
+ */
 export const DEVICE_MODELS: DeviceModel[] = [
-  { vendor: 'CISCO', model: 'ASR9006', os: 'IOS-XR 7.9.2', osRange: '7.3 – 7.11', ports: ['TenGigE0/0/0/3', 'TenGigE0/0/0/6', 'TenGigE0/0/0/9', 'TenGigE0/0/0/12'] },
-  { vendor: 'CISCO', model: 'NCS-540', os: 'IOS-XR 7.8.1', osRange: '7.3 – 7.11', ports: ['TenGigE0/0/0/1', 'TenGigE0/0/0/4', 'GigabitEthernet0/0/0/2'] },
-  { vendor: 'JUNIPER', model: 'MX204', os: 'JunOS 22.4R3', osRange: '21.4R – 23.4R', ports: ['xe-0/0/3', 'xe-0/0/9', 'xe-1/1/0', 'ge-0/0/4'] },
-  { vendor: 'JUNIPER', model: 'ACX2200', os: 'JunOS 21.4R1', osRange: '21.2R – 22.4R', ports: ['xe-0/0/0', 'xe-0/0/2', 'ge-0/0/6'] },
+  { vendor: 'CISCO', model: 'ASR9006', kind: 'Router', os: 'IOS-XR 7.9.2', osRange: '7.3 – 7.11', ports: ['TenGigE0/0/0/3', 'TenGigE0/0/0/6', 'TenGigE0/0/0/9', 'TenGigE0/0/0/12'] },
+  { vendor: 'CISCO', model: 'NCS-540', kind: 'Router', os: 'IOS-XR 7.8.1', osRange: '7.3 – 7.11', ports: ['TenGigE0/0/0/1', 'TenGigE0/0/0/4', 'GigabitEthernet0/0/0/2'] },
+  { vendor: 'JUNIPER', model: 'MX204', kind: 'Router', os: 'JunOS 22.4R3', osRange: '21.4R – 23.4R', ports: ['xe-0/0/3', 'xe-0/0/9', 'xe-1/1/0', 'ge-0/0/4'] },
+  { vendor: 'JUNIPER', model: 'ACX2200', kind: 'Router', os: 'JunOS 21.4R1', osRange: '21.2R – 22.4R', ports: ['xe-0/0/0', 'xe-0/0/2', 'ge-0/0/6'] },
+  { vendor: 'NOKIA', model: '7750 SR-1', kind: 'Router', os: 'SR OS 23.7.R1', osRange: '22.10 – 23.10', ports: ['1/1/c1/1', '1/1/c2/1', '1/1/c3/1'] },
+  { vendor: 'NOKIA', model: '7750 SR-2s', kind: 'Router', os: 'SR OS 23.7.R1', osRange: '22.10 – 23.10', ports: ['1/1/1', '1/1/4', '1/1/7'] },
+  { vendor: 'ADVA', model: 'FSP 150-XG480', kind: 'Router', os: 'ADVA OS 12.4', osRange: '11.6 – 12.4', ports: ['NET-1', 'NET-2', 'ACC-1'] },
+  { vendor: 'TEJAS', model: 'TJ1400', kind: 'Router', os: 'TejNMS 9.2', osRange: '8.4 – 9.2', ports: ['GE-1/1', 'GE-1/2', 'TenGE-2/1'] },
+  { vendor: 'TECHROUTE', model: 'TR-2500', kind: 'Router', os: 'TR-OS 4.1', osRange: '3.6 – 4.1', ports: ['eth-1/1', 'eth-1/2', 'eth-2/1'] },
+  { vendor: 'EDGECORE', model: 'AS7726-32X', kind: 'Switch', os: 'SONiC 4.2', osRange: '4.0 – 4.2', ports: ['Ethernet4', 'Ethernet8', 'Ethernet12'] },
+  { vendor: 'EDGECORE', model: 'AS4630-54PE', kind: 'Switch', os: 'SONiC 4.1', osRange: '4.0 – 4.2', ports: ['Ethernet1', 'Ethernet5', 'Ethernet9'] },
+  { vendor: 'DLINK', model: 'DGS-3630-28TC', kind: 'Switch', os: 'D-Link OS 3.00', osRange: '2.90 – 3.00', ports: ['1/0/1', '1/0/5', '1/0/9'] },
+  { vendor: 'DLINK', model: 'DXS-3600-32S', kind: 'Switch', os: 'D-Link OS 3.00', osRange: '2.90 – 3.00', ports: ['1/0/2', '1/0/6', '1/0/10'] },
 ]
+
+/** Only Router-class devices run BGP/VRF, so only these can serve L3VPN/IBW. */
+export const ROUTER_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'Router').map((d) => d.vendor))]
+/** Switch-class devices are Ethernet/VLAN-only — L2VPN is the only family they can carry. */
+export const SWITCH_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'Switch').map((d) => d.vendor))]
+/** The device estate eligible for a given service category. */
+export const modelsForCategory = (category: Category): DeviceModel[] =>
+  category === 'L2VPN' ? DEVICE_MODELS : DEVICE_MODELS.filter((d) => d.kind === 'Router')
 
 /* ---------- intent catalog ---------- */
 
@@ -190,5 +213,5 @@ export const PROFILE_TYPES: ProfileType[] = PROFILE_ROWS.map(([category, type, s
   usedByWorkflows: 0, // filled once workflows are built
 }))
 
-export const VENDORS: Vendor[] = ['CISCO', 'JUNIPER']
+export const VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.map((d) => d.vendor))]
 export const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW']

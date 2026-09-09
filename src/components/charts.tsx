@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { InfoTip } from '@/components/ui'
 
 /* ------------------------------------------------------------------
    Chart fills, taken from the NST palette (colors.css / theme-tokens.css).
@@ -9,9 +10,13 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 export const FILL = {
   brand: '#1c81ef',      /* --primaryColor500      */
   brandSoft: '#dbeafe',  /* --primaryColor100      */
-  good: '#059669',       /* --vw-color-emerald-600 */
+  /* One shade lighter than the emerald/red-600 badge tokens — a chart fill
+     covers a much larger area than a status chip, so the 600 weight that
+     reads fine on a small pill reads as glaring across a full bar or
+     segment. 500 keeps the same hue at a calmer intensity. */
+  good: '#10b981',       /* --vw-color-emerald-500 */
   warn: '#f59e0b',       /* --vw-color-amber-500   */
-  crit: '#dc2626',       /* --vw-color-red-600     */
+  crit: '#ef4444',       /* --vw-color-red-500     */
   none: '#9ca3af',       /* --vw-color-gray-400    */
   grid: '#e2e8f0',       /* --vw-color-slate-200   */
 } as const
@@ -65,15 +70,21 @@ function useFill<T extends HTMLElement>(fallback: { w: number; h: number }) {
 const paint = (fill?: FillKey, color?: string) => color ?? FILL[fill ?? 'brand']
 
 /* ---------------------------------------------------- horizontal bar list */
-export interface BarItem { label: string; value: number; tone?: FillKey; sub?: string; onClick?: () => void; drillLabel?: string }
+export interface BarItem {
+  label: string; value: number; tone?: FillKey; sub?: string; onClick?: () => void; drillLabel?: string
+  /** Raw CSS color for the bar; wins over `tone`. Lets a list use a ramp. */
+  color?: string
+  /** Shown in the value column instead of the bare number, e.g. "27% free". */
+  valueLabel?: string
+}
 
-export function BarList({ items, labelWidth = 150, max }:
-{ items: BarItem[]; labelWidth?: number; max?: number }) {
+export function BarList({ items, labelWidth = 150, max, valueWidth = 56 }:
+{ items: BarItem[]; labelWidth?: number; max?: number; valueWidth?: number }) {
   const top = max ?? Math.max(1, ...items.map((i) => i.value))
   return (
     <div className="flex flex-col gap-2.5">
       {items.map((it, idx) => {
-        const cols = { gridTemplateColumns: `${labelWidth}px 1fr 56px` }
+        const cols = { gridTemplateColumns: `${labelWidth}px 1fr ${valueWidth}px` }
         const inner = (
           <>
             <div className="text-[12.5px] text-ink-2 text-right leading-tight">
@@ -82,11 +93,11 @@ export function BarList({ items, labelWidth = 150, max }:
             </div>
             <div className="h-5 bg-line-soft rounded overflow-hidden">
               <div
-                className="h-full rounded-r transition-all duration-500"
-                style={{ width: `${(it.value / top) * 100}%`, background: FILL[it.tone ?? 'brand'] }}
+                className="h-full rounded-r transition-all duration-500 min-w-[3px]"
+                style={{ width: `${(it.value / top) * 100}%`, background: it.color ?? FILL[it.tone ?? 'brand'] }}
               />
             </div>
-            <div className="text-[13px] font-semibold tnum text-ink-1">{it.value.toLocaleString()}</div>
+            <div className="text-[13px] font-semibold tnum text-ink-1 whitespace-nowrap">{it.valueLabel ?? it.value.toLocaleString()}</div>
           </>
         )
         if (!it.onClick) {
@@ -119,7 +130,10 @@ export function StackedBar({ segments, ariaLabel, compact = false }:
       <div className={`flex ${compact ? 'h-5' : 'h-9'} rounded-lg overflow-hidden gap-0.5`} role="img" aria-label={ariaLabel}>
         {segments.map((s) => {
           const pct = (s.value / total) * 100
-          const dark = s.fill === 'warn' || s.fill === 'none' || (s.color !== undefined && /^#(9|a|b|c|d|e|f)/i.test(s.color))
+          /* good/crit are now a lighter 500 weight (see FILL) — too light for
+             reliable white-text contrast, so they take dark labels too. */
+          const dark = s.fill === 'warn' || s.fill === 'none' || s.fill === 'good' || s.fill === 'crit'
+            || (s.color !== undefined && /^#(9|a|b|c|d|e|f)/i.test(s.color))
           const Tag = s.onClick ? 'button' : 'div'
           return (
             <Tag
@@ -265,74 +279,124 @@ export function TrendLine({ points, tone = 'brand', height = 96, labels }:
 }
 
 /* ------------------------------------------------------- coverage matrix */
-export function CoverageMatrix({ rows, cols, cell, onCellClick, onTrailingClick }:
+/**
+ * One rich row per intent: name + workflow count on the left, a coloured
+ * status tile per vendor in the middle, and a proportional live-services bar
+ * on the right. The bar flexes to absorb the card's leftover width, so the
+ * widget reads dense at any size instead of stretching a sparse table.
+ */
+export interface CoverageCol { key: string; label: string; sub?: string; icon?: ComponentType<{ size?: number; className?: string }> }
+
+export function CoverageMatrix({ rows, cols, cell, onCellClick, onTrailingClick, trailingLabel = 'Live services' }:
 {
-  rows: { key: string; label: string; trailing?: ReactNode }[]
-  cols: string[]
-  cell: (r: string, c: string) => { text: string; state: 'built' | 'draft' | 'gap' }
-  /** Drill into the workflows behind one intent × vendor square. */
+  rows: { key: string; label: string; sub?: string; trailing: number }[]
+  cols: CoverageCol[]
+  cell: (r: string, c: string) => { count?: number; state: 'built' | 'draft' | 'gap' | 'na' }
+  /** Drill into the workflows behind one intent × vendor tile. */
   onCellClick?: (rowKey: string, col: string) => void
-  /** Drill into whatever the trailing column counts, for that row. */
+  /** Drill into whatever the trailing bar counts, for that row. */
   onTrailingClick?: (rowKey: string) => void
+  trailingLabel?: string
 }) {
-  const style: Record<string, string> = {
-    built: 'vw-chip--success rounded-md',
-    draft: 'vw-chip--warning rounded-md',
-    gap: 'vw-chip--neutral rounded-md border border-dashed border-line',
+  const maxT = Math.max(1, ...rows.map((r) => r.trailing))
+  const totalT = rows.reduce((a, r) => a + r.trailing, 0) || 1
+  const gridCols = `minmax(180px,230px) repeat(${cols.length}, minmax(112px,128px)) minmax(210px,1fr)`
+
+  const tile: Record<string, { box: string; big: string; sub: string }> = {
+    built: { box: 'bg-good-50 border-good-200', big: 'text-good-700', sub: 'text-good-700/75' },
+    draft: { box: 'bg-warn-50 border-warn-200', big: 'text-warn-700', sub: 'text-warn-700/75' },
+    gap: { box: 'bg-plane border-dashed border-line', big: 'text-ink-3', sub: 'text-ink-3' },
+    na: { box: 'bg-transparent border-transparent', big: 'text-line', sub: 'text-line' },
   }
+
   return (
     <div className="overflow-x-auto">
-      <table className="border-separate border-spacing-1 w-full" style={{ minWidth: 760 }}>
-        <thead>
-          <tr>
-            <th />
-            {cols.map((c) => (
-              <th key={c} className="text-[11px] font-semibold text-ink-3 px-1.5 py-1 leading-tight text-center whitespace-pre-line">{c}</th>
-            ))}
-            <th className="text-[11px] font-semibold text-ink-3 text-right pr-0">Live services</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.key}>
-              <th className="text-right text-[12.5px] font-medium text-ink-1 pr-3 whitespace-nowrap">{r.label}</th>
-              {cols.map((c) => {
-                const v = cell(r.key, c)
-                return (
-                  <td key={c} className={`text-center rounded-md text-[12px] font-semibold ${style[v.state]} ${onCellClick ? 'p-0' : 'py-2.5 px-1.5'}`}>
-                    {onCellClick
-                      ? (
-                        <button
-                          type="button" onClick={() => onCellClick(r.key, c)}
-                          aria-label={`${r.label} on ${c}: ${v.text}. Open the matching workflows`}
-                          className="w-full h-full py-2.5 px-1.5 rounded-md cursor-pointer hover:brightness-95
-                            focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
-                        >
-                          {v.text}
-                        </button>
-                      )
-                      : v.text}
-                  </td>
-                )
-              })}
-              <td className="text-right text-[13px] font-semibold tnum pr-0">
-                {onTrailingClick
-                  ? (
+      <div role="table" aria-label="Workflow coverage by intent and vendor" style={{ minWidth: 340 + cols.length * 128 }}>
+        <div role="row" className="grid gap-2.5 px-3.5 pb-2" style={{ gridTemplateColumns: gridCols }}>
+          <div role="columnheader" className="text-[11px] font-semibold uppercase tracking-[.07em] text-ink-3">Intent</div>
+          {cols.map((c) => (
+            <div key={c.key} role="columnheader" className="flex flex-col items-center gap-0.5 text-center">
+              {c.icon && <c.icon size={13} className="text-ink-3" />}
+              <span className="text-[11px] font-semibold uppercase tracking-[.07em] text-ink-3 leading-tight">{c.label}</span>
+              {c.sub && <span className="text-[9.5px] text-ink-3/70 leading-tight">{c.sub}</span>}
+            </div>
+          ))}
+          <div role="columnheader" className="text-[11px] font-semibold uppercase tracking-[.07em] text-ink-3 text-right">{trailingLabel}</div>
+        </div>
+        <div className="flex flex-col gap-2">
+          {rows.map((r) => {
+            const share = Math.round((r.trailing / totalT) * 100)
+            return (
+              <div key={r.key} role="row"
+                className="grid gap-2.5 items-center border border-line rounded-lg px-3.5 py-2.5 transition-colors hover:border-brand-200 hover:bg-plane"
+                style={{ gridTemplateColumns: gridCols }}>
+                <div role="rowheader" className="min-w-0">
+                  <div className="text-[13px] font-semibold text-ink-1 truncate" title={r.label}>{r.label}</div>
+                  {r.sub && <div className="text-[11px] text-ink-3 mt-0.5 truncate">{r.sub}</div>}
+                </div>
+                {cols.map((c) => {
+                  const v = cell(r.key, c.key)
+                  const t = tile[v.state]
+                  if (v.state === 'na') {
+                    return (
+                      <div key={c.key} role="cell" className="flex items-center justify-center text-[13px] text-line" aria-label={`${r.label} on ${c.label}: not applicable`}>
+                        —
+                      </div>
+                    )
+                  }
+                  const big = v.state === 'built' ? v.count : v.state === 'draft' ? 'Draft' : '—'
+                  const sub = v.state === 'built' ? (v.count === 1 ? 'active workflow' : 'active workflows')
+                    : v.state === 'draft' ? 'not approved yet' : 'no workflow'
+                  const inner = (
+                    <span className={`flex flex-col items-center justify-center w-full rounded-lg border px-2 py-1.5 ${t.box}`}>
+                      <span className={`text-[15px] font-semibold tnum leading-tight ${t.big}`}>{big}</span>
+                      <span className={`text-[10.5px] leading-tight ${t.sub}`}>{sub}</span>
+                    </span>
+                  )
+                  if (!onCellClick) return <div key={c.key} role="cell">{inner}</div>
+                  return (
                     <button
-                      type="button" onClick={() => onTrailingClick(r.key)}
-                      aria-label={`Open the services for ${r.label}`}
-                      className="rounded px-1 -mx-1 cursor-pointer hover:text-brand-600 hover:underline
+                      key={c.key} role="cell" type="button" onClick={() => onCellClick(r.key, c.key)}
+                      aria-label={`${r.label} on ${c.label}: ${big} ${sub}. Open the matching workflows`}
+                      className="cursor-pointer rounded-lg transition-[filter] hover:brightness-[.97]
                         focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
                     >
-                      {r.trailing}
+                      {inner}
                     </button>
                   )
-                  : r.trailing}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                })}
+                <div role="cell">
+                  {(() => {
+                    const bar = (
+                      <>
+                        <span className="flex-1 h-2 rounded-full bg-line-soft overflow-hidden min-w-[60px]" aria-hidden>
+                          <span className="block h-full rounded-full bg-brand-500 transition-all duration-500"
+                            style={{ width: `${(r.trailing / maxT) * 100}%` }} />
+                        </span>
+                        <span className="text-right shrink-0 w-[74px]">
+                          <span className="block text-[13px] font-semibold tnum text-ink-1 leading-tight">{r.trailing.toLocaleString()}</span>
+                          <span className="block text-[10.5px] text-ink-3 leading-tight">{share}% of base</span>
+                        </span>
+                      </>
+                    )
+                    if (!onTrailingClick) return <span className="flex items-center gap-3">{bar}</span>
+                    return (
+                      <button
+                        type="button" onClick={() => onTrailingClick(r.key)}
+                        aria-label={`${r.trailing.toLocaleString()} services on ${r.label}. Open them`}
+                        className="flex items-center gap-3 w-full cursor-pointer rounded-md
+                          focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
+                      >
+                        {bar}
+                      </button>
+                    )
+                  })()}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
@@ -367,8 +431,8 @@ export function PoolGauge({ allocated, quarantined, reserved, total }:
  * donut, and a four-bucket legend where every row drills into the grid.
  * No Filter button — the grid's quick chips already do that job.
  */
-export function CategoryCard({ chip, total, noun, segments, onOpen }:
-{ chip: ReactNode; total: number; noun: string; segments: DonutSegment[]; onOpen: () => void }) {
+export function CategoryCard({ chip, total, noun, segments, onOpen, info }:
+{ chip: ReactNode; total: number; noun: string; segments: DonutSegment[]; onOpen: () => void; info?: ReactNode }) {
   return (
     <div className="vw-card-section p-4">
       <div className="vw-flex vw-items-center vw-justify-between vw-gap-md mb-3">
@@ -378,6 +442,7 @@ export function CategoryCard({ chip, total, noun, segments, onOpen }:
             {total.toLocaleString()} <span className="vw-card-metric-label-sub">{noun}</span>
           </button>
         </span>
+        {info && <InfoTip>{info}</InfoTip>}
       </div>
       <Donut size={92} segments={segments} caption={<DonutLegend segments={segments} />} />
     </div>
@@ -462,6 +527,7 @@ function smooth(pts: { x: number; y: number }[], yMin: number, yMax: number) {
 export function TrendChart({ labels, series, height = 200, ariaLabel }:
 { labels: string[]; series: TrendSeries[]; height?: number; ariaLabel: string }) {
   const [fillRef, size] = useFill<HTMLDivElement>({ w: 640, h: height })
+  const [hover, setHover] = useState<number | null>(null)
   const W = 640; const H = size.w > 0 ? size.h * (W / size.w) : height
   const m = { t: 14, r: 12, b: 30, l: 30 }
   const cW = W - m.l - m.r; const cH = H - m.t - m.b
@@ -470,9 +536,22 @@ export function TrendChart({ labels, series, height = 200, ariaLabel }:
   const sy = (v: number) => cH - (v / yMax) * cH
   const sx = (i: number) => (i / Math.max(1, labels.length - 1)) * cW
   const pts = series.map((s) => s.values.map((v, i) => ({ x: sx(i), y: sy(v) })))
+
+  /* The dots are a 3px hit target — far too small to find reliably. Instead
+     track the pointer across the whole plot and snap to the nearest day, the
+     way every other trend chart works. */
+  const trackPointer = (e: { clientX: number; clientY: number; currentTarget: SVGRectElement }) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const localX = ((e.clientX - rect.left) / Math.max(1, rect.width)) * cW
+    const i = Math.round((localX / cW) * Math.max(1, labels.length - 1))
+    setHover(Math.min(labels.length - 1, Math.max(0, i)))
+  }
+
+  const tipLeftPct = hover === null ? 0 : ((m.l + sx(hover)) / W) * 100
+
   return (
     <div className="h-full vw-flex vw-flex-col">
-      <div ref={fillRef} className="flex-1 min-h-0">
+      <div ref={fillRef} className="flex-1 min-h-0 relative">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full block overflow-visible" role="img" aria-label={ariaLabel}>
         <g transform={`translate(${m.l},${m.t})`}>
           {ticks.map((t) => (
@@ -481,21 +560,42 @@ export function TrendChart({ labels, series, height = 200, ariaLabel }:
               <text x={-8} y={sy(t) + 4} textAnchor="end" {...TICK}>{t}</text>
             </g>
           ))}
+          {hover !== null && (
+            <line x1={sx(hover)} x2={sx(hover)} y1={0} y2={cH} stroke="#cbd5e1" strokeWidth={1} strokeDasharray="3 3" />
+          )}
           {series.map((s, si) => (
             <g key={s.name}>
               <path d={smooth(pts[si], 0, cH)} fill="none" stroke={paint(s.fill, s.color)} strokeWidth={2.5} strokeLinecap="round" />
               {pts[si].map((p, i) => (
-                <circle key={i} cx={p.x} cy={p.y} r={3} fill="#fff" stroke={paint(s.fill, s.color)} strokeWidth={2}>
-                  <title>{`${labels[i]} · ${s.name}: ${s.values[i]}`}</title>
-                </circle>
+                <circle key={i} cx={p.x} cy={p.y} r={hover === i ? 5 : 3} fill="#fff" stroke={paint(s.fill, s.color)} strokeWidth={2} />
               ))}
             </g>
           ))}
           {labels.map((l, i) => (i % 2 === 0 || i === labels.length - 1) && (
             <text key={l} x={sx(i)} y={cH + 20} textAnchor="middle" {...TICK}>{l}</text>
           ))}
+          <rect
+            x={0} y={0} width={cW} height={cH} fill="transparent"
+            onMouseMove={trackPointer}
+            onMouseLeave={() => setHover(null)}
+          />
         </g>
       </svg>
+      {hover !== null && (
+        <div
+          className="absolute top-1.5 -translate-x-1/2 pointer-events-none z-10 whitespace-nowrap
+            bg-ink-1 text-white text-[11.5px] rounded-md px-2.5 py-1.5 shadow-lg vw-flex vw-flex-col vw-gap-0.5"
+          style={{ left: `${Math.min(94, Math.max(6, tipLeftPct))}%` }}
+        >
+          <span className="font-medium">{labels[hover]}</span>
+          {series.map((s) => (
+            <span key={s.name} className="vw-flex vw-items-center vw-gap-xs">
+              <i className="w-2 h-2 rounded-full shrink-0" style={{ background: paint(s.fill, s.color) }} />
+              {s.name}: <b className="tnum">{s.values[hover]}</b>
+            </span>
+          ))}
+        </div>
+      )}
       </div>
       <div className="vw-flex vw-items-center vw-gap-lg mt-2">
         {series.map((s) => (

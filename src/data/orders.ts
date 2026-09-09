@@ -1,6 +1,6 @@
 import type {
   WorkflowTaskDef,
-  Endpoint, Order, OrderIntent, OrderParamValue, OrderState, Run, RunTask, Service, Workflow,
+  Endpoint, Order, OrderIntent, OrderParamValue, OrderState, Run, RunTask, Service, TaskState, Workflow,
 } from '@/types'
 import { endpointRole } from '@/types'
 import { ACCOUNTS, DEVICE_MODELS, SITES, between, intentById, pad, pick, rnd } from './catalog'
@@ -8,9 +8,9 @@ import { renderCommand } from './templates'
 
 /* Order-state distribution. Sums to exactly 170. */
 const ORDER_MIX: [OrderState, number][] = [
-  ['Draft', 31], ['Designed', 39], ['Awaiting approval', 12], ['Approved', 9],
-  ['Queued', 3], ['Executing', 3], ['Activated', 47], ['Failed', 22],
-  ['Rejected', 3], ['Unrouted', 1],
+  ['Draft', 31], ['Planned', 10], ['Validated', 35], ['Invalid', 7], ['Approved', 9],
+  ['Rejected', 3], ['Queued', 3], ['In progress', 3], ['Ready', 47], ['Failed', 20],
+  ['Reinstantiate', 2],
 ]
 const INTENT_MIX: [OrderIntent, number][] = [
   ['Create', 143], ['Modify', 18], ['Suspend', 4], ['Resume', 2], ['Cease', 3],
@@ -99,15 +99,16 @@ export function bindEndpoints(
   })
 }
 
-const WAITING: Partial<Record<OrderState, string>> = {
+export const WAITING: Partial<Record<OrderState, string>> = {
   Draft: 'Design engineer',
-  Designed: 'NOC lead',
-  'Awaiting approval': 'NOC lead',
+  Planned: 'Pre-validation',
+  Validated: 'NOC lead',
+  Invalid: 'Requester',
   Approved: 'Change window',
   Queued: 'Execution queue',
   Failed: 'Assigned engineer',
   Rejected: 'Requester',
-  Unrouted: 'Unassigned',
+  Reinstantiate: 'Execution queue',
 }
 
 export function buildOrders(services: Service[], workflows: Workflow[]): Order[] {
@@ -120,8 +121,7 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
 
   for (let i = 0; i < 170; i += 1) {
     const state = states[i]
-    let orderIntent = intents[i]
-    if (state === 'Unrouted') orderIntent = 'Create'
+    const orderIntent = intents[i]
 
     const existing = orderIntent === 'Create' ? undefined : liveServices[(i * 13) % liveServices.length]
     const intentId = existing ? existing.intentId : pick(['INT-IBW-ACCESS', 'INT-L2-P2P', 'INT-L2-RAILWIRE', 'INT-L3-HUBSPOKE', 'INT-L3-MESH'])
@@ -146,9 +146,9 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     }))
 
     const subtype = pick(['Tagged', 'Untagged', 'Other', 'BGP', 'Static'])
-    const boundEps = state === 'Unrouted' ? [] : bindEndpoints(eps, intent.category, intent.type, subtype, workflows, params, bandwidth)
+    const boundEps = bindEndpoints(eps, intent.category, intent.type, subtype, workflows, params, bandwidth)
 
-    const ageDays = state === 'Unrouted' ? 293 : between(0, 42)
+    const ageDays = between(0, 42)
     const created = new Date(now - ageDays * 86400000)
 
     out.push({
@@ -156,22 +156,22 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
       code: `NS-${pad(114 + i, 6)}`,
       name: `${intent.name}${orderIntent !== 'Create' ? ` · ${orderIntent.toLowerCase()}` : ''}`,
       intent: orderIntent, intentId,
-      category: state === 'Unrouted' ? intent.category : intent.category,
+      category: intent.category,
       type: intent.type,
       subtype,
       accountId: acct.id, accountName: acct.name,
       serviceId: existing?.id,
       state,
-      workflowId: state === 'Draft' || state === 'Unrouted' ? undefined : (boundEps[0]?.workflowId ?? wf?.id),
+      workflowId: state === 'Draft' ? undefined : (boundEps[0]?.workflowId ?? wf?.id),
       endpoints: boundEps,
-      params: state === 'Unrouted' ? [] : params,
+      params,
       createdAt: created.toISOString(),
       updatedAt: new Date(now - between(0, ageDays) * 86400000).toISOString(),
       ageDays,
-      owner: state === 'Unrouted' ? undefined : pick(OWNERS),
+      owner: pick(OWNERS),
       waitingOn: WAITING[state],
       runIds: [],
-      approvals: state === 'Activated' || state === 'Approved' || state === 'Executing' || state === 'Queued'
+      approvals: ['Ready', 'Approved', 'In progress', 'Queued', 'Reinstantiate', 'Failed'].includes(state)
         ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Approved' }]
         : state === 'Rejected'
           ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Rejected', comment: 'Uplink headroom insufficient at the A-end.' }]
@@ -182,8 +182,8 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
           { attribute: 'Egress shaper', current: `${bandwidth} Mbps`, requested: `${bandwidth * 5} Mbps` },
         ]
         : undefined,
-      slaBreached: state === 'Failed' && ageDays > 14,
-      notes: state === 'Unrouted' ? 'Draft saved before a category was chosen. Category is nullable in the current schema.' : undefined,
+      slaBreached: (state === 'Failed' || state === 'Reinstantiate') && ageDays > 14,
+      notes: undefined,
     })
   }
 
@@ -199,7 +199,7 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
   featured.subtype = 'Tagged'
   featured.accountId = 'ACC-04417'
   featured.accountName = 'Excitel Business Solutions'
-  featured.state = 'Executing'
+  featured.state = 'In progress'
   featured.serviceId = 'SVC-L2-018842'
   featured.owner = 'Priya S.'
   featured.ageDays = 2
@@ -221,7 +221,10 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
   featured.endpoints = bindEndpoints(featured.endpoints, 'L2VPN', 'Transparent', 'Untagged', workflows, featured.params, 100)
   featured.workflowId = featured.endpoints[0].workflowId
 
-  const orphan = out.find((o) => o.state === 'Unrouted')
+  /* One Invalid record keeps the flavour the old "Unrouted" example carried —
+     pre-validation couldn't even find a category to check against — instead
+     of just looking like every other Invalid row. */
+  const orphan = out.find((o) => o.state === 'Invalid')
   if (orphan) {
     orphan.id = 'ORD-2026-003118'
     orphan.code = 'NS-000000'
@@ -230,6 +233,11 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     orphan.accountId = '—'
     orphan.owner = undefined
     orphan.ageDays = 293
+    orphan.workflowId = undefined
+    orphan.endpoints = []
+    orphan.params = []
+    orphan.waitingOn = 'Unassigned'
+    orphan.notes = 'Pre-validation could not resolve a category to check against. Category is nullable in the current schema.'
   }
   return out
 }
@@ -250,86 +258,199 @@ export function orderedTasks(wf: Pick<Workflow, 'stages' | 'tasks'>): WorkflowTa
   return [...wf.tasks].sort((a, b) => (idx.get(a.stageId) ?? 99) - (idx.get(b.stageId) ?? 99) || a.sequence - b.sequence)
 }
 
-function runTasksFor(wf: Workflow, outcome: 'pass' | 'fail', failAt: number, ep: Endpoint): RunTask[] {
-  const t0 = Date.now() - 1000 * 60 * 12
-  let cursor = t0
+/** Index of the first task that isn't Pre validation — i.e. where Configuration begins. */
+function firstConfigIndex(wf: Pick<Workflow, 'stages' | 'tasks'>): number {
+  const ordered = orderedTasks(wf)
+  const i = ordered.findIndex((t) => t.stageKind !== 'Pre validation')
+  return i === -1 ? ordered.length : i
+}
+
+/**
+ * Builds one endpoint's task list for one run, honouring the platform's
+ * execution order: Pre validation runs on every endpoint in parallel, but
+ * Configuration and Post validation run on the Source first — a Destination
+ * only starts its own Configuration once the Source's finished, and never
+ * starts it at all if the Source failed.
+ *
+ *   startAt        when this endpoint's Pre validation begins (same instant
+ *                  for every endpoint on the order — that stage is parallel).
+ *   configGateAt   earliest instant this endpoint's Configuration stage may
+ *                  begin. Pass the Source run's `endAt` for a Destination;
+ *                  leave undefined for the Source itself.
+ *   aborted        Source failed this attempt, so this Destination's
+ *                  Configuration/Post validation are never attempted.
+ *   failAt         ordered-task index (always inside Configuration or Post
+ *                  validation) where this endpoint's own run fails.
+ *   runningUpTo    for an order still In progress: how many of this
+ *                  endpoint's own tasks have completed so far. The next task
+ *                  shows Running; anything after is Not started (already
+ *                  reached its gate) or Queued (still waiting on the gate).
+ */
+function runTasksFor(wf: Workflow, ep: Endpoint, startAt: number, opts: {
+  configGateAt?: number; aborted?: boolean; failAt?: number; runningUpTo?: number
+}): { tasks: RunTask[]; preEndAt: number; endAt: number } {
   const values = Object.fromEntries((ep.params ?? []).map((p) => [p.name, p.value]))
-  return orderedTasks(wf).map((td, i) => {
+  const ordered = orderedTasks(wf)
+  const success = 'Success rate is 100 percent (5/5), round-trip min/avg/max = 2/3/5 ms'
+  const inFlight = opts.runningUpTo !== undefined
+  const gateReached = inFlight && opts.configGateAt !== undefined && opts.configGateAt <= startAt
+  let cursor = startAt
+  let preEndAt = startAt
+  let gateApplied = false
+  const tasks = ordered.map((td, i) => {
     const dur = between(700, 3200)
-    const failed = outcome === 'fail' && i === failAt
-    const after = outcome === 'fail' && i > failAt
+    const isPre = td.stageKind === 'Pre validation'
+    if (!isPre && !gateApplied) {
+      gateApplied = true
+      if (opts.configGateAt !== undefined) cursor = Math.max(cursor, opts.configGateAt)
+    }
+
+    if (inFlight) {
+      /* Mid-execution: Pre validation for every endpoint already ran (it's
+         parallel and quick); Configuration/Post validation only proceeds
+         past what runningUpTo says, and only once the gate is reached. */
+      const started = cursor
+      if (isPre || i < opts.runningUpTo!) cursor += dur
+      const waitingOnGate = !isPre && !gateReached
+      const state: TaskState = isPre ? 'Passed'
+        : waitingOnGate ? 'Queued'
+          : i < opts.runningUpTo! ? 'Passed'
+            : i === opts.runningUpTo! ? 'Running' : 'Not started'
+      const done = state === 'Passed'
+      return {
+        taskDefId: td.id, name: td.name, stage: td.stage, stageKind: td.stageKind, sequence: i + 1,
+        state, direction: 'forward' as const,
+        claim: claimFor(td, values),
+        command: renderCommand(td.setCommand, values),
+        requestPayload: JSON.stringify({ device: ep.mgmtIp, transport: 'ssh', commands: renderCommand(td.setCommand, values).split('\n') }, null, 2),
+        responsePayload: done ? JSON.stringify({ transportExit: 0, output: td.kind === 'read' ? [success] : ['commit complete'] }, null, 2) : '',
+        transportExit: 0,
+        expected: claimFor(td, values),
+        actual: done ? 'every rule satisfied' : undefined,
+        startedAt: done || state === 'Running' ? new Date(started).toISOString() : undefined,
+        endedAt: done ? new Date(started + dur).toISOString() : undefined,
+        durationMs: done ? dur : undefined,
+        blockedBy: waitingOnGate ? 'Waiting for the Source endpoint to finish' : undefined,
+      }
+    }
+
+    const failedHere = opts.failAt === i
+    const afterFail = opts.failAt !== undefined && i > opts.failAt
+    const neverRuns = !isPre && !!opts.aborted
+    const skip = afterFail || neverRuns
     const started = cursor
-    if (!after) cursor += dur
-    const success = `Success rate is 100 percent (5/5), round-trip min/avg/max = 2/3/5 ms`
+    if (!skip) cursor += dur
+    if (isPre) preEndAt = started + dur
     return {
       taskDefId: td.id,
       name: td.name,
       stage: td.stage,
       stageKind: td.stageKind,
       sequence: i + 1,
-      state: after ? 'Blocked' : failed ? 'Failed' : 'Passed',
-      direction: 'forward',
+      state: (skip ? 'Blocked' : failedHere ? 'Failed' : 'Passed') as TaskState,
+      direction: 'forward' as const,
       claim: claimFor(td, values),
       command: renderCommand(td.setCommand, values),
       requestPayload: JSON.stringify({ device: ep.mgmtIp, transport: 'ssh', commands: renderCommand(td.setCommand, values).split('\n') }, null, 2),
-      responsePayload: failed
+      responsePayload: failedHere
         ? JSON.stringify({ transportExit: 0, output: ['error: configuration check-out failed', 'Last error: hold timer expired'] }, null, 2)
-        : JSON.stringify({ transportExit: 0, output: td.kind === 'read' ? [success] : ['commit complete'] }, null, 2),
+        : skip ? '' : JSON.stringify({ transportExit: 0, output: td.kind === 'read' ? [success] : ['commit complete'] }, null, 2),
       transportExit: 0,
       parsed: undefined,
       expected: claimFor(td, values),
-      actual: failed ? 'output contains "error"' : 'every rule satisfied',
-      startedAt: after ? undefined : new Date(started).toISOString(),
-      endedAt: after ? undefined : new Date(started + dur).toISOString(),
-      durationMs: after ? undefined : dur,
-      failureReason: failed ? `Validation failed: output contains "error" — rule "${td.validations[0]?.type ?? 'Not contains'} ${td.validations[0]?.text ?? ''}" was not satisfied.` : undefined,
-      blockedBy: after ? orderedTasks(wf)[failAt].name : undefined,
+      actual: failedHere ? 'output contains "error"' : skip ? undefined : 'every rule satisfied',
+      startedAt: skip ? undefined : new Date(started).toISOString(),
+      endedAt: skip ? undefined : new Date(started + dur).toISOString(),
+      durationMs: skip ? undefined : dur,
+      failureReason: failedHere ? `Validation failed: output contains "error" — rule "${td.validations[0]?.type ?? 'Not contains'} ${td.validations[0]?.text ?? ''}" was not satisfied.` : undefined,
+      blockedBy: neverRuns
+        ? 'Source endpoint failed — Destination configuration was never attempted.'
+        : afterFail ? ordered[opts.failAt!].name : undefined,
     }
   })
+  return { tasks, preEndAt, endAt: cursor }
 }
 
 export function buildRuns(orders: Order[], workflows: Workflow[]): Run[] {
   const runs: Run[] = []
   let n = 0
   for (const o of orders) {
-    /* A run exists only once execution has actually started. An Approved or
-       Queued order is waiting for a change window and has no run yet. */
-    if (['Draft', 'Unrouted', 'Designed', 'Awaiting approval', 'Approved', 'Queued', 'Rejected'].includes(o.state)) continue
+    /* A run exists only once execution has actually started — Draft through
+       Queued are all still waiting for that to happen and have no run yet. */
+    if (['Draft', 'Planned', 'Validated', 'Invalid', 'Approved', 'Rejected', 'Queued'].includes(o.state)) continue
+    if (o.endpoints.length === 0) continue
+    /* Reinstantiate carries the failed run it's about to retry. */
+    const stateFailed = o.state === 'Failed' || o.state === 'Reinstantiate'
     /* Some activations only succeed on a retry — that is what first-pass yield measures. */
-    const attempts = o.state === 'Failed' ? between(1, 3) : (o.state === 'Activated' && rnd() > 0.78 ? 2 : 1)
+    const attempts = stateFailed ? between(1, 3) : (o.state === 'Ready' && rnd() > 0.78 ? 2 : 1)
+    /* Endpoint 0 is always Source (A / hub); everything after is Destination
+       (Z / spokes) — true for every construction path in this codebase. */
+    const sourceEp = o.endpoints[0]
+    const destEps = o.endpoints.slice(1)
+
     for (let a = 1; a <= attempts; a += 1) {
       const last = a === attempts
-      const running = o.state === 'Executing' && last
+      const running = o.state === 'In progress' && last
       const start = Date.now() - (attempts - a + 1) * 3600000
-      /* One run per endpoint: each device runs its own template. On a failed
-         attempt only one end fails; the other end completes or is skipped. */
-      o.endpoints.forEach((ep, ei) => {
-        const wf = workflows.find((w) => w.id === ep.workflowId) ?? workflows.find((w) => w.id === o.workflowId) ?? workflows[0]
-        const failed = o.state === 'Failed' && last && ei === 0
-        const failAt = between(4, Math.max(5, wf.tasks.length - 3))
-        const tasks = runTasksFor(wf, failed || (!last && ei === 0) ? 'fail' : 'pass', failAt, ep)
-        if (running) {
-          tasks.forEach((t, i) => {
-            const cut = 4 + ei * 2
-            t.state = i < cut ? 'Passed' : i === cut ? 'Running' : 'Not started'
-            if (i > cut) { t.startedAt = undefined; t.endedAt = undefined; t.durationMs = undefined; t.blockedBy = undefined }
-          })
-        }
+      const srcWf = workflows.find((w) => w.id === sourceEp.workflowId) ?? workflows.find((w) => w.id === o.workflowId) ?? workflows[0]
+
+      const push = (ep: Endpoint, wf: Workflow, tasks: RunTask[], outcome: Run['outcome'], endAt: number | undefined, residue?: string[]) => {
         n += 1
         const id = `RUN-${pad(n, 6)}`
         runs.push({
           id, attempt: a, orderId: o.id, endpointId: ep.id, workflowId: wf.id, direction: 'forward',
-          outcome: running ? 'Running' : failed ? 'Failed' : (!last && ei === 0) ? 'Rolled back' : 'Accepted',
-          startedAt: new Date(start + ei * 4000).toISOString(),
-          endedAt: running ? undefined : new Date(start + between(60000, 300000)).toISOString(),
-          durationMs: running ? undefined : between(60000, 300000),
+          outcome,
+          startedAt: new Date(start).toISOString(),
+          endedAt: endAt === undefined ? undefined : new Date(endAt).toISOString(),
+          durationMs: endAt === undefined ? undefined : endAt - start,
           orchestratorClock: new Date(start).toISOString(),
           deviceClock: new Date(start - 3100).toISOString(),
           clockSkewMs: -3100,
           tasks,
-          residue: failed && rnd() > 0.65 ? ['RD 65001:4189 still marked allocated in the pool'] : undefined,
+          residue,
         })
         o.runIds.push(id)
+      }
+
+      if (running) {
+        /* Mid-flight: either the Source is still working through Configuration
+           (every Destination is parked at Queued, having already cleared its
+           own parallel Pre validation), or the Source has fully finished and
+           one or more Destinations are now executing. Never both moving at
+           once — that is the rule being modelled. */
+        const sourceDone = rnd() > 0.5
+        const srcOrdered = orderedTasks(srcWf)
+        const srcCfgStart = firstConfigIndex(srcWf)
+        const srcUpTo = sourceDone ? srcOrdered.length : between(Math.max(1, srcCfgStart - 1), Math.max(srcCfgStart, srcOrdered.length - 2))
+        const src = runTasksFor(srcWf, sourceEp, start, { runningUpTo: srcUpTo })
+        push(sourceEp, srcWf, src.tasks, 'Running', undefined)
+
+        destEps.forEach((ep) => {
+          const wf = workflows.find((w) => w.id === ep.workflowId) ?? srcWf
+          const ordered = orderedTasks(wf)
+          const destUpTo = sourceDone ? between(0, Math.max(0, ordered.length - 1)) : 0
+          const dest = runTasksFor(wf, ep, start, { configGateAt: src.endAt, runningUpTo: destUpTo })
+          push(ep, wf, dest.tasks, 'Running', undefined)
+        })
+        continue
+      }
+
+      /* Terminal attempt: the Source either passes clean or fails partway
+         through Configuration/Post validation. When it fails, every
+         Destination is Aborted — its own Pre validation ran (and passed),
+         but Configuration never starts. */
+      const srcFails = !last || stateFailed
+      const srcOrdered = orderedTasks(srcWf)
+      const srcCfgStart = firstConfigIndex(srcWf)
+      const failAt = srcFails ? between(srcCfgStart, Math.max(srcCfgStart, srcOrdered.length - 1)) : undefined
+      const src = runTasksFor(srcWf, sourceEp, start, { failAt })
+      push(sourceEp, srcWf, src.tasks, srcFails ? 'Failed' : 'Accepted', src.endAt,
+        srcFails && rnd() > 0.65 ? ['RD 65001:4189 still marked allocated in the pool'] : undefined)
+
+      destEps.forEach((ep) => {
+        const wf = workflows.find((w) => w.id === ep.workflowId) ?? srcWf
+        const dest = runTasksFor(wf, ep, start, { configGateAt: src.endAt, aborted: srcFails })
+        push(ep, wf, dest.tasks, srcFails ? 'Aborted' : 'Accepted', dest.endAt)
       })
     }
   }

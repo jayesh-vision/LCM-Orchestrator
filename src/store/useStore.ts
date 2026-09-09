@@ -1,12 +1,12 @@
 import { create } from 'zustand'
 import type {
   Notification, Order, OrderIntent, OrderParamValue, OrderState,
-  ResourcePool, Run, RunTask, Service, Workflow,
+  ProfileType, ResourcePool, Run, RunTask, Service, Workflow,
 } from '@/types'
 import { INTENTS, PROFILE_TYPES, intentById, pad } from '@/data/catalog'
 import { buildWorkflows } from '@/data/workflows'
 import { buildServices } from '@/data/services'
-import { bindEndpoints, buildOrders, buildRuns, claimFor, orderedTasks } from '@/data/orders'
+import { bindEndpoints, buildOrders, buildRuns, claimFor, orderedTasks, WAITING } from '@/data/orders'
 import { renderCommand } from '@/data/templates'
 import { REPORTS, buildNotifications, buildPools } from '@/data/misc'
 
@@ -26,7 +26,8 @@ export interface WizardDraft {
   name: string
   intentId: string
   workflowId: string
-  endpoints: { role: 'A' | 'Z' | 'hub' | 'spoke'; siteCode: string; deviceName: string; vendor: string; mgmtIp: string; port: string }[]
+  /** `workflowId` on an endpoint overrides the vendor-matched template bindEndpoints would otherwise pick — set from the wizard's per-endpoint workflow picker. */
+  endpoints: { role: 'A' | 'Z' | 'hub' | 'spoke'; siteCode: string; deviceName: string; vendor: string; mgmtIp: string; port: string; workflowId?: string }[]
   params: OrderParamValue[]
 }
 
@@ -69,6 +70,7 @@ interface State {
   reproveService: (serviceId: string) => void
 
   addProfileType: (category: string, type: string, subtype: string, description: string) => void
+  updateProfileType: (id: string, patch: Partial<Pick<ProfileType, 'category' | 'type' | 'subtype' | 'description'>>) => void
   setWorkflowState: (id: string, state: Workflow['state']) => void
   /** Create or replace a workflow from the builder. Returns the stored id. */
   saveWorkflow: (wf: Workflow, note?: string) => string
@@ -118,7 +120,7 @@ export const useStore = create<State>((set, get) => ({
       subtype: draft.subtype,
       accountId: draft.accountId,
       accountName: draft.accountName,
-      state: 'Designed',
+      state: 'Draft',
       workflowId: draft.workflowId,
       endpoints: bindEndpoints(
         draft.endpoints.map((e, i) => ({
@@ -133,7 +135,7 @@ export const useStore = create<State>((set, get) => ({
         })),
         draft.category, draft.type, draft.subtype, get().workflows, draft.params,
         Number(draft.params.find((p) => p.name === 'bandwidth_mbps')?.value ?? 100),
-      ),
+      ).map((ep, i) => (draft.endpoints[i]?.workflowId ? { ...ep, workflowId: draft.endpoints[i].workflowId } : ep)),
       params: draft.params,
       createdAt: now,
       updatedAt: now,
@@ -145,14 +147,28 @@ export const useStore = create<State>((set, get) => ({
       slaBreached: false,
     }
     set((s) => ({ orders: [order, ...s.orders] }))
-    get().pushToast('good', `${order.id} created and pre-validated. Awaiting approval.`)
+    get().pushToast('good', `${order.id} created. Pre-validation starting.`)
+
+    /* Draft → Planned (pre-validation running) → Validated / Invalid — a
+       small simulated background check, in the same spirit as startRun's
+       task timer but for the single gate that runs before a human ever
+       sees the request. */
+    setTimeout(() => { get().setOrderState(order.id, 'Planned') }, 900)
+    setTimeout(() => {
+      const ok = Math.random() > 0.12
+      get().setOrderState(order.id, ok ? 'Validated' : 'Invalid')
+      get().pushToast(ok ? 'good' : 'crit', ok
+        ? `${order.id} pre-validated. Awaiting approval.`
+        : `${order.id} failed pre-validation. Needs rework before it can be approved.`)
+    }, 3200)
+
     return order
   },
 
   setOrderState: (id, state, note) =>
     set((s) => ({
       orders: s.orders.map((o) =>
-        o.id === id ? { ...o, state, notes: note ?? o.notes, updatedAt: new Date().toISOString() } : o),
+        o.id === id ? { ...o, state, waitingOn: WAITING[state], notes: note ?? o.notes, updatedAt: new Date().toISOString() } : o),
     })),
 
   approveOrder: (id, by) => {
@@ -161,7 +177,7 @@ export const useStore = create<State>((set, get) => ({
         ? {
           ...o,
           state: 'Approved' as OrderState,
-          waitingOn: 'Change window',
+          waitingOn: WAITING.Approved,
           approvals: o.approvals.map((a, i) => (i === 0
             ? { ...a, by, at: new Date().toISOString(), decision: 'Approved' as const } : a)),
         }
@@ -176,7 +192,7 @@ export const useStore = create<State>((set, get) => ({
         ? {
           ...o,
           state: 'Rejected' as OrderState,
-          waitingOn: 'Requester',
+          waitingOn: WAITING.Rejected,
           approvals: o.approvals.map((a, i) => (i === 0
             ? { ...a, by, at: new Date().toISOString(), decision: 'Rejected' as const, comment } : a)),
         }
@@ -231,36 +247,48 @@ export const useStore = create<State>((set, get) => ({
       runs: [...newRuns, ...s.runs],
       activeRunId: runIds[0],
       orders: s.orders.map((o) => (o.id === orderId
-        ? { ...o, state: 'Executing' as OrderState, waitingOn: undefined, runIds: [...runIds, ...o.runIds] } : o)),
+        ? { ...o, state: 'Queued' as OrderState, waitingOn: WAITING.Queued, runIds: [...runIds, ...o.runIds] } : o)),
     }))
-    get().pushToast('info', `Run ${attempt} started on ${eps.length} device(s).`)
+    get().pushToast('info', `Run ${attempt} queued on ${eps.length} device(s).`)
+
+    /* Queued → In progress once the run actually starts ticking through tasks. */
+    setTimeout(() => { get().setOrderState(orderId, 'In progress') }, 700)
 
     if (runTimer) clearInterval(runTimer)
-    let i = 0
-    const longest = Math.max(...newRuns.map((r) => r.tasks.length))
+
+    /* Endpoint 0 is always Source (A / hub); every run after it is a
+       Destination. Pre validation runs in parallel on every endpoint, but
+       Configuration/Post validation only starts on a Destination once the
+       Source's own run has fully passed — mirrored from the same rule the
+       seed data and buildRuns() apply. */
+    const srcRunId = newRuns[0]?.id
+    const cfgIdxByRun = new Map(newRuns.map((r) => {
+      const i = r.tasks.findIndex((t) => t.stageKind !== 'Pre validation')
+      return [r.id, i === -1 ? r.tasks.length : i]
+    }))
 
     runTimer = setInterval(() => {
       const state = get()
       const mine = state.runs.filter((r) => runIds.includes(r.id))
       if (mine.length === 0) { if (runTimer) clearInterval(runTimer); return }
 
-      if (i >= longest) {
-        if (runTimer) clearInterval(runTimer)
-        set((s) => ({
-          runs: s.runs.map((r) => (runIds.includes(r.id)
-            ? { ...r, outcome: 'Accepted', endedAt: new Date().toISOString(), durationMs: Date.now() - new Date(r.startedAt).getTime() }
-            : r)),
-          orders: s.orders.map((o) => (o.id === orderId ? { ...o, state: 'Activated' as OrderState } : o)),
-          activeRunId: null,
-        }))
-        get().pushToast('good', `${orderId} activated. All acceptance criteria passed on every device.`)
-        return
-      }
+      const srcRun = mine.find((r) => r.id === srcRunId)
+      const srcDone = !srcRun || srcRun.tasks.every((t) => t.state === 'Passed')
 
-      const idx = i
       set((s) => ({
         runs: s.runs.map((r) => {
           if (!runIds.includes(r.id)) return r
+          const isSource = r.id === srcRunId
+          const cfgIdx = cfgIdxByRun.get(r.id) ?? 0
+          /* A Destination task at or past Configuration is gated until the
+             Source finishes; Pre validation tasks are never gated. */
+          const gated = (n: number) => !isSource && n >= cfgIdx && !srcDone
+          const idx = r.tasks.findIndex((t) => t.state !== 'Passed')
+          if (idx === -1) return r
+          if (gated(idx)) {
+            if (r.tasks[idx].state === 'Queued') return r
+            return { ...r, tasks: r.tasks.map((t, n): RunTask => (n === idx ? { ...t, state: 'Queued' } : t)) }
+          }
           const next = r.tasks.map((t, n): RunTask => {
             if (n < idx) return t
             if (n === idx) {
@@ -276,13 +304,28 @@ export const useStore = create<State>((set, get) => ({
                 responsePayload: JSON.stringify({ transportExit: 0, output: ['Success rate is 100 percent (5/5), round-trip min/avg/max = 2/3/5 ms'] }, null, 2),
               }
             }
-            if (n === idx + 1) return { ...t, state: 'Running', startedAt: new Date().toISOString() }
+            if (n === idx + 1) {
+              if (gated(n)) return { ...t, state: 'Queued' }
+              return { ...t, state: 'Running', startedAt: new Date().toISOString() }
+            }
             return t
           })
           return { ...r, tasks: next }
         }),
       }))
-      i += 1
+
+      const after = get().runs.filter((r) => runIds.includes(r.id))
+      if (after.every((r) => r.tasks.every((t) => t.state === 'Passed'))) {
+        if (runTimer) clearInterval(runTimer)
+        set((s) => ({
+          runs: s.runs.map((r) => (runIds.includes(r.id)
+            ? { ...r, outcome: 'Accepted', endedAt: new Date().toISOString(), durationMs: Date.now() - new Date(r.startedAt).getTime() }
+            : r)),
+          orders: s.orders.map((o) => (o.id === orderId ? { ...o, state: 'Ready' as OrderState, waitingOn: undefined } : o)),
+          activeRunId: null,
+        }))
+        get().pushToast('good', `${orderId} ready. All acceptance criteria passed on every device.`)
+      }
     }, 900)
 
     return runIds[0]
@@ -300,7 +343,7 @@ export const useStore = create<State>((set, get) => ({
           endedAt: new Date().toISOString(),
           tasks: r.tasks.map((t) => (t.state === 'Passed'
             ? { ...t, state: 'Passed', direction: 'rollback' as const }
-            : t.state === 'Running' ? { ...t, state: 'Skipped' } : t)),
+            : t.state === 'Running' || t.state === 'Queued' ? { ...t, state: 'Skipped' } : t)),
         }
         : r)),
       orders: s.orders.map((o) => (o.id === run?.orderId ? { ...o, state: 'Failed' as OrderState, waitingOn: 'Assigned engineer' } : o)),
@@ -310,8 +353,9 @@ export const useStore = create<State>((set, get) => ({
   },
 
   retryOrder: (orderId) => {
-    get().setOrderState(orderId, 'Approved')
-    get().pushToast('info', `${orderId} queued for retry.`)
+    get().setOrderState(orderId, 'Reinstantiate')
+    get().pushToast('info', `${orderId} reinstantiated — re-entering the execution queue.`)
+    setTimeout(() => { get().startRun(orderId) }, 1100)
   },
 
   raiseChange: (serviceId, intent, delta) => {
@@ -330,7 +374,7 @@ export const useStore = create<State>((set, get) => ({
       accountId: svc.accountId,
       accountName: svc.accountName,
       serviceId,
-      state: 'Awaiting approval',
+      state: 'Validated',
       workflowId: get().workflows.find((w) => w.intentId === svc.intentId && w.state === 'Active')?.id,
       endpoints: bindEndpoints(svc.endpoints, svc.category, svc.type, '—', get().workflows,
         svc.attributes.map((a) => ({ name: a.name, value: a.intent, source: 'derived' as const })), svc.bandwidthMbps),
@@ -366,6 +410,13 @@ export const useStore = create<State>((set, get) => ({
       }, ...s.profileTypes],
     }))
     get().pushToast('good', `Profile type ${category} → ${type} → ${subtype} created.`)
+  },
+
+  updateProfileType: (id, patch) => {
+    set((s) => ({
+      profileTypes: s.profileTypes.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+    }))
+    get().pushToast('good', `${id} updated.`)
   },
 
   setWorkflowState: (id, state) => {

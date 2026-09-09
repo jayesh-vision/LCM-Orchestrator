@@ -1,14 +1,14 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
-import { Download, Eye, GitBranch, Plus, RefreshCcw, XCircle } from 'lucide-react'
+import { Activity, Boxes, ChevronRight, Download, Eye, Ghost, GitBranch, GitCompare, Plus, RefreshCcw, ShieldCheck, ShieldQuestion, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { Category, Conformance, Service, ServiceState } from '@/types'
 import {
-  Badge, Button, Card, CardBody, CardHead, CellMain, CellSub, Chip, DataTable,
+  Badge, Card, CardBody, CardHead, CellMain, CellSub, Chip, DataTable,
   FilterBanner, Kebab, Mono, Stat, type Column,
 } from '@/components/ui'
-import { BarList, StackedBar } from '@/components/charts'
+import { BarList, CHART, Donut, FILL, type FillKey } from '@/components/charts'
 import { CATEGORY_TONE, CONFORMANCE_TONE, inr, relTime, SERVICE_TONE } from '@/lib/format'
 
 const STATES: ServiceState[] = ['Live', 'Activating', 'Degraded', 'Suspended', 'Ceased']
@@ -44,6 +44,13 @@ export default function ServiceInventory() {
     () => services.filter((s) => s.conformance === 'Ghost').reduce((a, s) => a + s.monthlyValueInr * 12, 0),
     [services],
   )
+
+  const confSegs: { label: string; value: number; fill: FillKey; note: string; onClick: () => void }[] = [
+    { label: 'Conformant', value: n.conf('Conformant'), fill: 'good', note: 'device matches intent, proven recently', onClick: () => setConf('Conformant') },
+    { label: 'Drifted', value: n.conf('Drifted'), fill: 'warn', note: 'at least one attribute differs', onClick: () => setConf('Drifted') },
+    { label: 'Never proven', value: n.conf('Never proven') + n.conf('Not checked'), fill: 'none', note: 'configured, never tested end to end', onClick: () => setConf('Never proven') },
+    { label: 'Ghost', value: n.conf('Ghost'), fill: 'crit', note: 'record exists, no configuration', onClick: () => setConf('Ghost') },
+  ]
 
   const filtered = useMemo(() => services.filter((s) => {
     if (state !== 'All' && s.state !== state) return false
@@ -118,75 +125,127 @@ export default function ServiceInventory() {
       />
 
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
-        <Stat label="Total services" value={services.length.toLocaleString()}
+        <Stat label="Total services" icon={Boxes} value={services.length.toLocaleString()}
+          progress={(n.state('Live') / services.length) * 100}
           note={`${n.state('Live').toLocaleString()} live · ${n.state('Degraded')} degraded · ${n.state('Suspended')} suspended`}
+          info="Every service record in the inventory, in any state — live, activating, degraded, suspended or ceased. The bar shows how much of the base is live."
           drillLabel="the unfiltered installed base" onClick={clear} />
-        <Stat label="Conformant" value={n.conf('Conformant').toLocaleString()} tone="good"
+        <Stat label="Conformant" icon={ShieldCheck} value={n.conf('Conformant').toLocaleString()} tone="good"
           delta={{ text: '▲ 34 this week', tone: 'good' }}
+          progress={(n.conf('Conformant') / services.length) * 100}
+          note={`${Math.round((n.conf('Conformant') / services.length) * 100)}% of the base — device matches intent`}
+          info="Services where the configuration found on the device matches what the order asked for, and a recent end-to-end test proved traffic actually flows. This is the healthy state."
           drillLabel="conformant services" onClick={() => patch({ conf: 'Conformant', state: null })} />
-        <Stat label="Never proven end to end" value={n.conf('Never proven')} tone="warn"
+        <Stat label="Never proven end to end" icon={ShieldQuestion} value={n.conf('Never proven')} tone="warn"
           delta={{ text: '▼ 22 this week', tone: 'good' }}
+          progress={(n.conf('Never proven') / services.length) * 100}
+          note={`${Math.round((n.conf('Never proven') / services.length) * 100)}% of the base — configured, never tested`}
+          info="Services that were configured on the device but have never had an end-to-end test proving customer traffic actually moves. The config may be right — nobody has checked."
           drillLabel="services never proven end to end" onClick={() => patch({ conf: 'Never proven', state: null })} />
-        <Stat label="Ghost services" value={n.conf('Ghost')} tone="crit"
-          note={`${inr(ghostValue)} billed per year with no configuration on the device`}
+        <Stat label="Ghost services" icon={Ghost} value={n.conf('Ghost')} tone="crit"
+          progress={(n.conf('Ghost') / services.length) * 100}
+          note={`${inr(ghostValue)} billed per year, nothing on the device`}
+          info="Services billed and marked live in the record, but with no matching configuration on any device — the customer is invoiced for something the network isn't delivering. The highest-priority cleanup."
           drillLabel="ghost services" onClick={() => patch({ conf: 'Ghost', state: null })} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
-        <Card>
-          <CardHead title="Conformance across the base" sub="Each service holds exactly one of these verdicts" />
-          <CardBody>
-            <StackedBar
-              ariaLabel="Conformance split across the installed base"
-              segments={[
-                { label: 'Conformant', value: n.conf('Conformant'), fill: 'good', note: 'device matches intent, proven recently', onClick: () => setConf('Conformant') },
-                { label: 'Drifted', value: n.conf('Drifted'), fill: 'warn', note: 'at least one attribute differs', onClick: () => setConf('Drifted') },
-                { label: 'Never proven', value: n.conf('Never proven') + n.conf('Not checked'), fill: 'none', note: 'configured, never tested end to end', onClick: () => setConf('Never proven') },
-                { label: 'Ghost', value: n.conf('Ghost'), fill: 'crit', note: 'record exists, no configuration', onClick: () => setConf('Ghost') },
-              ]}
-            />
+        <Card className="flex flex-col">
+          <CardHead title="Conformance across the base" sub="Each service holds exactly one of these verdicts"
+            info="Compares what each order says the service should be (the intent) with what is actually configured on the devices. Every service holds exactly one verdict — Conformant, Drifted, Never proven or Ghost — so the four counts always add up to the whole base. Click any segment or tile to open those services." />
+          <CardBody className="flex-1 flex flex-col">
+            <div className="flex items-center gap-6 flex-wrap">
+              <Donut
+                size={158}
+                segments={confSegs.map(({ label, value, fill, onClick }) => ({ label, value, fill, onClick }))}
+              />
+              <div className="flex-1 min-w-[280px] grid sm:grid-cols-2 gap-2.5">
+                {confSegs.map((s) => (
+                  <button
+                    key={s.label} type="button" onClick={s.onClick}
+                    aria-label={`${s.label}: ${s.value}. Open the matching services`}
+                    className="flex items-start gap-2.5 border border-line rounded-lg px-3.5 py-2.5 text-left cursor-pointer
+                      transition-colors hover:bg-plane hover:border-brand-200
+                      focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
+                  >
+                    <i className="w-2.5 h-2.5 rounded-[3px] shrink-0 mt-1.5" style={{ background: FILL[s.fill] }} aria-hidden />
+                    <span className="min-w-0">
+                      <span className="block text-[16px] font-semibold tnum text-ink-1 leading-tight">
+                        {s.value.toLocaleString()}
+                        <span className="text-[11px] text-ink-3 font-medium ml-1.5">{Math.round((s.value / services.length) * 100)}%</span>
+                      </span>
+                      <span className="block text-[12px] font-medium text-ink-2 mt-0.5">{s.label}</span>
+                      <span className="block text-[11px] text-ink-3 leading-snug">{s.note}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="h-px bg-line-soft my-5" />
             <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-3">Services by intent</div>
             <BarList
               labelWidth={170}
-              items={intents.map((i) => ({
-                label: i.name,
-                value: services.filter((s) => s.intentId === i.id).length,
-                tone: 'brand' as const,
-                drillLabel: `${services.filter((s) => s.intentId === i.id).length} services on intent ${i.name}`,
-                onClick: () => patch({ intent: i.id, conf: null, state: null }),
-              }))}
+              valueWidth={96}
+              items={[...intents]
+                .map((i) => ({ intent: i, count: services.filter((s) => s.intentId === i.id).length }))
+                .sort((a, b) => b.count - a.count)
+                .map(({ intent: i, count }, rank) => ({
+                  label: i.name,
+                  value: count,
+                  color: [CHART.blue700, CHART.blue600, CHART.blue500, CHART.blue400, CHART.blue300, CHART.blue200][Math.min(rank, 5)],
+                  valueLabel: `${count.toLocaleString()} · ${Math.round((count / services.length) * 100)}%`,
+                  drillLabel: `${count} services on intent ${i.name}`,
+                  onClick: () => patch({ intent: i.id, conf: null, state: null }),
+                }))}
             />
           </CardBody>
         </Card>
 
-        <Card>
-          <CardHead title="Needs attention" sub="Ranked by exposure" />
-          <CardBody className="flex flex-col gap-4">
-            <div>
-              <div className="text-[12px] text-ink-3 font-medium">Ghost services</div>
-              <div className="text-[23px] font-semibold text-crit-500 tnum">{n.conf('Ghost')}</div>
-              <p className="text-[12px] text-ink-3 mt-1 leading-snug">
-                Billed and marked live with no matching configuration on any endpoint. Combined {inr(ghostValue)} per year.
-              </p>
-              <div className="mt-2.5 flex gap-2">
-                <Button size="sm" onClick={() => patch({ conf: 'Ghost', state: null })}>Show them</Button>
-              </div>
-            </div>
-            <div className="h-px bg-line-soft" />
-            <div>
-              <div className="text-[12px] text-ink-3 font-medium">Degraded right now</div>
-              <div className="text-[23px] font-semibold text-warn-700 tnum">{n.state('Degraded')}</div>
-              <p className="text-[12px] text-ink-3 mt-1 leading-snug">Contractually live, operationally impaired.</p>
-              <div className="mt-2.5"><Button size="sm" onClick={() => patch({ state: 'Degraded', conf: null })}>Show them</Button></div>
-            </div>
-            <div className="h-px bg-line-soft" />
-            <div>
-              <div className="text-[12px] text-ink-3 font-medium">Drifted from intent</div>
-              <div className="text-[23px] font-semibold text-warn-700 tnum">{n.conf('Drifted')}</div>
-              <p className="text-[12px] text-ink-3 mt-1 leading-snug">At least one attribute on the device disagrees with the order.</p>
-              <div className="mt-2.5"><Button size="sm" onClick={() => patch({ conf: 'Drifted', state: null })}>Show them</Button></div>
-            </div>
+        <Card className="flex flex-col">
+          <CardHead title="Needs attention" sub="Ranked by exposure — click a row to open the matching services"
+            info="The three service groups carrying operational or revenue risk right now, ranked by how much exposure each one represents. Ghost services leak revenue, degraded services break the customer experience, and drifted services no longer match their order." />
+          <CardBody className="flex-1 flex flex-col gap-3">
+            {([
+              {
+                key: 'ghost', label: 'Ghost services', count: n.conf('Ghost'), icon: Ghost,
+                tint: 'bg-crit-50 text-crit-500', num: 'text-crit-500',
+                why: `Billed and marked live with no configuration on any endpoint. Combined ${inr(ghostValue)} per year.`,
+                go: () => patch({ conf: 'Ghost', state: null }),
+              },
+              {
+                key: 'degraded', label: 'Degraded right now', count: n.state('Degraded'), icon: Activity,
+                tint: 'bg-warn-50 text-warn-700', num: 'text-warn-700',
+                why: 'Contractually live, operationally impaired.',
+                go: () => patch({ state: 'Degraded', conf: null }),
+              },
+              {
+                key: 'drifted', label: 'Drifted from intent', count: n.conf('Drifted'), icon: GitCompare,
+                tint: 'bg-warn-50 text-warn-700', num: 'text-warn-700',
+                why: 'At least one attribute on the device disagrees with the order.',
+                go: () => patch({ conf: 'Drifted', state: null }),
+              },
+            ]).map((row) => (
+              <button
+                key={row.key} type="button" onClick={row.go}
+                aria-label={`${row.label}: ${row.count}. Open the matching services`}
+                className="flex-1 flex items-center gap-3.5 border border-line rounded-lg px-4 py-3 text-left cursor-pointer
+                  transition-colors hover:bg-plane hover:border-brand-200 group
+                  focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
+              >
+                <span className={`w-9 h-9 rounded-lg grid place-items-center shrink-0 ${row.tint}`} aria-hidden>
+                  <row.icon size={17} />
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[13px] font-semibold text-ink-1">{row.label}</span>
+                  <span className="block text-[12px] text-ink-3 mt-0.5 leading-snug">{row.why}</span>
+                </span>
+                <span className="text-right shrink-0">
+                  <span className={`block text-[22px] font-semibold tnum leading-tight ${row.num}`}>{row.count}</span>
+                  <span className="block text-[11px] text-ink-3">{((row.count / services.length) * 100).toFixed(1)}% of base</span>
+                </span>
+                <ChevronRight size={16} className="text-ink-3 shrink-0 group-hover:text-brand-600 transition-colors" aria-hidden />
+              </button>
+            ))}
           </CardBody>
         </Card>
       </div>
@@ -195,10 +254,9 @@ export default function ServiceInventory() {
       <DataTable
         rows={filtered} total={services.length} columns={columns} pageSize={12}
         onRowClick={(r) => nav(`/inventory/${r.id}`)}
-        rowTone={(r) => (r.conformance === 'Ghost' ? 'crit' : r.conformance === 'Drifted' || r.state === 'Degraded' ? 'warn' : undefined)}
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Service, Customer, Site' },
-          chips: CATS.map((c) => <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} count={n.cat(c)} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>),
+          chips: CATS.map((c) => <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>),
           filters: [
             { key: 'state', label: 'State', value: state, onChange: (v) => setState(v as ServiceState | 'All'),
               options: STATES.map((st) => ({ value: st, label: st, count: n.state(st) })) },

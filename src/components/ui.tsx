@@ -1,5 +1,55 @@
-import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
-import { ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, Filter, MoreVertical, RefreshCcw, Search, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, Filter, Info, MoreVertical, RefreshCcw, Search, X } from 'lucide-react'
+
+/* -------------------------------------------------------------- info tip
+   A small ⓘ next to a widget's label. Hover, focus or click shows a short
+   explanation of what the number/widget means. The tooltip is rendered in a
+   portal so it is never clipped by a card's overflow. Safe to place inside a
+   clickable Stat card: activating it never triggers the card's drill-down. */
+export function InfoTip({ children, width = 270 }: { children: ReactNode; width?: number }) {
+  const [pos, setPos] = useState<{ x: number; y: number; alignRight: boolean } | null>(null)
+  const ref = useRef<HTMLSpanElement>(null)
+  const show = () => {
+    const r = ref.current?.getBoundingClientRect()
+    if (!r) return
+    const alignRight = r.left + width + 16 > window.innerWidth
+    setPos({ x: alignRight ? r.right : r.left, y: r.bottom + 7, alignRight })
+  }
+  const hide = () => setPos(null)
+  return (
+    <>
+      <span
+        ref={ref} role="button" tabIndex={0} aria-label="What this shows"
+        onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (pos) hide(); else show() }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') hide()
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); if (pos) hide(); else show() }
+        }}
+        className="inline-grid place-items-center w-[18px] h-[18px] rounded-full shrink-0 align-middle cursor-help
+          text-ink-3 hover:text-brand-600 hover:bg-brand-100 transition-colors
+          focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
+      >
+        <Info size={13} />
+      </span>
+      {pos && createPortal(
+        <div
+          role="tooltip"
+          className="fixed z-[120] rounded-lg bg-ink-1 text-white shadow-lg px-3.5 py-2.5 text-[12px] leading-relaxed font-normal normal-case tracking-normal text-left"
+          style={{
+            top: pos.y, width, maxWidth: 'calc(100vw - 24px)',
+            left: pos.alignRight ? undefined : pos.x,
+            right: pos.alignRight ? Math.max(12, window.innerWidth - pos.x) : undefined,
+          }}
+        >
+          {children}
+        </div>,
+        document.body,
+      )}
+    </>
+  )
+}
 
 /* ------------------------------------------------------------------ card
    NST registry: .vw-card-section is the card container, .vw-card-title the
@@ -8,11 +58,17 @@ import { ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, Filter, MoreVerti
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
   return <div className={`vw-card-section p-0 overflow-hidden ${className}`}>{children}</div>
 }
-export function CardHead({ title, sub, right, tight = false }: { title?: ReactNode; sub?: ReactNode; right?: ReactNode; tight?: boolean }) {
+export function CardHead({ title, sub, right, info, tight = false }:
+{ title?: ReactNode; sub?: ReactNode; right?: ReactNode; info?: ReactNode; tight?: boolean }) {
   return (
     <div className={`vw-flex vw-items-center vw-justify-between vw-wrap vw-gap-lg px-4 ${tight ? 'pt-4 pb-0' : 'py-3.5 border-b border-line-soft'}`}>
       <div className="min-w-0">
-        {title && <h2 className="vw-card-title m-0">{title}</h2>}
+        {title && (
+          <h2 className="vw-card-title m-0 flex items-center gap-1.5">
+            {title}
+            {info && <InfoTip>{info}</InfoTip>}
+          </h2>
+        )}
         {sub && <p className="vw-card-description mt-0.5 m-0">{sub}</p>}
       </div>
       {right && <div className="vw-flex vw-items-center vw-wrap vw-gap-sm">{right}</div>}
@@ -113,36 +169,69 @@ export function Chip({ active = false, count, children, onClick, tone }:
   )
 }
 
-/* ------------------------------------------------------------------ stat */
-export function Stat({ label, value, note, tone, accent, delta, onClick, drillLabel }:
+/* ------------------------------------------------------------------ stat
+   Every Stat renders the same skeleton — icon chip, value (+ optional delta),
+   optional progress bar, note pinned to the bottom, and a tone-coloured
+   accent strip along the bottom edge. Because the strip and icon are always
+   driven by `tone` (brand when absent) rather than an ad-hoc colour prop,
+   any row of Stat cards on one screen stays visually symmetric by
+   construction — nothing for a caller to forget to match. */
+export type StatTone = 'good' | 'warn' | 'crit' | 'plum'
+const STAT_TONE: Record<StatTone | 'brand', { value: string; iconBg: string; iconFg: string; ring: string; bar: string }> = {
+  brand: { value: '', iconBg: 'bg-brand-50', iconFg: 'text-brand-600', ring: 'ring-brand-200/60', bar: 'bg-brand-500' },
+  good: { value: 'text-good-700', iconBg: 'bg-good-50', iconFg: 'text-good-700', ring: 'ring-good-200/70', bar: 'bg-good-500' },
+  warn: { value: 'text-warn-700', iconBg: 'bg-warn-50', iconFg: 'text-warn-700', ring: 'ring-warn-200/70', bar: 'bg-warn-500' },
+  crit: { value: 'text-crit-500', iconBg: 'bg-crit-50', iconFg: 'text-crit-500', ring: 'ring-crit-200/70', bar: 'bg-crit-500' },
+  plum: { value: 'text-plum-700', iconBg: 'bg-plum-50', iconFg: 'text-plum-700', ring: 'ring-plum-200/70', bar: 'bg-plum-500' },
+}
+
+export function Stat({ label, value, note, tone, delta, onClick, drillLabel, icon: Icon, progress, info }:
 {
-  label: string; value: ReactNode; note?: ReactNode; tone?: 'good' | 'warn' | 'crit'; accent?: string
+  label: string; value: ReactNode; note?: ReactNode; tone?: StatTone
   delta?: { text: string; tone: 'good' | 'bad' | 'flat' }
   /** Makes the whole tile a drill-down into the screen that explains the number. */
   onClick?: () => void
   /** What the drill-down leads to, e.g. "46 ghost services". Announced to screen readers. */
   drillLabel?: string
+  icon?: ComponentType<{ size?: number; className?: string }>
+  /** 0–100. Renders a thin share-of-total bar under the value in the card's tone. */
+  progress?: number
+  /** One or two sentences explaining what the number means, behind a small ⓘ. */
+  info?: ReactNode
 }) {
-  const vc = tone === 'crit' ? 'text-crit-500' : tone === 'good' ? 'text-good-700' : tone === 'warn' ? 'text-warn-700' : ''
+  const c = STAT_TONE[tone ?? 'brand']
   const inner = (
     <>
-      {accent && <div className="vw-card-accent" style={{ background: accent }} />}
-      <div className="vw-card-metric-label vw-flex vw-items-center vw-gap-xxs">
-        {label}
-        {onClick && <ArrowUpRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden />}
-      </div>
-      <div className={`vw-card-metric-xxl mt-1.5 tnum ${vc}`}>{value}</div>
-      {delta && (
-        <div className={`vw-card-variance mt-1.5 ${delta.tone === 'bad' ? 'is-negative' : delta.tone === 'good' ? 'is-positive' : 'is-neutral'}`}>
-          {delta.text}
+      <div className="vw-flex vw-items-center vw-gap-sm">
+        {Icon && (
+          <span className={`w-10 h-10 rounded-xl grid place-items-center shrink-0 ring-1 ring-inset ${c.iconBg} ${c.iconFg} ${c.ring}`} aria-hidden>
+            <Icon size={18} />
+          </span>
+        )}
+        <div className="vw-card-metric-label vw-flex vw-items-center vw-gap-xxs min-w-0">
+          <span className="truncate">{label}</span>
+          {info && <InfoTip>{info}</InfoTip>}
+          {onClick && <ArrowUpRight size={13} className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden />}
         </div>
+      </div>
+      <div className="flex items-baseline gap-2 flex-wrap mt-3">
+        <span className={`vw-card-metric-xxl tnum ${c.value}`}>{value}</span>
+        {delta && (
+          <Badge tone={delta.tone === 'bad' ? 'crit' : delta.tone === 'good' ? 'good' : 'none'} className="!text-[11px]">
+            {delta.text}
+          </Badge>
+        )}
+      </div>
+      {progress !== undefined && (
+        <Progress value={progress} tone={tone ?? 'brand'} className="mt-3" />
       )}
-      {note && <div className="vw-card-metric-label-sub mt-1.5 leading-snug">{note}</div>}
+      {/* Anchored to the bottom so the note line sits at the same height on
+         every card in a KPI row, whatever the value/delta/progress above it. */}
+      {note && <div className="vw-card-metric-label-sub mt-auto pt-2.5 leading-snug">{note}</div>}
+      <span className={`absolute inset-x-0 bottom-0 h-[3px] ${c.bar}`} style={{ borderRadius: '0 0 var(--radius-card) var(--radius-card)' }} aria-hidden />
     </>
   )
-  /* .vw-card--accent reserves no space for the strip, so the host adds 3px of
-     top padding — exactly as vw-cards.css documents. */
-  const base = `vw-card-section vw-card--accent vw-flex vw-flex-col ${accent ? 'pt-[calc(var(--vw-space-lg)+3px)]' : ''}`
+  const base = 'vw-card-section vw-flex vw-flex-col relative overflow-hidden pb-[calc(var(--vw-space-lg)+3px)]'
   if (!onClick) return <div className={base}>{inner}</div>
   return (
     <button
@@ -256,7 +345,7 @@ export function Modal({ open, onClose, title, sub, children, footer, width = 560
 
 /* ----------------------------------------------------------------- forms */
 export function Field({ label, hint, required, children }:
-{ label: string; hint?: ReactNode; required?: boolean; children: ReactNode }) {
+{ label: ReactNode; hint?: ReactNode; required?: boolean; children: ReactNode }) {
   return (
     <label className="block">
       <span className="nst-input-label block mb-1.5">
@@ -497,13 +586,12 @@ export interface GridToolbar {
 }
 
 export function DataTable<T extends { id: string }>({
-  rows, columns, pageSize = 12, onRowClick, rowTone, empty = 'Nothing matches these filters.', minWidth = 1040, toolbar, total,
+  rows, columns, pageSize = 12, onRowClick, empty = 'Nothing matches these filters.', minWidth = 1040, toolbar, total,
 }: {
   rows: T[]
   columns: Column<T>[]
   pageSize?: number
   onRowClick?: (row: T) => void
-  rowTone?: (row: T) => 'crit' | 'warn' | undefined
   empty?: string
   minWidth?: number
   /** Rendering the toolbar also wraps the table in its own .nst-table-card. */
@@ -561,15 +649,10 @@ export function DataTable<T extends { id: string }>({
             {view.length === 0 && (
               <tr><td colSpan={columns.length} className="py-12 text-center text-ink-3">{empty}</td></tr>
             )}
+            {/* Rows are never tinted by state — the status chip carries the colour. */}
             {view.map((row) => {
-              const tone = rowTone?.(row)
               return (
-                <tr
-                  key={row.id}
-                  onClick={() => onRowClick?.(row)}
-                  className={`${onRowClick ? 'is-clickable' : ''}
-                    ${tone === 'crit' ? '[&>td]:bg-crit-50' : tone === 'warn' ? '[&>td]:bg-warn-50' : ''}`}
-                >
+                <tr key={row.id} onClick={() => onRowClick?.(row)} className={onRowClick ? 'is-clickable' : ''}>
                   {columns.map((c) => (
                     <td key={c.key} className={`nst-table-td--primary ${c.align === 'right' ? 'text-right tnum' : ''}`}>
                       {c.render(row)}
@@ -652,8 +735,8 @@ export const Mono = ({ children, className = '' }: { children: ReactNode; classN
 
 /* -------------------------------------------------------------- progress */
 export function Progress({ value, tone = 'brand', className = '' }:
-{ value: number; tone?: 'brand' | 'good' | 'warn' | 'crit'; className?: string }) {
-  const c = tone === 'good' ? 'bg-good-500' : tone === 'warn' ? 'bg-warn-500' : tone === 'crit' ? 'bg-crit-500' : 'bg-brand-500'
+{ value: number; tone?: 'brand' | 'good' | 'warn' | 'crit' | 'plum'; className?: string }) {
+  const c = tone === 'good' ? 'bg-good-500' : tone === 'warn' ? 'bg-warn-500' : tone === 'crit' ? 'bg-crit-500' : tone === 'plum' ? 'bg-plum-500' : 'bg-brand-500'
   return (
     <div className={`h-1.5 rounded-full bg-line-soft overflow-hidden ${className}`}>
       <div className={`h-full rounded-full transition-all duration-500 ${c}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
@@ -662,12 +745,12 @@ export function Progress({ value, tone = 'brand', className = '' }:
 }
 
 /* ----------------------------------------------------------------- note */
-export function Note({ tone = 'info', children }: { tone?: 'info' | 'warn' | 'crit' | 'good'; children: ReactNode }) {
+export function Note({ tone = 'info', className = '', children }: { tone?: 'info' | 'warn' | 'crit' | 'good'; className?: string; children: ReactNode }) {
   const cls = tone === 'warn' ? 'vw-card--warning text-warn-700'
     : tone === 'crit' ? 'vw-card--error text-crit-700'
       : tone === 'good' ? 'vw-card--success text-good-700'
         : 'vw-card--info text-ink-2'
-  return <div className={`vw-card-section ${cls} vw-card-description px-4 py-3 leading-relaxed`}>{children}</div>
+  return <div className={`vw-card-section ${cls} vw-card-description px-4 py-3 leading-relaxed ${className}`}>{children}</div>
 }
 
 /* -------------------------------------------------------------- stepper */

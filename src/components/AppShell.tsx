@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle, Bell, Boxes, CheckCircle2, CheckSquare, Database, FileBarChart,
-  Info, LayoutGrid, ListChecks, PlayCircle, RefreshCcw, Search, Server, Workflow as WorkflowIcon, X,
+  Info, LayoutGrid, ListChecks, PanelLeftClose, PanelLeftOpen, PlayCircle, RefreshCcw, Search, Server, Workflow as WorkflowIcon, X,
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import { Badge, Button } from './ui'
@@ -62,7 +62,7 @@ function useCounts() {
   const reports = useStore((s) => s.reports)
   return {
     '/requests': orders.length,
-    '/execution': orders.filter((o) => !['Draft', 'Unrouted'].includes(o.state)).length,
+    '/execution': orders.filter((o) => !['Draft', 'Planned'].includes(o.state)).length,
     '/inventory': services.length,
     '/change': orders.filter((o) => o.intent !== 'Create').length,
     '/workflows': workflows.length,
@@ -90,32 +90,74 @@ export default function AppShell() {
     ?? 'LCM Orchestrator'
   const parts = crumb.split(' / ')
 
+  /* Collapsible sidebar — icons only when collapsed; the choice is remembered per browser. */
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('lcm.nav.collapsed') === '1' } catch { return false }
+  })
+  const toggleNav = () => {
+    setCollapsed((c) => { try { localStorage.setItem('lcm.nav.collapsed', c ? '0' : '1') } catch { /* private mode */ } return !c })
+  }
+
+  /* Embed mode — for hosting a screen as an iframe elsewhere with no chrome of its
+     own. `?leftbar=true` shows the sidebar + header (the normal app); leave it off
+     (or pass leftbar=false) and only the routed screen renders. The choice is read
+     once from the URL and then kept for the rest of the browser tab's session, so it
+     survives in-app navigation even though most links don't carry the query string
+     forward. Default (no param, fresh tab) is chrome hidden — the iframe-friendly mode. */
+  const [search] = useSearchParams()
+  const [showChrome, setShowChrome] = useState<boolean>(() => {
+    const raw = search.get('leftbar')
+    if (raw !== null) {
+      const val = raw === 'true' || raw === '1'
+      try { sessionStorage.setItem('lcm.leftbar', val ? '1' : '0') } catch { /* private mode */ }
+      return val
+    }
+    try { return sessionStorage.getItem('lcm.leftbar') === '1' } catch { return false }
+  })
+  useEffect(() => {
+    const raw = search.get('leftbar')
+    if (raw === null) return
+    const val = raw === 'true' || raw === '1'
+    setShowChrome(val)
+    try { sessionStorage.setItem('lcm.leftbar', val ? '1' : '0') } catch { /* private mode */ }
+  }, [search])
+
   return (
     <div className="flex min-h-screen">
       {/* -------- sidebar -------- */}
-      <nav className="w-[254px] shrink-0 bg-white border-r border-line sticky top-0 h-screen overflow-y-auto flex flex-col" aria-label="Modules">
-        <div className="flex items-center gap-2.5 px-[18px] py-[18px] border-b border-line-soft">
+      {showChrome && (
+      <nav
+        className={`${collapsed ? 'w-[64px]' : 'w-[254px]'} shrink-0 bg-white border-r border-line sticky top-0 h-screen overflow-y-auto overflow-x-hidden flex flex-col transition-[width] duration-200`}
+        aria-label="Modules" data-collapsed={collapsed ? 'true' : 'false'}
+      >
+        <div className={`flex items-center gap-2.5 ${collapsed ? 'px-3.5 justify-center' : 'px-[18px]'} py-[18px] border-b border-line-soft`}>
           <div className="w-8 h-8 rounded-lg bg-ink-1 text-white grid place-items-center text-[11px] font-semibold shrink-0">LCM</div>
-          <div className="leading-tight">
-            <div className="text-[14px] font-semibold tracking-[-.2px]">Orchestrator</div>
-            <div className="text-[10.5px] text-ink-3">NetSingularity OSS</div>
-          </div>
+          {!collapsed && (
+            <div className="leading-tight">
+              <div className="text-[14px] font-semibold tracking-[-.2px]">Orchestrator</div>
+              <div className="text-[10.5px] text-ink-3">NetSingularity OSS</div>
+            </div>
+          )}
         </div>
 
         {GROUPS.map((g, gi) => (
-          <div key={gi} className="px-2.5 pt-3.5">
-            {g.label && <div className="text-[10px] font-semibold tracking-[.1em] uppercase text-ink-3 px-2 pb-1.5">{g.label}</div>}
+          <div key={gi} className={`${collapsed ? 'px-2' : 'px-2.5'} pt-3.5`}>
+            {g.label && (collapsed
+              ? <div className="h-px bg-line-soft mx-2 mb-2.5" aria-hidden />
+              : <div className="text-[10px] font-semibold tracking-[.1em] uppercase text-ink-3 px-2 pb-1.5">{g.label}</div>)}
             {g.items.map((it) => (
               <NavLink
                 key={it.to}
                 to={it.to}
                 end={it.to === '/'}
-                className={({ isActive }) => `flex items-center gap-2.5 px-2.5 py-2 my-px rounded-md text-[13px] no-underline transition-colors
+                title={collapsed ? it.label : undefined}
+                aria-label={it.label}
+                className={({ isActive }) => `flex items-center gap-2.5 ${collapsed ? 'justify-center px-0 py-2.5' : 'px-2.5 py-2'} my-px rounded-md text-[13px] no-underline transition-colors
                   ${isActive ? 'bg-brand-50 text-brand-600 font-semibold' : 'text-ink-2 hover:bg-plane hover:text-ink-1'}`}
               >
-                <it.icon size={16} className="shrink-0 opacity-80" />
-                <span className="truncate">{it.label}</span>
-                {counts[it.to] !== undefined && (
+                <it.icon size={collapsed ? 18 : 16} className="shrink-0 opacity-80" />
+                {!collapsed && <span className="truncate">{it.label}</span>}
+                {!collapsed && counts[it.to] !== undefined && (
                   <span className="ml-auto text-[11px] tnum text-ink-3 font-medium">{counts[it.to].toLocaleString()}</span>
                 )}
               </NavLink>
@@ -124,18 +166,29 @@ export default function AppShell() {
         ))}
 
         <div className="flex-1" />
-        <div className="flex items-center gap-2.5 px-[18px] py-3.5 border-t border-line-soft">
-          <div className="w-7 h-7 rounded-full bg-[var(--vw-color-amber-400)] text-[var(--vw-color-amber-900)] grid place-items-center text-[11px] font-semibold shrink-0">JV</div>
-          <div className="leading-tight">
-            <div className="text-[12.5px] font-medium">Jayesh Verma</div>
-            <div className="text-[10.5px] text-ink-3">Network design</div>
-          </div>
+        <div className={`flex items-center gap-2.5 ${collapsed ? 'px-3.5 justify-center' : 'px-[18px]'} py-3.5 border-t border-line-soft`}>
+          <div className="w-7 h-7 rounded-full bg-[var(--vw-color-amber-400)] text-[var(--vw-color-amber-900)] grid place-items-center text-[11px] font-semibold shrink-0" title={collapsed ? 'Jayesh Verma · Network design' : undefined}>JV</div>
+          {!collapsed && (
+            <div className="leading-tight">
+              <div className="text-[12.5px] font-medium">Jayesh Verma</div>
+              <div className="text-[10.5px] text-ink-3">Network design</div>
+            </div>
+          )}
         </div>
       </nav>
+      )}
 
       {/* -------- main -------- */}
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="h-14 bg-white border-b border-line px-7 flex items-center gap-4 sticky top-0 z-30">
+        {showChrome && (
+        <header className="h-14 bg-white border-b border-line pl-4 pr-7 flex items-center gap-3 sticky top-0 z-30">
+          <button
+            type="button" onClick={toggleNav}
+            aria-label={collapsed ? 'Expand menu' : 'Collapse menu'} aria-expanded={!collapsed} title={collapsed ? 'Expand menu' : 'Collapse menu'}
+            className="w-[34px] h-[34px] grid place-items-center rounded-md border border-line text-ink-2 hover:bg-plane shrink-0"
+          >
+            {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          </button>
           <div className="text-[12.5px] text-ink-3 flex items-center gap-1.5 min-w-0">
             {parts.map((p, i) => (
               <span key={i} className="flex items-center gap-1.5">
@@ -198,6 +251,7 @@ export default function AppShell() {
             )}
           </div>
         </header>
+        )}
 
         <main className="px-7 py-6 pb-12 flex flex-col gap-5 max-w-[1560px] w-full">
           <Outlet />

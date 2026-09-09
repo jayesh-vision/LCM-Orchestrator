@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FileBarChart } from 'lucide-react'
+import { ClipboardList, FileBarChart, ListChecks, Network, ShieldCheck } from 'lucide-react'
 import { useClearQuery, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
 import { useStore } from '@/store/useStore'
 import type { RunTask } from '@/types'
@@ -83,19 +83,25 @@ export default function Evidence() {
       />
 
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
-        <Stat label="Assertions evaluated" value={rows.length.toLocaleString()} note="Across the runs held in this workspace"
+        <Stat label="Assertions evaluated" icon={ListChecks} value={rows.length.toLocaleString()} note="Across the runs held in this workspace"
+          info="Every individual check executed by workflow runs in this workspace. An assertion compares an observed value from the device against the expected value from the order, and records a pass or fail verdict."
           drillLabel="every assertion, unfiltered" onClick={clear} />
-        <Stat label="Pass rate" value={`${passRate.toFixed(1)}%`} tone="good" delta={{ text: '▲ 1.2 pts this week', tone: 'good' }}
+        <Stat label="Pass rate" icon={ShieldCheck} value={`${passRate.toFixed(1)}%`} tone="good" delta={{ text: '▲ 1.2 pts this week', tone: 'good' }}
+          note="Share of evaluated assertions that returned their expected value"
+          info="The share of all evaluated assertions that returned their expected value. Click to see only the failures."
           drillLabel="the assertions that failed" onClick={() => setVerdict('Failed')} />
-        <Stat label="Task definitions" value={audit.total.toLocaleString()} note={`${audit.asserting.toLocaleString()} carry an assertion`}
+        <Stat label="Task definitions" icon={ClipboardList} value={audit.total.toLocaleString()} note={`${audit.asserting.toLocaleString()} carry an assertion`}
+          info="The reusable task steps defined across every workflow. Only the ones carrying an assertion actually prove anything — the rest just execute commands."
           drillLabel="the workflows these definitions belong to" onClick={() => nav('/workflows')} />
-        <Stat label="Service-layer checks" value={serviceLayer}
+        <Stat label="Service-layer checks" icon={Network} value={serviceLayer}
+          info="Checks that prove the customer's traffic actually moves end to end — pings across the VPN, route presence in the peer's table — rather than merely reading configuration back from the device."
           note="Checks that prove customer traffic moves, not just that config reads back"
           drillLabel="the workflows carrying these checks" onClick={() => nav('/workflows?state=Active')} />
       </div>
 
       <Card>
-        <CardHead title="Assertion coverage" sub="Every task definition across every workflow, classified by what it actually proves" />
+        <CardHead title="Assertion coverage" sub="Every task definition across every workflow, classified by what it actually proves"
+          info="Classifies every task in the workflow library by evidential strength: does it prove service-layer reality, only read configuration back, or assert nothing at all? The weaker the class, the less a green run actually tells you." />
         <CardBody>
           <StackedBar
             ariaLabel="Assertion coverage across all task definitions"
@@ -165,11 +171,10 @@ export default function Evidence() {
       <DataTable
         rows={filtered} total={rows.length} columns={columns} pageSize={12} minWidth={1180}
         onRowClick={(r) => setOpen(r)}
-        rowTone={(r) => (r.state === 'Failed' ? 'crit' : undefined)}
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Task, Claim, Order' },
           chips: (['Passed', 'Failed'] as const).map((v) => (
-            <Chip key={v} active={verdict === v} count={rows.filter((r) => r.state === v).length} onClick={() => setVerdict(verdict === v ? 'All' : v)}>{v}</Chip>
+            <Chip key={v} active={verdict === v} onClick={() => setVerdict(verdict === v ? 'All' : v)}>{v}</Chip>
           )),
           filters: [
             { key: 'verdict', label: 'Verdict', value: verdict, onChange: (v) => setVerdict(v as 'All' | 'Passed' | 'Failed'),

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, PlayCircle, RotateCcw, Square, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { Endpoint, Run, RunTask, StageKind } from '@/types'
@@ -15,8 +15,13 @@ const STAGE_KIND_TONE: Record<StageKind, Tone> = { 'Pre validation': 'teal', Con
 
 export default function OrderDetail() {
   const { id = '' } = useParams()
+  const loc = useLocation()
   const [sp, setSp] = useSearchParams()
   const nav = useNavigate()
+  /* Requests and Execution both route here; "Back" and tab switches should return
+     to whichever grid this screen was opened from, not walk browser history. */
+  const listPath = loc.pathname.startsWith('/execution') ? '/execution' : '/requests'
+  const listLabel = listPath === '/execution' ? 'Provisioning Execution' : 'Provisioning Requests'
   const order = useStore((s) => s.orders.find((o) => o.id === id))
   const allRuns = useStore((s) => s.runs)
   const approveOrder = useStore((s) => s.approveOrder)
@@ -41,8 +46,35 @@ export default function OrderDetail() {
     [allRuns, id, ep],
   )
 
+  /* Every run for this order, regardless of which endpoint card is selected —
+     the Runs tab shows Source and Destination side by side, each grouped by
+     role with its own attempt count, rather than only whichever endpoint is
+     currently selected. */
+  const allOrderRuns = useMemo(
+    () => allRuns.filter((r) => r.orderId === id).sort((a, b) => b.attempt - a.attempt),
+    [allRuns, id],
+  )
+  const runGroups = useMemo(() => {
+    const groups: { role: 'Source' | 'Destination'; endpoint: Endpoint | undefined; runs: Run[] }[] = []
+    ;(['Source', 'Destination'] as const).forEach((role) => {
+      const roleEndpoints = endpoints.filter((e) => endpointRole(e) === role)
+      if (roleEndpoints.length === 0) return
+      roleEndpoints.forEach((e) => {
+        const eRuns = allOrderRuns.filter((r) => r.endpointId === e.id)
+        if (eRuns.length > 0) groups.push({ role, endpoint: e, runs: eRuns })
+      })
+    })
+    /* Runs recorded with no endpointId (older/shared runs) still need a home. */
+    const unassigned = allOrderRuns.filter((r) => !r.endpointId)
+    if (unassigned.length > 0) groups.push({ role: 'Source', endpoint: undefined, runs: unassigned })
+    return groups
+  }, [allOrderRuns, endpoints])
+
   const tab = (sp.get('tab') ?? 'service') as 'service' | 'lifecycle' | 'runs'
-  const setTab = (t: string) => setSp({ tab: t === 'params' ? 'service' : t })
+  /* replace: true — switching tabs shouldn't push a browser-history entry, so
+     the Back button (and the browser's own back button) never gets stuck
+     cycling through tabs instead of leaving the screen. */
+  const setTab = (t: string) => setSp({ tab: t === 'params' ? 'service' : t }, { replace: true })
 
   const [runIdx, setRunIdx] = useState(0)
   const [openStageIdx, setOpenStageIdx] = useState(0)
@@ -67,7 +99,7 @@ export default function OrderDetail() {
       <Card><CardBody className="py-14 text-center">
         <div className="text-[16px] font-semibold mb-1">Request not found</div>
         <p className="text-ink-3 text-[13px] mb-4">{id} is not in the current dataset.</p>
-        <Link to="/requests" className="text-brand-600 text-[13px] font-medium">Back to Provisioning Requests</Link>
+        <Link to={listPath} className="text-brand-600 text-[13px] font-medium">Back to {listLabel}</Link>
       </CardBody></Card>
     )
   }
@@ -83,16 +115,16 @@ export default function OrderDetail() {
     }
   }
 
-  const canApprove = order.state === 'Designed' || order.state === 'Awaiting approval'
-  const canExecute = order.state === 'Approved' || order.state === 'Queued'
-  const isRunning = order.state === 'Executing'
+  const canApprove = order.state === 'Validated'
+  const canExecute = order.state === 'Approved'
+  const isRunning = order.state === 'In progress'
 
   return (
     <>
       <Card>
         <CardBody className="pb-4">
-          <button onClick={() => nav(-1)} className="text-[12.5px] text-ink-3 hover:text-ink-1 flex items-center gap-1.5 mb-3">
-            <ArrowLeft size={14} />Back
+          <button onClick={() => nav(listPath)} className="text-[12.5px] text-ink-3 hover:text-ink-1 flex items-center gap-1.5 mb-3">
+            <ArrowLeft size={14} />Back to {listLabel}
           </button>
           <div className="flex items-start justify-between gap-6 flex-wrap">
             <div>
@@ -344,7 +376,7 @@ export default function OrderDetail() {
                         <div className="px-4 py-10 text-center text-ink-3 text-[13px]">No tasks in this stage.</div>
                       )}
                     </div>
-                    <Note tone="info">
+                    <Note tone="info" className="mt-3">
                       Open any task to see the exact request sent and the response captured. The transport exit code is
                       recorded but never decides the outcome — the assertion does.
                     </Note>
@@ -366,37 +398,60 @@ export default function OrderDetail() {
 
       {/* ---------------- runs ---------------- */}
       {tab === 'runs' && (
-        <Card>
-          <CardHead title="Run history" sub="Each attempt keeps its own transcript. A retry never overwrites the previous one." />
-          <div className="overflow-x-auto">
-            <table className="w-full text-[13px]">
-              <thead><tr>
-                {['Run', 'Device', 'Outcome', 'Started', 'Duration', 'Tasks passed', 'Residue', ''].map((h) => (
-                  <th key={h} scope="col" className="text-left px-[18px] py-3 border-b border-line text-[12px] font-medium text-ink-3">{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {runs.map((r, i) => (
-                  <tr key={r.id} className="border-b border-line-soft last:border-0 hover:bg-plane">
-                    <td className="px-[18px] py-3"><Mono className="font-semibold">Run {r.attempt}</Mono></td>
-                    <td className="px-[18px] py-3">
-                      {(() => { const e = endpoints.find((x) => x.id === r.endpointId); return e ? <><Badge tone="none">{endpointRole(e)}</Badge> <Mono className="text-ink-3">{e.mgmtIp}</Mono></> : '—' })()}
-                    </td>
-                    <td className="px-[18px] py-3"><Badge tone={RUN_TONE[r.outcome]} dot>{r.outcome}</Badge></td>
-                    <td className="px-[18px] py-3 text-ink-2">{relTime(r.startedAt)}</td>
-                    <td className="px-[18px] py-3 font-mono">{dur(r.durationMs)}</td>
-                    <td className="px-[18px] py-3 tnum">{r.tasks.filter((t) => t.state === 'Passed').length} of {r.tasks.length}</td>
-                    <td className="px-[18px] py-3 text-ink-3">{r.residue ? r.residue.join('; ') : '—'}</td>
-                    <td className="px-[18px] py-3 text-right">
-                      <Button size="sm" onClick={() => { setRunIdx(i); setTab('lifecycle') }}>Open</Button>
-                    </td>
-                  </tr>
-                ))}
-                {runs.length === 0 && <tr><td colSpan={8} className="px-[18px] py-10 text-center text-ink-3">No runs recorded.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+        <div className="flex flex-col gap-4">
+          {runGroups.map((g, gi) => (
+            <Card key={g.endpoint?.id ?? `unassigned-${gi}`}>
+              <CardHead
+                title={g.endpoint ? `${g.role} · ${g.endpoint.mgmtIp}` : g.role}
+                sub={
+                  g.runs.length === 1
+                    ? '1 attempt recorded.'
+                    : `${g.runs.length} attempts recorded — provisioning needed more than one try.`
+                }
+              />
+              <div className="overflow-x-auto">
+                <table className="w-full text-[13px]">
+                  <thead><tr>
+                    {['Run', 'Outcome', 'Started', 'Duration', 'Tasks passed', 'Residue', ''].map((h) => (
+                      <th key={h} scope="col" className="text-left px-[18px] py-3 border-b border-line text-[12px] font-medium text-ink-3">{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {g.runs.map((r) => (
+                      <tr key={r.id} className="border-b border-line-soft last:border-0 hover:bg-plane">
+                        <td className="px-[18px] py-3"><Mono className="font-semibold">Run {r.attempt}</Mono></td>
+                        <td className="px-[18px] py-3"><Badge tone={RUN_TONE[r.outcome]} dot>{r.outcome}</Badge></td>
+                        <td className="px-[18px] py-3 text-ink-2">{relTime(r.startedAt)}</td>
+                        <td className="px-[18px] py-3 font-mono">{dur(r.durationMs)}</td>
+                        <td className="px-[18px] py-3 tnum">{r.tasks.filter((t) => t.state === 'Passed').length} of {r.tasks.length}</td>
+                        <td className="px-[18px] py-3 text-ink-3">{r.residue ? r.residue.join('; ') : '—'}</td>
+                        <td className="px-[18px] py-3 text-right">
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              if (g.endpoint) setEpId(g.endpoint.id)
+                              const idxInEndpointRuns = allOrderRuns
+                                .filter((x) => (!g.endpoint || x.endpointId === g.endpoint.id) && (g.endpoint || !x.endpointId))
+                                .sort((a, b) => b.attempt - a.attempt)
+                                .findIndex((x) => x.id === r.id)
+                              setRunIdx(Math.max(0, idxInEndpointRuns))
+                              setTab('lifecycle')
+                            }}
+                          >
+                            Open
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          ))}
+          {runGroups.length === 0 && (
+            <Card><CardBody className="py-14 text-center text-ink-3">No runs recorded.</CardBody></Card>
+          )}
+        </div>
       )}
 
       {/* -------- request / response -------- */}

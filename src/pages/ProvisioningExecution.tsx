@@ -1,26 +1,24 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
-import { CheckCircle2, Download, Eye, ListChecks, PlayCircle, Plus, ShieldCheck, Workflow, XCircle } from 'lucide-react'
+import { Download, Eye, ListChecks, PlayCircle, Plus, ShieldCheck, Workflow } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { Category, Order, OrderState } from '@/types'
 import {
-  Badge, Button, CellMain, CellSub, Chip, DataTable, Drawer, Field,
+  Badge, Button, CellMain, CellSub, Chip, DataTable, Drawer,
   FilterBanner, KV, Kebab, Modal, Mono, Note, Progress, type Column,
 } from '@/components/ui'
 import { CategoryCard } from '@/components/charts'
 import { ageLabel, CATEGORY_TONE, clockTime, ORDER_TONE, relTime } from '@/lib/format'
 
 const EXEC_STATES: OrderState[] = [
-  'Designed', 'Awaiting approval', 'Approved', 'Queued', 'Executing', 'Activated', 'Failed', 'Rejected',
+  'Approved', 'Rejected', 'Queued', 'In progress', 'Ready', 'Failed', 'Reinstantiate',
 ]
 const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW']
 
 export default function ProvisioningExecution() {
   const orders = useStore((s) => s.orders)
   const runsForOrder = useStore((s) => s.runsForOrder)
-  const approveOrder = useStore((s) => s.approveOrder)
-  const rejectOrder = useStore((s) => s.rejectOrder)
   const startRun = useStore((s) => s.startRun)
   const retryOrder = useStore((s) => s.retryOrder)
   const pushToast = useStore((s) => s.pushToast)
@@ -34,12 +32,12 @@ export default function ProvisioningExecution() {
   const clear = useClearQuery(['q', 'cat', 'state'])
   const resultsRef = useScrollToResultsOnDrillIn(cat !== 'All' || state !== 'All')
   const [verify, setVerify] = useState<Order | null>(null)
-  const [reject, setReject] = useState<Order | null>(null)
-  const [rejectNote, setRejectNote] = useState('')
   const [creds, setCreds] = useState<Order | null>(null)
 
-  /* Execution is the queue after design: drafts and unrouted records are not here. */
-  const pool = useMemo(() => orders.filter((o) => !['Draft', 'Unrouted'].includes(o.state)), [orders])
+  /* Execution is the post-decision queue: drafts and anything still mid
+     pre-validation (Planned) or awaiting a decision (Validated, Invalid)
+     are worked from Provisioning Requests, not here. */
+  const pool = useMemo(() => orders.filter((o) => !['Draft', 'Planned', 'Validated', 'Invalid'].includes(o.state)), [orders])
 
   const filtered = useMemo(() => pool.filter((o) => {
     if (cat !== 'All' && o.category !== cat) return false
@@ -53,23 +51,9 @@ export default function ProvisioningExecution() {
 
   const n = (s: OrderState) => pool.filter((o) => o.state === s).length
 
-  const doApprove = (o: Order) => { approveOrder(o.id, 'Ravi K.'); setVerify(null); setCreds(o) }
   const runCredentialsThenExecute = (o: Order) => { setCreds(null); startRun(o.id); nav(`/execution/${o.id}?tab=lifecycle`) }
 
   const columns: Column<Order>[] = [
-    {
-      key: 'order', header: 'Service', width: '180px', sortValue: (r) => r.id,
-      render: (r) => (<><CellMain>{r.name}</CellMain><CellSub><Mono>{r.id}</Mono></CellSub></>),
-    },
-    { key: 'category', header: 'Category', width: '104px', sortValue: (r) => r.category, render: (r) => <Badge tone={CATEGORY_TONE[r.category]}>{r.category}</Badge> },
-    {
-      key: 'customer', header: 'Customer', width: '186px', sortValue: (r) => r.accountName,
-      render: (r) => (<><CellMain>{r.accountName}</CellMain><CellSub><Mono>{r.accountId}</Mono></CellSub></>),
-    },
-    {
-      key: 'workflow', header: 'Workflow', width: '150px',
-      render: (r) => (r.workflowId ? <Mono className="text-ink-2">{r.workflowId}</Mono> : <span className="text-ink-3">not bound</span>),
-    },
     {
       key: 'state', header: 'Status', width: '186px', sortValue: (r) => EXEC_STATES.indexOf(r.state),
       render: (r) => {
@@ -86,6 +70,19 @@ export default function ProvisioningExecution() {
         )
       },
     },
+    {
+      key: 'order', header: 'Service', width: '180px', sortValue: (r) => r.id,
+      render: (r) => (<><CellMain>{r.name}</CellMain><CellSub><Mono>{r.id}</Mono></CellSub></>),
+    },
+    { key: 'category', header: 'Category', width: '104px', sortValue: (r) => r.category, render: (r) => <Badge tone={CATEGORY_TONE[r.category]}>{r.category}</Badge> },
+    {
+      key: 'customer', header: 'Customer', width: '186px', sortValue: (r) => r.accountName,
+      render: (r) => (<><CellMain>{r.accountName}</CellMain><CellSub><Mono>{r.accountId}</Mono></CellSub></>),
+    },
+    {
+      key: 'workflow', header: 'Workflow', width: '150px',
+      render: (r) => (r.workflowId ? <Mono className="text-ink-2">{r.workflowId}</Mono> : <span className="text-ink-3">not bound</span>),
+    },
     { key: 'runs', header: 'Runs', align: 'right', width: '70px', sortValue: (r) => new Set(runsForOrder(r.id).map((x) => x.attempt)).size, render: (r) => new Set(runsForOrder(r.id).map((x) => x.attempt)).size },
     { key: 'age', header: 'Age', align: 'right', width: '74px', sortValue: (r) => r.ageDays, render: (r) => ageLabel(r.ageDays) },
     {
@@ -95,11 +92,7 @@ export default function ProvisioningExecution() {
           { label: 'View details', icon: Eye, onClick: () => setVerify(r) },
           { label: 'Life cycle operation', icon: Workflow, onClick: () => nav(`/execution/${r.id}?tab=lifecycle`) },
           { label: 'View jobs', icon: ListChecks, onClick: () => nav(`/execution/${r.id}?tab=runs`) },
-          ...(r.state === 'Designed' || r.state === 'Awaiting approval'
-            ? [{ label: 'Approve', icon: CheckCircle2, onClick: () => doApprove(r) },
-              { label: 'Reject', icon: XCircle, onClick: () => { setReject(r); setRejectNote('') }, danger: true }]
-            : []),
-          ...(r.state === 'Approved' || r.state === 'Queued' ? [{ label: 'Validate credentials & execute', icon: ShieldCheck, onClick: () => setCreds(r) }] : []),
+          ...(r.state === 'Approved' ? [{ label: 'Validate credentials & execute', icon: ShieldCheck, onClick: () => setCreds(r) }] : []),
           ...(r.state === 'Failed' ? [{ label: 'Retry', icon: PlayCircle, onClick: () => retryOrder(r.id) }] : []),
         ]} />
       ),
@@ -130,12 +123,12 @@ export default function ProvisioningExecution() {
               key={c}
               chip={<Badge tone={CATEGORY_TONE[c]}>{c}</Badge>}
               total={list.length} noun="in execution"
+              info={`${c} orders in the execution pool. Ready finished successfully, In progress is running or queued behind a change window, Failed was rolled back and can be retried. Click a legend row to open exactly those orders.`}
               onOpen={() => patch({ cat: c, state: null })}
               segments={[
-                seg('Activated', cnt('Activated'), 'good', 'Activated'),
-                seg('In flight', cnt('Executing') + cnt('Queued') + cnt('Approved'), 'brand', 'Executing,Queued,Approved'),
-                seg('Awaiting', cnt('Designed') + cnt('Awaiting approval'), 'none', 'Designed,Awaiting approval'),
-                seg('Failed', cnt('Failed') + cnt('Rejected'), 'crit', 'Failed,Rejected'),
+                seg('Ready', cnt('Ready'), 'good', 'Ready'),
+                seg('In progress', cnt('In progress') + cnt('Queued') + cnt('Approved'), 'brand', 'In progress,Queued,Approved'),
+                seg('Failed', cnt('Failed') + cnt('Rejected') + cnt('Reinstantiate'), 'crit', 'Failed,Rejected,Reinstantiate'),
               ]}
             />
           )
@@ -146,15 +139,13 @@ export default function ProvisioningExecution() {
       <DataTable
         rows={filtered} total={pool.length} columns={columns} pageSize={12}
         onRowClick={(r) => nav(`/execution/${r.id}?tab=lifecycle`)}
-        rowTone={(r) => (r.state === 'Failed' ? 'crit' : r.state === 'Rejected' ? 'warn' : undefined)}
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Name, Code' },
-          chips: CATEGORIES.map((c) => <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} count={pool.filter((o) => o.category === c).length} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>),
+          chips: CATEGORIES.map((c) => <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>),
           filters: [
             { key: 'state', label: 'Status', value: state, onChange: (v) => setState(v),
               options: [
                 ...EXEC_STATES.filter((st) => n(st) > 0).map((st) => ({ value: st, label: st, count: n(st) })),
-                { value: 'Designed,Awaiting approval', label: 'Waiting for approval' },
                 { value: 'Approved,Queued', label: 'Ready to run' },
               ] },
             { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
@@ -174,17 +165,20 @@ export default function ProvisioningExecution() {
         sub={verify ? `${verify.name} · ${verify.accountName}` : ''}
         width={660}
         footer={verify && (
-          <>
-            <Button variant="danger" onClick={() => { setReject(verify); setRejectNote(''); setVerify(null) }}>
-              <XCircle size={15} />Reject
+          verify.state === 'Approved' ? (
+            <Button variant="primary" onClick={() => { setCreds(verify); setVerify(null) }}>
+              <ShieldCheck size={15} />Validate credentials & execute
             </Button>
-            <Button variant="primary" onClick={() => doApprove(verify)}><CheckCircle2 size={15} />Approve</Button>
-          </>
+          ) : verify.state === 'Failed' ? (
+            <Button variant="primary" onClick={() => { retryOrder(verify.id); setVerify(null) }}>
+              <PlayCircle size={15} />Retry
+            </Button>
+          ) : undefined
         )}
       >
         {verify && (
           <div className="flex flex-col gap-5">
-            <Note>Every parameter below was populated during service creation. Approving moves the request to <b>Approved</b>; credentials are validated before execution starts.</Note>
+            <Note>Every parameter below was populated during service creation.</Note>
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">Request</div>
               <KV items={[
@@ -234,29 +228,6 @@ export default function ProvisioningExecution() {
           </div>
         )}
       </Drawer>
-
-      {/* -------- reject -------- */}
-      <Modal
-        open={!!reject} onClose={() => setReject(null)}
-        title="Reject request" sub={reject?.id}
-        footer={
-          <>
-            <Button onClick={() => setReject(null)}>Cancel</Button>
-            <Button variant="danger" disabled={!rejectNote.trim()}
-              onClick={() => { if (reject) rejectOrder(reject.id, 'Ravi K.', rejectNote); setReject(null) }}>
-              Reject request
-            </Button>
-          </>
-        }
-      >
-        <Field label="Reason" required hint="Recorded on the approval trail and shown to the requester.">
-          <textarea
-            value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} rows={4}
-            placeholder="Uplink headroom insufficient at the A-end…"
-            className="w-full px-3 py-2.5 border border-line rounded-md text-[13px] outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-100 resize-y"
-          />
-        </Field>
-      </Modal>
 
       {/* -------- credential validation -------- */}
       <Modal

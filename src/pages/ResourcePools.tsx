@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ShieldCheck } from 'lucide-react'
+import { Cable, Database, Gauge, Hourglass, Network, ShieldCheck, Spline, TriangleAlert, Waypoints } from 'lucide-react'
 import { useClearQuery, useQueryPatch, useQueryState } from '@/lib/useQueryState'
 import { useStore } from '@/store/useStore'
 import type { PoolKind, ResourcePool } from '@/types'
@@ -79,29 +79,40 @@ export default function ResourcePools() {
       />
 
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
-        <Stat label="Pools" value={pools.length} note={`${totals.total.toLocaleString()} addressable values`}
+        <Stat label="Pools" icon={Database} value={pools.length}
+          progress={(totals.allocated / totals.total) * 100}
+          note={`${totals.total.toLocaleString()} addressable values`}
+          info="Each pool holds one kind of network value — VLAN IDs, IP blocks, route targets, pseudowire IDs — that provisioning allocates automatically when a service is built and releases when it is ceased."
           drillLabel="every pool, unfiltered" onClick={clear} />
-        <Stat label="Allocated" value={totals.allocated.toLocaleString()}
+        <Stat label="Allocated" icon={Gauge} value={totals.allocated.toLocaleString()}
+          progress={(totals.allocated / totals.total) * 100}
+          info="Values currently held by live services across all pools. The bar shows how much of the total estate is in use."
           note={`${((totals.allocated / totals.total) * 100).toFixed(0)}% of the estate`}
           drillLabel="the pool with the least headroom"
           onClick={() => { const t = [...pools].sort((a, b) => freePct(a) - freePct(b))[0]; if (t) openPool(t) }} />
-        <Stat label="Quarantined" value={totals.quarantined} tone="warn"
-          note="Released on cease, held 30 days before reissue"
+        <Stat label="Quarantined" icon={Hourglass} value={totals.quarantined} tone="warn"
+          progress={(totals.quarantined / totals.total) * 100}
+          note={`${((totals.quarantined / totals.total) * 100).toFixed(0)}% of the estate · held 30 days before reissue`}
+          info="Values released by a ceased service but deliberately held back before reissue. Handing a route target or IP block straight to a new customer while stale configuration might still reference it can leak traffic between customers."
           drillLabel="the pool holding the most quarantined values"
           onClick={() => { const t = [...pools].sort((a, b) => b.quarantined - a.quarantined)[0]; if (t) openPool(t) }} />
-        <Stat label="Pools under 10% free" value={critical.length} tone={critical.length ? 'crit' : undefined}
-          note={critical.length ? critical.map((p) => p.kind).join(', ') : 'All pools have headroom'}
+        <Stat label="Pools under 10% free" icon={TriangleAlert} value={critical.length} tone={critical.length ? 'crit' : 'good'}
+          progress={(critical.length / pools.length) * 100}
+          info="Pools close to exhaustion. A new order that needs a value from one of these pools will fail validation before anything is configured — expand the range or reclaim values to restore headroom."
+          note={critical.length ? [...new Set(critical.map((p) => p.kind))].join(' · ') : 'All pools have headroom'}
           drillLabel={critical.length ? 'the tightest pool' : 'all pools'}
           onClick={() => { const t = critical.slice().sort((a, b) => freePct(a) - freePct(b))[0]; if (t) openPool(t); else clear() }} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
-        <Card>
-          <CardHead title="Headroom by pool" sub="Sorted by how close each pool is to exhaustion" />
-          <CardBody>
+        <Card className="flex flex-col">
+          <CardHead title="Headroom by pool" sub="Percentage free, sorted by how close each pool is to exhaustion"
+            info="Each bar is one pool's remaining free capacity as a percentage. Red = under 10% free (new orders will be blocked), amber = under 25%, green = healthy. Click a bar to browse that pool's individual values." />
+          <CardBody className="flex-1 flex flex-col gap-4">
             <BarList
               labelWidth={190}
               max={100}
+              valueWidth={78}
               items={[...pools]
                 .sort((a, b) => freePct(a) - freePct(b))
                 .slice(0, 8)
@@ -109,30 +120,37 @@ export default function ResourcePools() {
                   label: p.kind,
                   sub: p.scope.length > 30 ? `${p.scope.slice(0, 30)}…` : p.scope,
                   value: Math.round(freePct(p)),
+                  valueLabel: `${Math.round(freePct(p))}% free`,
                   tone: freePct(p) < 10 ? ('crit' as const) : freePct(p) < 25 ? ('warn' as const) : ('good' as const),
                   drillLabel: `${p.kind} pool for ${p.scope}. Browse it`,
                   onClick: () => openPool(p),
                 }))}
             />
-            <Note>Values shown are percentage free. A pool below 10% free will block new orders for that intent before anything else fails.</Note>
+            <Note className="mt-auto">A pool below 10% free will block new orders for that intent before anything else fails.</Note>
           </CardBody>
         </Card>
 
-        <Card>
-          <CardHead title="Why quarantine" sub="Not every released value can be reissued immediately" />
-          <CardBody className="flex flex-col gap-3.5">
+        <Card className="flex flex-col">
+          <CardHead title="Why quarantine" sub="Not every released value can be reissued immediately"
+            info="When a service is ceased its values return to the pool, but some kinds are dangerous to reissue straight away. This panel explains the hold policy per kind: 30 days where stale state could leak traffic between customers, immediate where reuse is provably safe." />
+          <CardBody className="flex-1 flex flex-col gap-3">
             {[
-              ['Route targets', 'Reissuing an RT that a peer still advertises leaks one customer\'s routes into another customer\'s VRF.', '30 days'],
-              ['IP blocks', 'A CE that has not been decommissioned may still be sending traffic to the old gateway.', '30 days'],
-              ['VLANs', 'Port-scoped and safe to reuse as soon as the sub-interface is confirmed absent.', 'immediate'],
-              ['Pseudowire IDs', 'Global, but only meaningful with a matching remote PE. Safe once absence is asserted at both ends.', 'immediate'],
-            ].map(([k, why, hold]) => (
-              <div key={k} className="border border-line rounded-lg px-3.5 py-3">
-                <div className="flex items-center justify-between gap-3 mb-1">
-                  <span className="text-[13px] font-medium">{k}</span>
-                  <Badge tone={hold === 'immediate' ? 'good' : 'warn'}>{hold}</Badge>
-                </div>
-                <div className="text-[12px] text-ink-3 leading-snug">{why}</div>
+              { k: 'Route targets', icon: Waypoints, why: 'Reissuing an RT that a peer still advertises leaks one customer\'s routes into another customer\'s VRF.', hold: '30 days' },
+              { k: 'IP blocks', icon: Network, why: 'A CE that has not been decommissioned may still be sending traffic to the old gateway.', hold: '30 days' },
+              { k: 'VLANs', icon: Cable, why: 'Port-scoped and safe to reuse as soon as the sub-interface is confirmed absent.', hold: 'immediate' },
+              { k: 'Pseudowire IDs', icon: Spline, why: 'Global, but only meaningful with a matching remote PE. Safe once absence is asserted at both ends.', hold: 'immediate' },
+            ].map((row) => (
+              <div key={row.k} className="flex-1 flex items-center gap-3.5 border border-line rounded-lg px-4 py-3">
+                <span className={`w-9 h-9 rounded-lg grid place-items-center shrink-0 ${row.hold === 'immediate' ? 'bg-good-50 text-good-700' : 'bg-warn-50 text-warn-700'}`} aria-hidden>
+                  <row.icon size={17} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center justify-between gap-3 mb-0.5">
+                    <span className="text-[13px] font-semibold text-ink-1">{row.k}</span>
+                    <Badge tone={row.hold === 'immediate' ? 'good' : 'warn'}>{row.hold}</Badge>
+                  </span>
+                  <span className="block text-[12px] text-ink-3 leading-snug">{row.why}</span>
+                </span>
               </div>
             ))}
           </CardBody>
@@ -145,7 +163,7 @@ export default function ResourcePools() {
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Pool, Scope' },
           chips: KINDS.filter((k) => pools.some((p) => p.kind === k)).map((k) => (
-            <Chip key={k} active={kind === k} count={pools.filter((p) => p.kind === k).length} onClick={() => setKind(kind === k ? 'All' : k)}>{k}</Chip>
+            <Chip key={k} active={kind === k} onClick={() => setKind(kind === k ? 'All' : k)}>{k}</Chip>
           )),
           filters: [
             { key: 'kind', label: 'Kind', value: kind, onChange: (v) => setKind(v as PoolKind | 'All'),

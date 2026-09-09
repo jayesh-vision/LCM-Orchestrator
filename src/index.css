@@ -112,31 +112,27 @@
    inside @layer would lose to it.
    ============================================================ */
 
-/* 1. components.css sets Inter on .nst-table / .nst-btn / .nst-table-*.
-      CLAUDE.md forbids Inter on dashboard pages, and every screen here is a
-      dashboard screen, so Poppins wins. Registry conflict, resolved in
-      favour of the stricter rule. */
-.nst-table,
-.nst-table th,
-.nst-table td,
-.nst-btn,
-.nst-table-th,
-.nst-table-td,
-.nst-table-menu-item { font-family: var(--fontFamily); }
+/* 1. Typography split, settled against the platform's own grid (Sep 2026):
+      data grids, their toolbar chips and row menus use the registry's Inter
+      spec in components.css untouched; buttons keep the Poppins the
+      dashboard rule asks for. */
+.nst-btn { font-family: var(--fontFamily); }
 
 /* 2. .nst-input has fixed horizontal padding. Fields with a prefix or suffix
       icon need room for it — a layout constraint, not a restyle. */
 .nst-input.has-icon-left  { padding-left: 2.25rem; }
 .nst-input.has-icon-right { padding-right: 2rem; }
 
-/* 3. .nst-table td is tuned for 4–5 wide columns; these grids carry 9–10.
-      Horizontal padding steps down one notch on the spacing scale, and the
-      cell type drops to the 13px the .nst-table-td spec in the same file
-      already uses. Vertical rhythm and every colour are unchanged. */
+/* 3. Grid format as on the platform: one line per cell (the table scrolls
+      sideways rather than wrapping), stacked label/value cells inherit the
+      table's Inter, and status/category chips are regular-weight pills of
+      one width so a column of them lines up. Sizes and colours are the
+      registry's own. */
 .nst-table th,
-.nst-table td {
-  padding-left: var(--vw-space-md);
-  padding-right: var(--vw-space-md);
-}
-.nst-table td { font-size: 0.8125rem; }
-.nst-table td.tnum { white-space: nowrap; }
+.nst-table td { white-space: nowrap; padding-left: var(--vw-space-md); padding-right: var(--vw-space-md); }
+.nst-table .vw-card-activity-label,
+.nst-table .vw-card-activity-value { font-family: inherit; }
+.nst-table .vw-card-activity-label { font-weight: 500; color: var(--vw-color-gray-900); }
+.nst-table td .vw-chip { font-weight: 400; min-width: 6rem; justify-content: center; }
+.nst-table td .font-mono { font-size: 0.8125rem; }
+.nst-action-menu-item { font-family: inherit; }

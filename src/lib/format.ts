@@ -3,15 +3,16 @@ import type { Tone } from '@/components/ui'
 
 export const ORDER_TONE: Record<OrderState, Tone> = {
   Draft: 'none',
-  Designed: 'info',
-  'Awaiting approval': 'plum',
+  Planned: 'info',
+  Validated: 'teal',
+  Invalid: 'warn',
   Approved: 'good',
-  Queued: 'info',
-  Executing: 'info',
-  Activated: 'good',
-  Failed: 'crit',
   Rejected: 'warn',
-  Unrouted: 'warn',
+  Queued: 'info',
+  'In progress': 'info',
+  Ready: 'good',
+  Failed: 'crit',
+  Reinstantiate: 'plum',
 }
 
 export const SERVICE_TONE: Record<ServiceState, Tone> = {
