@@ -3,17 +3,18 @@ import { useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
 import { Activity, Boxes, ChevronRight, Download, Eye, Ghost, GitBranch, GitCompare, Plus, RefreshCcw, ShieldCheck, ShieldQuestion, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
-import type { Category, Conformance, Service, ServiceState } from '@/types'
+import type { Category, Conformance, Domain, Service, ServiceState } from '@/types'
+import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Card, CardBody, CardHead, CellMain, CellSub, Chip, DataTable,
   FilterBanner, Kebab, Mono, Stat, type Column,
 } from '@/components/ui'
 import { BarList, CHART, Donut, FILL, type FillKey } from '@/components/charts'
-import { CATEGORY_TONE, CONFORMANCE_TONE, inr, relTime, SERVICE_TONE } from '@/lib/format'
+import { CATEGORY_TONE, CONFORMANCE_TONE, DOMAIN_TONE, inr, relTime, SERVICE_TONE } from '@/lib/format'
 
 const STATES: ServiceState[] = ['Live', 'Activating', 'Degraded', 'Suspended', 'Ceased']
 const CONFS: Conformance[] = ['Conformant', 'Drifted', 'Never proven', 'Ghost', 'Not checked']
-const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW']
+const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband']
 
 export default function ServiceInventory() {
   const services = useStore((s) => s.services)
@@ -26,11 +27,18 @@ export default function ServiceInventory() {
   const [q, setQ] = useQueryState('q', '')
   const [state, setState] = useQueryState<ServiceState | 'All'>('state', 'All')
   const [conf, setConf] = useQueryState<Conformance | 'All'>('conf', 'All')
+  const [domain, setDomain] = useQueryState<Domain | 'All'>('domain', 'All')
   const [cat, setCat] = useQueryState<Category | 'All'>('cat', 'All')
   const [intent, setIntent] = useQueryState('intent', 'All')
   const patch = useQueryPatch()
-  const clear = useClearQuery(['q', 'state', 'conf', 'cat', 'intent'])
-  const anyFilter = state !== 'All' || conf !== 'All' || cat !== 'All' || intent !== 'All'
+  const clear = useClearQuery(['q', 'state', 'conf', 'domain', 'cat', 'intent'])
+  const domainCats = domain === 'All' ? CATS : CATEGORIES_BY_DOMAIN[domain]
+  const setDomainScoped = (next: Domain | 'All') => {
+    setDomain(next)
+    if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
+  }
+  const pickDomain = (d: Domain) => setDomainScoped(domain === d ? 'All' : d)
+  const anyFilter = state !== 'All' || conf !== 'All' || domain !== 'All' || cat !== 'All' || intent !== 'All'
   const resultsRef = useScrollToResultsOnDrillIn(anyFilter)
   const intentName = intents.find((i) => i.id === intent)?.name ?? intent
 
@@ -55,6 +63,7 @@ export default function ServiceInventory() {
   const filtered = useMemo(() => services.filter((s) => {
     if (state !== 'All' && s.state !== state) return false
     if (conf !== 'All' && s.conformance !== conf) return false
+    if (domain !== 'All' && domainOf(s.category) !== domain) return false
     if (cat !== 'All' && s.category !== cat) return false
     if (intent !== 'All' && s.intentId !== intent) return false
     if (q) {
@@ -116,6 +125,7 @@ export default function ServiceInventory() {
       <FilterBanner
         count={filtered.length} noun="services" onClear={clear}
         filters={[
+          ...(domain !== 'All' ? [{ key: 'domain', label: 'Domain', value: domain, onRemove: () => setDomain('All') }] : []),
           ...(cat !== 'All' ? [{ key: 'cat', label: 'Category', value: cat, onRemove: () => setCat('All') }] : []),
           ...(state !== 'All' ? [{ key: 'state', label: 'State', value: state, onRemove: () => setState('All') }] : []),
           ...(conf !== 'All' ? [{ key: 'conf', label: 'Conformance', value: conf, onRemove: () => setConf('All') }] : []),
@@ -256,14 +266,19 @@ export default function ServiceInventory() {
         onRowClick={(r) => nav(`/inventory/${r.id}`)}
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Service, Customer, Site' },
-          chips: CATS.map((c) => <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>),
+          chips: [
+            ...DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
+            ...domainCats.map((c) => <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>),
+          ],
           filters: [
             { key: 'state', label: 'State', value: state, onChange: (v) => setState(v as ServiceState | 'All'),
               options: STATES.map((st) => ({ value: st, label: st, count: n.state(st) })) },
             { key: 'conf', label: 'Conformance', value: conf, onChange: (v) => setConf(v as Conformance | 'All'),
               options: CONFS.filter((c) => n.conf(c) > 0).map((c) => ({ value: c, label: c, count: n.conf(c) })) },
+            { key: 'domain', label: 'Domain', value: domain, onChange: (v) => setDomainScoped(v as Domain | 'All'),
+              options: DOMAINS.map((d) => ({ value: d, label: d, count: services.filter((s) => domainOf(s.category) === d).length })) },
             { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
-              options: CATS.map((c) => ({ value: c, label: c, count: n.cat(c) })) },
+              options: domainCats.map((c) => ({ value: c, label: c, count: n.cat(c) })) },
             { key: 'intent', label: 'Intent', value: intent, onChange: setIntent,
               options: intents.map((i) => ({ value: i.id, label: i.name, count: services.filter((s) => s.intentId === i.id).length })) },
             { key: 'q', label: 'Service / Customer / Site', type: 'text', value: q, onChange: setQ },

@@ -1,14 +1,20 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CheckCircle2, ClipboardList, PlayCircle, XCircle } from 'lucide-react'
+import { CheckCircle2, ClipboardList, PlayCircle, Router, Wifi, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
-import type { Order, OrderState } from '@/types'
+import type { Domain, Order, OrderState } from '@/types'
+import { DOMAINS, domainOf } from '@/types'
 import { Badge, Button, Card, CardBody, CardHead, Mono, Progress, Stat, type StatTone } from '@/components/ui'
 import { CHART, FILL, ColumnChart, StackedBar, TrendChart } from '@/components/charts'
 import { CATEGORY_TONE, relTime } from '@/lib/format'
 
 const DAY = 86400000
-const CATS = ['L2VPN', 'L3VPN', 'IBW'] as const
+const CATS = ['L2VPN', 'L3VPN', 'IBW', 'Broadband'] as const
+const DOMAIN_ICON: Record<Domain, typeof Router> = { Transport: Router, Access: Wifi }
+const DOMAIN_BLURB: Record<Domain, string> = {
+  Transport: 'L2VPN, L3VPN and IBW — router/switch CLI provisioning across 8 vendors.',
+  Access: 'Broadband CPE activation — the platform\'s newest domain, 3 CPE vendors.',
+}
 
 /** Count per calendar day over the last `days`, oldest first. */
 function perDay(dates: string[], days: number) {
@@ -34,12 +40,20 @@ export default function Dashboard() {
   const running = runs.filter((r) => r.outcome === 'Running')
   const waitingApproval = n('Validated')
   const readyToRun = n('Approved') + n('Queued')
-  const toRequests = (state?: string, cat?: string) => {
+  const toRequests = (state?: string, cat?: string, domain?: string) => {
     const p = new URLSearchParams()
     if (state) p.set('state', state)
     if (cat) p.set('cat', cat)
+    if (domain) p.set('domain', domain)
     return `/requests${p.toString() ? `?${p}` : ''}`
   }
+
+  /* ---- multi-domain split: Transport (L2VPN/L3VPN/IBW) vs Access (Broadband) ---- */
+  const domainCounts = useMemo(() => {
+    const out: Record<Domain, number> = { Transport: 0, Access: 0 }
+    orders.forEach((o) => { out[domainOf(o.category)] += 1 })
+    return out
+  }, [orders])
 
   /* ---- 14-day trend: raised vs completed ---- */
   const DAYS = 14
@@ -94,6 +108,18 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {/* ---------------- by domain — Transport vs Access ---------------- */}
+      <div className="grid gap-4 grid-cols-2">
+        {DOMAINS.map((d) => (
+          <Stat key={d} label={`${d} requests`} icon={DOMAIN_ICON[d]} value={domainCounts[d]}
+            tone={d === 'Access' ? 'warn' : undefined}
+            progress={(domainCounts[d] / Math.max(1, orders.length)) * 100}
+            note={`${Math.round((domainCounts[d] / Math.max(1, orders.length)) * 100)}% of all requests · ${DOMAIN_BLURB[d]}`}
+            info={`Every request belongs to exactly one domain. ${DOMAIN_BLURB[d]}`}
+            drillLabel={`${d} domain requests`} onClick={() => nav(toRequests(undefined, undefined, d))} />
+        ))}
+      </div>
+
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
         {/* ---------------- pipeline ---------------- */}
         <Card className="h-full vw-flex vw-flex-col">
@@ -115,7 +141,7 @@ export default function Dashboard() {
         {/* ---------------- by service type ---------------- */}
         <Card className="h-full vw-flex vw-flex-col">
           <CardHead title="By service type" sub="Ready · In progress · Waiting · Failed"
-            info="The same open requests split by service family (L2VPN, L3VPN, IBW). Each bar is segmented by how far along the requests are — click a segment to open exactly those requests." />
+            info="The same open requests split by service family across both domains — L2VPN, L3VPN and IBW (Transport), Broadband (Access). Each bar is segmented by how far along the requests are — click a segment to open exactly those requests." />
           <CardBody className="vw-flex vw-flex-col vw-justify-evenly vw-gap-lg flex-1">
             {CATS.map((c) => {
               const list = orders.filter((o: Order) => o.category === c)

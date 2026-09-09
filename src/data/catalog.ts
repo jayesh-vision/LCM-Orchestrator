@@ -72,15 +72,25 @@ export const DEVICE_MODELS: DeviceModel[] = [
   { vendor: 'EDGECORE', model: 'AS4630-54PE', kind: 'Switch', os: 'SONiC 4.1', osRange: '4.0 – 4.2', ports: ['Ethernet1', 'Ethernet5', 'Ethernet9'] },
   { vendor: 'DLINK', model: 'DGS-3630-28TC', kind: 'Switch', os: 'D-Link OS 3.00', osRange: '2.90 – 3.00', ports: ['1/0/1', '1/0/5', '1/0/9'] },
   { vendor: 'DLINK', model: 'DXS-3600-32S', kind: 'Switch', os: 'D-Link OS 3.00', osRange: '2.90 – 3.00', ports: ['1/0/2', '1/0/6', '1/0/10'] },
+  /* Access domain — residential/business gateways (ONT/CPE), a separate
+     estate from the Transport vendors above; never bound to a Transport intent. */
+  { vendor: 'HUAWEI', model: 'EG8145V5', kind: 'CPE', os: 'HW CPE FW 5.2', osRange: '5.0 – 5.2', ports: ['LAN1', 'LAN2', 'WAN'] },
+  { vendor: 'ZTE', model: 'ZXHN F670L', kind: 'CPE', os: 'ZTE CPE FW 3.1', osRange: '2.9 – 3.1', ports: ['LAN1', 'LAN2', 'WAN'] },
+  { vendor: 'ADTRAN', model: '411', kind: 'CPE', os: 'Adtran OS 6.4', osRange: '6.0 – 6.4', ports: ['LAN1', 'LAN2', 'WAN'] },
 ]
 
 /** Only Router-class devices run BGP/VRF, so only these can serve L3VPN/IBW. */
 export const ROUTER_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'Router').map((d) => d.vendor))]
-/** Switch-class devices are Ethernet/VLAN-only — L2VPN is the only family they can carry. */
+/** Switch-class devices are Ethernet/VLAN-only — L2VPN is the only Transport family they can carry. */
 export const SWITCH_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'Switch').map((d) => d.vendor))]
+/** CPE-class devices are the Access domain's estate — never eligible for a Transport intent. */
+export const CPE_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'CPE').map((d) => d.vendor))]
 /** The device estate eligible for a given service category. */
-export const modelsForCategory = (category: Category): DeviceModel[] =>
-  category === 'L2VPN' ? DEVICE_MODELS : DEVICE_MODELS.filter((d) => d.kind === 'Router')
+export const modelsForCategory = (category: Category): DeviceModel[] => {
+  if (category === 'Broadband') return DEVICE_MODELS.filter((d) => d.kind === 'CPE')
+  if (category === 'L2VPN') return DEVICE_MODELS.filter((d) => d.kind === 'Router' || d.kind === 'Switch')
+  return DEVICE_MODELS.filter((d) => d.kind === 'Router')
+}
 
 /* ---------- intent catalog ---------- */
 
@@ -107,6 +117,23 @@ const ibwParams: IntentParam[] = [
   { name: 'customer_asn', type: 'integer', constraint: '64512–65534 private, or public ASN', modifiable: 'bounce', min: 1, max: 4294967295, required: true },
   { name: 'prefix_limit', type: 'integer', constraint: '1–5000', modifiable: 'hitless', min: 1, max: 5000, default: 500, required: true },
   { name: 'ip_block', type: 'ipv4', constraint: '/30 or /31 from the WAN pool', modifiable: 'no', fromPool: 'IP block', required: true },
+]
+
+/* ---------- Access domain: CPE / broadband activation ---------- */
+
+const cpeParams: IntentParam[] = [
+  { name: 'ssid', type: 'string', constraint: '1–32 chars · unique per CPE', modifiable: 'hitless', required: true },
+  { name: 'wifi_password', type: 'string', constraint: '8–63 chars · WPA2/WPA3', modifiable: 'hitless', required: true },
+  { name: 'wan_vlan', type: 'integer', constraint: '2–4094 · from pool', modifiable: 'no', fromPool: 'VLAN', min: 2, max: 4094, required: true },
+  { name: 'cpe_serial', type: 'string', constraint: 'pool-allocated · pre-provisioned stock', modifiable: 'no', fromPool: 'CPE Serial', required: true },
+  { name: 'bandwidth_mbps', type: 'integer', constraint: '10–1000', modifiable: 'hitless', min: 10, max: 1000, default: 100, required: true },
+]
+
+const cpeAcceptance: AcceptanceCriterion[] = [
+  { id: 'AC-1', claim: 'CPE registers on the access network with the bound serial', layer: 'device', expected: 'serial matches, state=Online' },
+  { id: 'AC-2', claim: 'WiFi SSID broadcasts with the configured security mode', layer: 'device', expected: 'ssid visible, WPA2/WPA3 enabled' },
+  { id: 'AC-3', claim: 'WAN interface obtains an address inside the assigned VLAN', layer: 'network', expected: 'DHCP/PPPoE bound, vlan matches' },
+  { id: 'AC-4', claim: 'Measured downstream throughput is within ±10% of the ordered rate', layer: 'service', expected: 'within tolerance band' },
 ]
 
 const ibwAcceptance: AcceptanceCriterion[] = [
@@ -164,6 +191,18 @@ export const INTENTS: ServiceIntent[] = [
     topology: 'Full mesh', endpointArity: '2…n', params: l3Params,
     pools: ['RD/RT', 'IP block', 'Sub-interface'], acceptance: l3Acceptance, version: 1, liveServices: 52,
   },
+  /* Access domain — CPE/broadband activation. Single-ended like IBW: one
+     device, no far end. */
+  {
+    id: 'INT-ACCESS-RESIDENTIAL', name: 'Broadband — Residential Gateway', category: 'Broadband', type: 'Residential Gateway',
+    topology: 'Single-ended', endpointArity: 'exactly 1', params: cpeParams,
+    pools: ['VLAN', 'CPE Serial'], acceptance: cpeAcceptance, version: 1, liveServices: 200,
+  },
+  {
+    id: 'INT-ACCESS-BUSINESS', name: 'Broadband — Business Gateway', category: 'Broadband', type: 'Business Gateway',
+    topology: 'Single-ended', endpointArity: 'exactly 1', params: cpeParams,
+    pools: ['VLAN', 'CPE Serial'], acceptance: cpeAcceptance, version: 1, liveServices: 60,
+  },
 ]
 
 export const intentById = (id: string) => INTENTS.find((i) => i.id === id)!
@@ -204,6 +243,11 @@ const PROFILE_ROWS: Array<[Category, string, string, string, string]> = [
   ['IBW', 'BGP', 'Other', 'IBW BGP profile for BGP-based Internet Bandwidth connectivity.', 'Jayesh'],
   ['IBW', 'Static', 'Other', 'IBW Static profile for static Internet Bandwidth connectivity.', 'Jayesh'],
   ['IBW', 'Other', 'Other', 'IBW profile for standard Internet Bandwidth services.', 'Jayesh'],
+  // Broadband (Access domain)
+  ['Broadband', 'Residential Gateway', 'FTTH', 'Broadband Residential Gateway profile for fibre-to-the-home connectivity.', 'Jayesh'],
+  ['Broadband', 'Residential Gateway', 'DSL', 'Broadband Residential Gateway profile for DSL connectivity.', 'Jayesh'],
+  ['Broadband', 'Business Gateway', 'FTTH', 'Broadband Business Gateway profile for fibre-to-the-home connectivity.', 'Jayesh'],
+  ['Broadband', 'Business Gateway', 'Other', 'Broadband Business Gateway profile for standard connectivity.', 'Jayesh'],
 ]
 
 export const PROFILE_TYPES: ProfileType[] = PROFILE_ROWS.map(([category, type, subtype, description, creator], i) => ({
@@ -214,4 +258,4 @@ export const PROFILE_TYPES: ProfileType[] = PROFILE_ROWS.map(([category, type, s
 }))
 
 export const VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.map((d) => d.vendor))]
-export const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW']
+export const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband']

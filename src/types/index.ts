@@ -2,7 +2,18 @@
    Domain model — LCM Orchestrator
    ============================================================ */
 
-export type Category = 'L2VPN' | 'L3VPN' | 'IBW'
+/** The provisioning domain a service belongs to. Sits above Category — Transport's
+ *  categories are L2VPN/L3VPN/IBW; Access brings its own category set (Broadband). */
+export type Domain = 'Transport' | 'Access'
+export const DOMAINS: Domain[] = ['Transport', 'Access']
+
+export type Category = 'L2VPN' | 'L3VPN' | 'IBW' | 'Broadband'
+/** Which categories exist under each domain — drives every domain→category cascade in the UI. */
+export const CATEGORIES_BY_DOMAIN: Record<Domain, Category[]> = {
+  Transport: ['L2VPN', 'L3VPN', 'IBW'],
+  Access: ['Broadband'],
+}
+export const domainOf = (category: Category): Domain => (category === 'Broadband' ? 'Access' : 'Transport')
 
 /** Contractual state of a service. Changed only by orders. */
 export type ServiceState =
@@ -62,16 +73,22 @@ export interface ValidationRule {
   type: ValidationType
 }
 
-export type Vendor = 'CISCO' | 'JUNIPER' | 'NOKIA' | 'ADVA' | 'TEJAS' | 'TECHROUTE' | 'EDGECORE' | 'DLINK'
+/* Transport vendors: CISCO..DLINK. Access/CPE vendors: HUAWEI..ADTRAN — a
+   distinct estate, never bound to a Transport workflow or vice versa. */
+export type Vendor =
+  | 'CISCO' | 'JUNIPER' | 'NOKIA' | 'ADVA' | 'TEJAS' | 'TECHROUTE' | 'EDGECORE' | 'DLINK'
+  | 'HUAWEI' | 'ZTE' | 'ADTRAN'
 
 /** What the device actually is. Router-class devices carry BGP/VRF/L3 routing
  *  and are the only kind that can serve an L3VPN or IBW intent; a Switch is
- *  Ethernet/VLAN-only and can only carry the L2VPN family. */
-export type DeviceKind = 'Router' | 'Switch'
+ *  Ethernet/VLAN-only and can only carry the L2VPN family. CPE is the Access
+ *  domain's device class — a residential/business gateway, never eligible
+ *  for a Transport intent. */
+export type DeviceKind = 'Router' | 'Switch' | 'CPE'
 
 export type WorkflowState = 'Draft' | 'Assigned' | 'Awaiting approval' | 'Active' | 'Rejected' | 'Retired'
 
-export type PoolKind = 'VLAN' | 'RD/RT' | 'Pseudowire ID' | 'IP block' | 'Sub-interface' | 'ASN slot'
+export type PoolKind = 'VLAN' | 'RD/RT' | 'Pseudowire ID' | 'IP block' | 'Sub-interface' | 'ASN slot' | 'CPE Serial'
 
 export type AssertionForm =
   | 'exists' | 'absent' | 'equals' | 'in_range' | 'count' | 'matches' | 'unchanged'

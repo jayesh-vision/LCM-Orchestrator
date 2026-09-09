@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, CheckCircle2, PlayCircle, Save } from 'lucide-react'
 import { useStore, type WizardDraft } from '@/store/useStore'
 import { ACCOUNTS, DEVICE_MODELS, SITES, modelsForCategory } from '@/data/catalog'
-import type { Category, EndpointRole, OrderParamValue } from '@/types'
+import type { Category, Domain, EndpointRole, OrderParamValue } from '@/types'
+import { CATEGORIES_BY_DOMAIN, DOMAINS } from '@/types'
 import {
   Badge, Button, Card, CardBody, CardHead, Field, KV, Mono, Note, PageHead,
   Select, Stepper, TextInput, Toggle,
@@ -26,6 +27,7 @@ export default function NewServiceWizard() {
   const createOrder = useStore((s) => s.createOrder)
 
   const [step, setStep] = useState(0)
+  const [domain, setDomain] = useState<Domain>('Transport')
   const [category, setCategory] = useState<Category>('L2VPN')
   const [intentId, setIntentId] = useState('INT-L2-P2P')
   const [subtype, setSubtype] = useState('Tagged')
@@ -43,6 +45,15 @@ export default function NewServiceWizard() {
   const intent = intents.find((i) => i.id === intentId)!
   const catIntents = intents.filter((i) => i.category === category)
   const portsPool = useMemo(() => modelsForCategory(category), [category])
+  const domainCats = CATEGORIES_BY_DOMAIN[domain]
+  const setDomainCascade = (d: Domain) => {
+    setDomain(d)
+    const c = CATEGORIES_BY_DOMAIN[d][0]
+    setCategory(c)
+    const first = intents.find((i) => i.category === c)!
+    setIntentId(first.id)
+    setSubtype(d === 'Access' ? 'FTTH' : 'Tagged')
+  }
 
   const endpointCount = intent.topology === 'Single-ended' ? 1 : intent.topology === 'Two-ended' ? 2 : eps.length
   const roles: EndpointRole[] = intent.topology === 'Single-ended' ? ['Source'] : ['Source', 'Destination']
@@ -186,6 +197,11 @@ export default function NewServiceWizard() {
           {step === 0 && (
             <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
               <div className="grid gap-5 sm:grid-cols-2">
+                <Field label="Domain" required hint={domain === 'Access' ? 'Customer-premises device provisioning.' : 'Router/switch network services.'}>
+                  <Select value={domain} onChange={(e) => setDomainCascade(e.target.value as Domain)}>
+                    {DOMAINS.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </Select>
+                </Field>
                 <Field label="Service category" required>
                   <Select value={category} onChange={(e) => {
                     const c = e.target.value as Category
@@ -193,7 +209,7 @@ export default function NewServiceWizard() {
                     const first = intents.find((i) => i.category === c)!
                     setIntentId(first.id)
                   }}>
-                    {(['L2VPN', 'L3VPN', 'IBW'] as Category[]).map((c) => <option key={c} value={c}>{c}</option>)}
+                    {domainCats.map((c) => <option key={c} value={c}>{c}</option>)}
                   </Select>
                 </Field>
                 <Field label="Type" required hint={`${intent.topology} · ${intent.endpointArity}`}>
@@ -203,7 +219,7 @@ export default function NewServiceWizard() {
                 </Field>
                 <Field label="Catalog subtype">
                   <Select value={subtype} onChange={(e) => setSubtype(e.target.value)}>
-                    {['Tagged', 'Untagged', 'BGP', 'Static', 'OSPF', 'VRF', 'Other'].map((s) => <option key={s}>{s}</option>)}
+                    {(domain === 'Access' ? ['FTTH', 'DSL', 'Other'] : ['Tagged', 'Untagged', 'BGP', 'Static', 'OSPF', 'VRF', 'Other']).map((s) => <option key={s}>{s}</option>)}
                   </Select>
                 </Field>
                 <Field label="Customer" required hint="A reference to the account master, not free text.">
@@ -272,7 +288,7 @@ export default function NewServiceWizard() {
                             {SITES.map((s) => <option key={s.code} value={s.code}>{s.code} — {s.city}</option>)}
                           </Select>
                         </Field>
-                        <Field label="Router port" required>
+                        <Field label={domain === 'Access' ? 'CPE port' : 'Router port'} required>
                           <Select value={e.port} onChange={(ev) => {
                             const next = [...eps]; next[i] = { ...e, port: ev.target.value }; setEps(next)
                           }}>

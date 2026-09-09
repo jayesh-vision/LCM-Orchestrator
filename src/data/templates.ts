@@ -318,14 +318,50 @@ function ibwCisco(type: string): StageSeed[] {
   ]
 }
 
+/* ---- Broadband | Residential/Business Gateway | * | HUAWEI · ZTE · ADTRAN
+   (Pre-Validation 3 · Service configuration 3 · Post-Validation 3). Access
+   domain — CPE registration, WiFi/WAN push, then proof the gateway is
+   online. One template covers every CPE vendor, the same way a single
+   IOS-XR-flavoured template already covers every non-Juniper Transport
+   vendor above — the platform doesn't hand-author one dialect per vendor. */
+function cpeProvisioning(): StageSeed[] {
+  const SN = '${CPE Serial}', SSID = '${SSID}', PW = '${WiFi Password}', VLAN = '${WAN VLAN}', BW = '${Bandwidth}'
+  return [
+    { name: 'Pre-Validation', kind: 'Pre validation', tasks: [
+      { name: 'Check CPE registration', set: `show cpe registry serial ${SN}`, rules: [rule('not found', 'Not contains'), rule('error')] },
+      { name: 'Check WAN VLAN availability', set: `show vlan ${VLAN}`, rules: [rule('in use', 'Not contains')] },
+      { name: 'Check WiFi radio status', set: 'show wifi radio status', rules: [rule('down', 'Not contains'), rule('error')] },
+    ] },
+    { name: 'Service configuration', kind: 'Configuration', tasks: [
+      { name: 'Set WAN configuration',
+        set: `interface wan\n encapsulation dot1q ${VLAN}\n service-policy input PM-${BW}M\n no shutdown\nexit`,
+        rollback: `interface wan\n shutdown\n no encapsulation dot1q ${VLAN}\nexit`, timeoutMs: 90000, breaker: true },
+      { name: 'Set WiFi configuration',
+        set: `wifi ssid "${SSID}"\n security wpa2-psk "${PW}"\n broadcast enable\nexit`,
+        rules: [rule('error'), rule('invalid')],
+        rollback: `no wifi ssid "${SSID}"` },
+      { name: 'Bind CPE serial',
+        set: `cpe registry serial ${SN}\n bind wan-vlan ${VLAN}\n commit`,
+        rules: [rule('commit complete', 'Contains'), rule('error')],
+        rollback: `no cpe registry serial ${SN}`, timeoutMs: 90000, breaker: true },
+    ] },
+    { name: 'Post-Validation', kind: 'Post validation', tasks: [
+      { name: 'Verify CPE online', set: `show cpe registry serial ${SN}`, rules: [rule('state=Online', 'Contains'), rule('offline')], retry: true, timeoutMs: 90000 },
+      { name: 'Verify WiFi broadcasting', set: `show wifi ssid "${SSID}"`, rules: [rule('broadcast=enabled', 'Contains'), rule('disabled')] },
+      { name: 'Verify WAN reachability', set: 'ping 8.8.8.8 source wan count 5', rules: [rule('Success rate is 100 percent', 'Contains')], retry: true },
+    ] },
+  ]
+}
+
 /* -------------------------------------------------------------- picker */
 
 /** The platform workflow for a profile + vendor. `role` only affects naming; both ends run the same sequence. */
 export function templateFor(category: Category, vendor: Vendor, type: string, _role?: EndpointRole, subtype = '') {
   const seeds =
-    category === 'L2VPN' ? (vendor === 'JUNIPER' ? l2vpnJuniper(subtype) : l2vpnCisco(subtype))
-      : category === 'L3VPN' ? (vendor === 'JUNIPER' ? (/hub/i.test(type) ? l3vpnHubSpokeJuniper() : l3vpnMeshJuniper()) : l3vpnCisco(type))
-        : (vendor === 'JUNIPER' ? (/bgp|ospf|vrf/i.test(type) ? ibwBgpJuniper() : ibwStaticJuniper()) : ibwCisco(type))
+    category === 'Broadband' ? cpeProvisioning()
+      : category === 'L2VPN' ? (vendor === 'JUNIPER' ? l2vpnJuniper(subtype) : l2vpnCisco(subtype))
+        : category === 'L3VPN' ? (vendor === 'JUNIPER' ? (/hub/i.test(type) ? l3vpnHubSpokeJuniper() : l3vpnMeshJuniper()) : l3vpnCisco(type))
+          : (vendor === 'JUNIPER' ? (/bgp|ospf|vrf/i.test(type) ? ibwBgpJuniper() : ibwStaticJuniper()) : ibwCisco(type))
   return materialise(seeds)
 }
 
@@ -379,4 +415,5 @@ export const KNOWN_PARAMS: Record<Category, string[]> = {
   L2VPN: ['Interface', 'Vlan-ID', 'Neighbor IP', 'Description', 'Bandwidth', 'Xconnect group', 'VC ID'],
   L3VPN: ['Interface', 'Vlan-ID', 'Neighbor IP', 'Description', 'Bandwidth', 'VRF', 'RD', 'RT', 'Interface IP', 'Peer AS'],
   IBW: ['Interface', 'Vlan-ID', 'Neighbor IP', 'Description', 'Bandwidth', 'VRF', 'Interface IP', 'Customer prefix', 'Peer AS'],
+  Broadband: ['CPE Serial', 'SSID', 'WiFi Password', 'WAN VLAN', 'Bandwidth'],
 }

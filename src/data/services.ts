@@ -1,8 +1,8 @@
 import type {
-  ChangeRecord, Conformance, Endpoint, HeldResource, OperState,
+  Category, ChangeRecord, Conformance, Endpoint, HeldResource, OperState,
   Service, ServiceAttribute, ServiceState,
 } from '@/types'
-import { ACCOUNTS, DEVICE_MODELS, SITES, between, intentById, pad, pick, rnd } from './catalog'
+import { ACCOUNTS, SITES, between, intentById, modelsForCategory, pad, pick, rnd } from './catalog'
 
 /* Exact distributions — every screen's totals reconcile to these. */
 const STATE_MIX: [ServiceState, number][] = [
@@ -30,9 +30,9 @@ function shuffle<T>(a: T[]): T[] {
   return r
 }
 
-function makeEndpoint(role: Endpoint['role'], i: number): Endpoint {
+function makeEndpoint(role: Endpoint['role'], i: number, category: Category): Endpoint {
   const site = pick(SITES)
-  const dm = pick(DEVICE_MODELS)
+  const dm = pick(modelsForCategory(category))
   const port = pick(dm.ports)
   return {
     id: `EP-${pad(i, 6)}`,
@@ -68,6 +68,11 @@ function attributes(intentId: string, conformance: Conformance, bandwidth: numbe
       { name: 'Route distinguisher', intent: `65001:${vlan}`, onDevice: dev(`65001:${vlan}`), source: 'Reserved', verifiedAt: verified, verdict: verdict(false) },
       { name: 'PE-CE protocol', intent: 'BGP', onDevice: dev('BGP'), source: 'Order', verifiedAt: verified, verdict: verdict(false) },
     )
+  } else if (intentId.startsWith('INT-ACCESS')) {
+    base.splice(1, 0,
+      { name: 'WAN VLAN', intent: String(vlan), onDevice: dev(String(vlan)), source: 'Reserved', verifiedAt: verified, verdict: verdict(false) },
+      { name: 'SSID broadcasting', intent: 'true', onDevice: dev(drift ? 'false' : 'true'), source: 'Order', verifiedAt: verified, verdict: verdict(drift) },
+    )
   } else {
     base.splice(1, 0,
       { name: 'Customer ASN', intent: String(64500 + between(1, 900)), onDevice: dev(String(64500 + between(1, 900))), source: 'Order', verifiedAt: verified, verdict: verdict(false) },
@@ -89,6 +94,9 @@ function resources(intentId: string, vlan: number, eps: Endpoint[], state: Servi
   } else if (intentId.startsWith('INT-L3')) {
     out.push({ kind: 'RD/RT', value: `65001:${vlan}`, pool: 'global route target', state: st })
     out.push({ kind: 'IP block', value: `10.244.${between(1, 250)}.0/28`, pool: 'WAN transit', state: st })
+  } else if (intentId.startsWith('INT-ACCESS')) {
+    out.push({ kind: 'VLAN', value: String(vlan), pool: 'Access WAN VLAN', state: st })
+    out.push({ kind: 'CPE Serial', value: `SN-${between(100000, 999999)}`, pool: 'CPE stock', state: st })
   } else {
     out.push({ kind: 'IP block', value: `10.244.${between(1, 250)}.${between(0, 60) * 4}/30`, pool: 'WAN transit', state: st })
     out.push({ kind: 'ASN slot', value: String(64500 + between(1, 900)), pool: 'private ASN', state: st })
@@ -119,6 +127,18 @@ function history(id: string, liveSince: Date, conformance: Conformance): ChangeR
   return out
 }
 
+/* Access domain — additive batch, appended after Transport's fixed 2457 so
+   none of the reconciled Transport totals above shift. Sums to 260. */
+const ACCESS_STATE_MIX: [ServiceState, number][] = [
+  ['Live', 224], ['Activating', 6], ['Degraded', 10], ['Suspended', 8], ['Ceased', 12],
+]
+const ACCESS_CONF_MIX: [Conformance, number][] = [
+  ['Conformant', 205], ['Drifted', 22], ['Never proven', 28], ['Ghost', 5],
+]
+const ACCESS_INTENT_MIX: [string, number][] = [
+  ['INT-ACCESS-RESIDENTIAL', 200], ['INT-ACCESS-BUSINESS', 60],
+]
+
 export function buildServices(): Service[] {
   const states = shuffle(expand(STATE_MIX))
   const confs = shuffle(expand(CONF_MIX))
@@ -144,7 +164,7 @@ export function buildServices(): Service[] {
     for (let e = 0; e < nEnd; e += 1) {
       eps.push(makeEndpoint(
         intent.topology === 'Star' ? (e === 0 ? 'hub' : 'spoke') : e === 0 ? 'A' : 'Z',
-        i * 10 + e,
+        i * 10 + e, intent.category,
       ))
     }
     const bandwidth = pick([10, 20, 50, 100, 200, 500, 1000])
@@ -209,5 +229,56 @@ export function buildServices(): Service[] {
       { criterion: 'Throughput within ±5% of ordered 100 Mbps', layer: 'service', expected: '95 – 105 Mbps', actual: '98.4 Mbps', passed: true },
     ]
   }
+
+  /* Access domain — additive: 260 more services, on top of Transport's 2457. */
+  const aStates = shuffle(expand(ACCESS_STATE_MIX))
+  const aConfs = shuffle(expand(ACCESS_CONF_MIX))
+  const aIntents = shuffle(expand(ACCESS_INTENT_MIX))
+  for (let i = 0; i < 260; i += 1) {
+    const intentId = aIntents[i]
+    const intent = intentById(intentId)
+    let state = aStates[i]
+    let conformance = aConfs[i]
+    if (state === 'Ceased') conformance = 'Not checked'
+    if (state === 'Activating' && conformance === 'Drifted') conformance = 'Not checked'
+
+    const acct = pick(ACCOUNTS)
+    const vlan = between(100, 900)
+    const eps: Endpoint[] = [makeEndpoint('A', 30000 + i, intent.category)]
+    const bandwidth = pick([50, 100, 200, 300, 500])
+    const ageDays = between(3, 900)
+    const liveSince = new Date(now - ageDays * 86400000)
+    const proven = conformance === 'Never proven' || conformance === 'Ghost'
+      ? undefined
+      : new Date(now - between(1, 40) * 3600000).toISOString()
+    const years = Math.floor(ageDays / 365)
+    const months = Math.floor((ageDays % 365) / 30)
+
+    out.push({
+      id: `SVC-ACC-${pad(200000 + i * 3, 6)}`,
+      name: `${acct.name.split(' ')[0]} ${pick(SITES).city} broadband`,
+      category: intent.category, type: intent.type, intentId,
+      accountId: acct.id, accountName: acct.name,
+      state, operState: OPER_FOR[state], conformance,
+      endpoints: eps,
+      attributes: attributes(intentId, conformance, bandwidth, vlan),
+      resources: resources(intentId, vlan, eps, state),
+      history: history(`a${i}`, liveSince, conformance),
+      bandwidthMbps: bandwidth,
+      monthlyValueInr: between(499, 2999),
+      liveSince: liveSince.toISOString(),
+      lastProvenAt: proven,
+      ageLabel: years > 0 ? `${years} y ${months} m` : `${Math.max(1, months)} m`,
+      driftCount: conformance === 'Drifted' ? between(1, 2) : 0,
+      acceptanceEvidence: conformance === 'Conformant'
+        ? intent.acceptance.map((a) => ({
+          criterion: a.claim, layer: a.layer, expected: a.expected,
+          actual: a.layer === 'service' ? `${(bandwidth * (0.9 + rnd() * 0.1)).toFixed(1)} Mbps` : 'Online / broadcasting',
+          passed: true,
+        }))
+        : undefined,
+    })
+  }
+
   return out
 }

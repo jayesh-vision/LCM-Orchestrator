@@ -1,9 +1,9 @@
 import type {
   WorkflowTaskDef,
-  Endpoint, Order, OrderIntent, OrderParamValue, OrderState, Run, RunTask, Service, TaskState, Workflow,
+  Category, Endpoint, Order, OrderIntent, OrderParamValue, OrderState, Run, RunTask, Service, TaskState, Workflow,
 } from '@/types'
 import { endpointRole } from '@/types'
-import { ACCOUNTS, DEVICE_MODELS, SITES, between, intentById, pad, pick, rnd } from './catalog'
+import { ACCOUNTS, SITES, between, intentById, modelsForCategory, pad, pick, rnd } from './catalog'
 import { renderCommand } from './templates'
 
 /* Order-state distribution. Sums to exactly 170. */
@@ -32,9 +32,9 @@ function shuffle<T>(a: T[]): T[] {
   return r
 }
 
-function endpointFor(role: Endpoint['role'], i: number): Endpoint {
+function endpointFor(role: Endpoint['role'], i: number, category: Category): Endpoint {
   const site = pick(SITES)
-  const dm = pick(DEVICE_MODELS)
+  const dm = pick(modelsForCategory(category))
   const port = pick(dm.ports)
   return {
     id: `EP-O${pad(i, 5)}`, role, siteCode: site.code, deviceName: dm.model, vendor: dm.vendor,
@@ -62,6 +62,24 @@ export function bindEndpoints(
       ?? active.find((w) => w.category === category)
   }
   const val = (name: string) => params.find((p) => p.name === name)?.value
+
+  /* Access domain — a CPE has no far end and no interface/VRF vocabulary;
+     its placeholder set is entirely different from every Transport category,
+     so it gets its own branch rather than feeding the shared base+byCat below. */
+  if (category === 'Broadband') {
+    return eps.map((e) => {
+      const wf = find(e)
+      const cpeParams: OrderParamValue[] = [
+        { name: 'CPE Serial', value: val('cpe_serial') ?? `SN-${between(100000, 999999)}`, source: 'pool' },
+        { name: 'SSID', value: val('ssid') ?? `HOME-${e.siteCode.split('-')[1]}-${between(100, 999)}`, source: 'user' },
+        { name: 'WiFi Password', value: val('wifi_password') ?? `Wifi${between(1000, 9999)}!`, source: 'user' },
+        { name: 'WAN VLAN', value: val('wan_vlan') ?? String(between(100, 900)), source: 'pool' },
+        { name: 'Bandwidth', value: String(bandwidth), source: 'user' },
+      ]
+      return { ...e, workflowId: wf?.id, params: cpeParams }
+    })
+  }
+
   const vlan = val('vlan') ?? String(between(100, 900))
   const vcId = val('pw_id') ?? String(between(90000, 99999))
   const rd = val('rd') ?? `65001:${between(100, 900)}`
@@ -115,7 +133,10 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
   const states = shuffle(expand(ORDER_MIX))
   const intents = shuffle(expand(INTENT_MIX))
   const active = workflows.filter((w) => w.state === 'Active')
-  const liveServices = services.filter((s) => s.state === 'Live')
+  /* Transport-only — the Access domain's services get their own additive
+     batch below with their own existing-service pool, so this loop (fixed
+     at 170 Transport orders) never accidentally binds to a Broadband service. */
+  const liveServices = services.filter((s) => s.state === 'Live' && !s.intentId.startsWith('INT-ACCESS'))
   const now = Date.now()
   const out: Order[] = []
 
@@ -133,7 +154,7 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
 
     const nEnd = intent.topology === 'Single-ended' ? 1 : intent.topology === 'Two-ended' ? 2 : between(2, 5)
     const eps = existing?.endpoints ?? Array.from({ length: nEnd }, (_, e) =>
-      endpointFor(intent.topology === 'Star' ? (e === 0 ? 'hub' : 'spoke') : e === 0 ? 'A' : 'Z', i * 10 + e))
+      endpointFor(intent.topology === 'Star' ? (e === 0 ? 'hub' : 'spoke') : e === 0 ? 'A' : 'Z', i * 10 + e, intent.category))
 
     const bandwidth = existing?.bandwidthMbps ?? pick([10, 50, 100, 200, 500, 1000])
     const params: OrderParamValue[] = intent.params.map((p) => ({
@@ -238,6 +259,76 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     orphan.params = []
     orphan.waitingOn = 'Unassigned'
     orphan.notes = 'Pre-validation could not resolve a category to check against. Category is nullable in the current schema.'
+  }
+
+  /* Access domain — additive: 28 more orders, on top of Transport's 170.
+     IDs/codes use a disjoint numeric range so nothing above shifts. */
+  const ACCESS_ORDER_MIX: [OrderState, number][] = [
+    ['Draft', 4], ['Planned', 2], ['Validated', 5], ['Invalid', 1], ['Approved', 1],
+    ['Rejected', 1], ['Queued', 1], ['In progress', 1], ['Ready', 8], ['Failed', 3], ['Reinstantiate', 1],
+  ]
+  const ACCESS_INTENT_MIX: [OrderIntent, number][] = [
+    ['Create', 22], ['Modify', 3], ['Suspend', 1], ['Resume', 1], ['Cease', 1],
+  ]
+  const aStates = shuffle(expand(ACCESS_ORDER_MIX))
+  const aOrderIntents = shuffle(expand(ACCESS_INTENT_MIX))
+  const accessLive = services.filter((s) => s.state === 'Live' && s.intentId.startsWith('INT-ACCESS'))
+  for (let i = 0; i < 28; i += 1) {
+    const state = aStates[i]
+    const orderIntent = aOrderIntents[i]
+    const existing = orderIntent === 'Create' ? undefined : accessLive[(i * 7) % accessLive.length]
+    const intentId = existing ? existing.intentId : pick(['INT-ACCESS-RESIDENTIAL', 'INT-ACCESS-BUSINESS'])
+    const intent = intentById(intentId)
+    const acct = existing ? ACCOUNTS.find((a) => a.id === existing.accountId)! : pick(ACCOUNTS)
+    const wf = active.find((w) => w.intentId === intentId) ?? active[0]
+
+    const eps = existing?.endpoints ?? [endpointFor('A', 40000 + i, intent.category)]
+    const bandwidth = existing?.bandwidthMbps ?? pick([50, 100, 200, 300, 500])
+    const params: OrderParamValue[] = intent.params.map((p) => ({
+      name: p.name,
+      value: p.name === 'bandwidth_mbps' ? String(bandwidth)
+        : p.name === 'ssid' ? `HOME-${between(1000, 9999)}`
+          : p.name === 'wifi_password' ? `Wifi${between(1000, 9999)}!`
+            : p.fromPool ? (p.fromPool === 'VLAN' ? String(between(100, 900)) : `SN-${between(100000, 999999)}`)
+              : p.default !== undefined ? String(p.default) : 'value',
+      source: p.fromPool ? 'pool' : p.default !== undefined ? 'template' : 'user',
+    }))
+    const boundEps = bindEndpoints(eps, intent.category, intent.type, '', workflows, params, bandwidth)
+
+    const ageDays = between(0, 30)
+    const created = new Date(now - ageDays * 86400000)
+
+    out.push({
+      id: `ORD-2026-${pad(6000 - i * 2, 6)}`,
+      code: `NS-${pad(600 + i, 6)}`,
+      name: `${intent.name}${orderIntent !== 'Create' ? ` · ${orderIntent.toLowerCase()}` : ''}`,
+      intent: orderIntent, intentId,
+      category: intent.category,
+      type: intent.type,
+      subtype: intent.type === 'Business Gateway' ? 'Other' : 'FTTH',
+      accountId: acct.id, accountName: acct.name,
+      serviceId: existing?.id,
+      state,
+      workflowId: state === 'Draft' ? undefined : (boundEps[0]?.workflowId ?? wf?.id),
+      endpoints: boundEps,
+      params,
+      createdAt: created.toISOString(),
+      updatedAt: new Date(now - between(0, ageDays) * 86400000).toISOString(),
+      ageDays,
+      owner: pick(OWNERS),
+      waitingOn: WAITING[state],
+      runIds: [],
+      approvals: ['Ready', 'Approved', 'In progress', 'Queued', 'Reinstantiate', 'Failed'].includes(state)
+        ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Approved' }]
+        : state === 'Rejected'
+          ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Rejected', comment: 'CPE stock unavailable at the requested site.' }]
+          : [{ role: 'NOC lead' }],
+      delta: orderIntent === 'Modify'
+        ? [{ attribute: 'Bandwidth plan', current: `${bandwidth} Mbps`, requested: `${bandwidth * 2} Mbps` }]
+        : undefined,
+      slaBreached: (state === 'Failed' || state === 'Reinstantiate') && ageDays > 10,
+      notes: undefined,
+    })
   }
   return out
 }

@@ -3,14 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import { ChevronRight, CircleAlert, Eye, FolderTree, Layers, Pencil, Plus, Shapes } from 'lucide-react'
 import { useQueryState } from '@/lib/useQueryState'
 import { useStore } from '@/store/useStore'
-import type { Category, ProfileType } from '@/types'
+import type { Category, Domain, ProfileType } from '@/types'
+import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Button, Card, CardBody, CardHead, CellMain, Chip, DataTable, Drawer,
   Field, Kebab, KV, Modal, Note, Select, Stat, TextInput, type Column,
 } from '@/components/ui'
-import { CATEGORY_TONE, shortDate } from '@/lib/format'
+import { CATEGORY_TONE, DOMAIN_TONE, shortDate } from '@/lib/format'
 
-const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW']
+const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband']
 
 export default function ProfileTypes() {
   const profileTypes = useStore((s) => s.profileTypes)
@@ -21,8 +22,15 @@ export default function ProfileTypes() {
   const nav = useNavigate()
   const pushToast = useStore((st) => st.pushToast)
   const [q, setQ] = useQueryState('q', '')
+  const [domain, setDomain] = useQueryState<Domain | 'All'>('domain', 'All')
   const [cat, setCat] = useQueryState<Category | 'All'>('cat', 'All')
   const [ptype, setPtype] = useQueryState('type', 'All')
+  const domainCats = domain === 'All' ? CATS : CATEGORIES_BY_DOMAIN[domain]
+  const setDomainScoped = (next: Domain | 'All') => {
+    setDomain(next)
+    if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
+  }
+  const pickDomain = (d: Domain) => setDomainScoped(domain === d ? 'All' : d)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ category: 'L2VPN' as Category, type: '', subtype: '', description: '' })
   const [view, setView] = useState<ProfileType | null>(null)
@@ -35,6 +43,7 @@ export default function ProfileTypes() {
   }
 
   const filtered = useMemo(() => profileTypes.filter((p) => {
+    if (domain !== 'All' && domainOf(p.category) !== domain) return false
     if (cat !== 'All' && p.category !== cat) return false
     if (ptype !== 'All' && p.type !== ptype) return false
     if (q) {
@@ -42,7 +51,7 @@ export default function ProfileTypes() {
       if (!(p.category.toLowerCase().includes(t) || p.type.toLowerCase().includes(t) || p.subtype.toLowerCase().includes(t))) return false
     }
     return true
-  }), [profileTypes, cat, ptype, q])
+  }), [profileTypes, domain, cat, ptype, q])
 
   const usage = useMemo(() => {
     const m = new Map<string, number>()
@@ -91,8 +100,8 @@ export default function ProfileTypes() {
         <Stat label="Profile types" icon={Layers} value={profileTypes.length} note="Category → Type → Subtype combinations"
           info="The master hierarchy of service profiles. Each row is one Category → Type → Subtype combination that workflows are scoped to and provisioning requests select from."
           drillLabel="every profile type" onClick={() => { setCat('All'); }} />
-        <Stat label="Categories" icon={FolderTree} value={CATS.length} note="L2VPN · L3VPN · IBW"
-          info="The top level of the hierarchy — the broad service families the platform provisions. Every profile type belongs to exactly one category."
+        <Stat label="Categories" icon={FolderTree} value={CATS.length} note="Across Transport and Access domains"
+          info="The top level of the hierarchy — the broad service families the platform provisions. Every profile type belongs to exactly one category, and every category belongs to exactly one domain."
           drillLabel="L2VPN profile types" onClick={() => setCat('L2VPN')} />
         <Stat label="Distinct types" icon={Shapes} value={types} note="Functional classifications across all categories"
           info="The middle level of the hierarchy — functional classifications such as Hub & Spoke or Point-to-point. One type can carry several subtypes."
@@ -144,17 +153,22 @@ export default function ProfileTypes() {
         rows={filtered} total={profileTypes.length} columns={columns} pageSize={12} minWidth={900}
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Category, Type, Subtype' },
-          chips: CATS.map((c) => (
-            <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>
-          )),
+          chips: [
+            ...DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
+            ...domainCats.map((c) => (
+              <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>
+            )),
+          ],
           filters: [
+            { key: 'domain', label: 'Domain', value: domain, onChange: (v) => setDomainScoped(v as Domain | 'All'),
+              options: DOMAINS.map((d) => ({ value: d, label: d, count: profileTypes.filter((p) => domainOf(p.category) === d).length })) },
             { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
-              options: CATS.map((c) => ({ value: c, label: c, count: profileTypes.filter((p) => p.category === c).length })) },
+              options: domainCats.map((c) => ({ value: c, label: c, count: profileTypes.filter((p) => p.category === c).length })) },
             { key: 'type', label: 'Type', value: ptype, onChange: setPtype,
               options: [...new Set(profileTypes.map((p) => p.type))].sort().map((t) => ({ value: t, label: t, count: profileTypes.filter((p) => p.type === t).length })) },
             { key: 'q', label: 'Category / Type / Subtype', type: 'text', value: q, onChange: setQ },
           ],
-          onResetFilters: () => { setCat('All'); setPtype('All'); setQ('') },
+          onResetFilters: () => { setDomain('All'); setCat('All'); setPtype('All'); setQ('') },
           onRefresh: () => pushToast('info', 'Profile types refreshed.'),
           actions: [
             { label: 'Create profile template', icon: Plus, onClick: () => setOpen(true) },

@@ -54,6 +54,12 @@ export function buildPools(services: Service[]): ResourcePool[] {
     total: 1023, allocated: 471, quarantined: 8, reserved: 2,
     entries: entries(1023, 471, 8, (n) => String(64512 + n), services),
   })
+  // Access domain — pre-provisioned CPE stock, bound to a serial on activation.
+  pools.push({
+    id: 'POOL-CPESN-001', kind: 'CPE Serial', scope: 'pre-provisioned stock · Huawei/ZTE/Adtran',
+    total: 400, allocated: 260, quarantined: 14, reserved: 6,
+    entries: entries(400, 260, 14, (n) => `SN-${100000 + n}`, services),
+  })
   return pools
 }
 

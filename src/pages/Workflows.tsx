@@ -1,27 +1,31 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
-import { CheckCircle2, Clock, Copy, Download, Eye, Grid3x3, ListChecks, Pencil, Plus, Router, Send, ShieldCheck, Trash2, Network as SwitchIcon, XCircle } from 'lucide-react'
+import { CheckCircle2, Clock, Copy, Download, Eye, Grid3x3, ListChecks, Pencil, Plus, Router, Send, ShieldCheck, Trash2, Network as SwitchIcon, Wifi, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
-import type { Category, Vendor, Workflow, WorkflowState } from '@/types'
+import type { Category, Domain, Vendor, Workflow, WorkflowState } from '@/types'
+import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Card, CardBody, CardHead, CellMain, Chip, DataTable,
   FilterBanner, Kebab, Mono, Note, Stat, type Column,
 } from '@/components/ui'
 import { CoverageMatrix, type CoverageCol } from '@/components/charts'
-import { ROUTER_VENDORS, SWITCH_VENDORS } from '@/data/catalog'
+import { CPE_VENDORS, ROUTER_VENDORS, SWITCH_VENDORS } from '@/data/catalog'
 import { VENDOR_LABEL } from '@/data/workflows'
-import { CATEGORY_TONE, WORKFLOW_TONE } from '@/lib/format'
+import { CATEGORY_TONE, DOMAIN_TONE, WORKFLOW_TONE } from '@/lib/format'
 
 const STATES: WorkflowState[] = ['Draft', 'Assigned', 'Awaiting approval', 'Active', 'Rejected', 'Retired']
-const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW']
-/* Router vendors first (they can carry any intent), then Switch vendors
-   (L2VPN only — a switch has no BGP/VRF to run an L3VPN or IBW intent with). */
+const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband']
+/* Router vendors first (they can carry any Transport intent), then Switch
+   vendors (L2VPN only — a switch has no BGP/VRF to run an L3VPN or IBW
+   intent with). CPE vendors are a disjoint estate, Access-domain only. */
 const VENDOR_COLS: Vendor[] = [...ROUTER_VENDORS, ...SWITCH_VENDORS]
 const VENDOR_COVER_COLS: CoverageCol[] = VENDOR_COLS.map((v) => ({
   key: v, label: VENDOR_LABEL[v], sub: SWITCH_VENDORS.includes(v) ? 'Switch' : 'Router',
   icon: SWITCH_VENDORS.includes(v) ? SwitchIcon : Router,
 }))
+const CPE_VENDOR_COVER_COLS: CoverageCol[] = CPE_VENDORS.map((v) => ({ key: v, label: VENDOR_LABEL[v], sub: 'CPE', icon: Wifi }))
+const ALL_VENDOR_COLS: Vendor[] = [...VENDOR_COLS, ...CPE_VENDORS]
 
 export default function Workflows() {
   const workflows = useStore((s) => s.workflows)
@@ -31,14 +35,21 @@ export default function Workflows() {
   const nav = useNavigate()
 
   const [q, setQ] = useQueryState('q', '')
+  const [domain, setDomain] = useQueryState<Domain | 'All'>('domain', 'All')
   const [cat, setCat] = useQueryState<Category | 'All'>('cat', 'All')
   const [st, setSt] = useQueryState<WorkflowState | 'All' | string>('state', 'All')
   const [intentId, setIntentId] = useQueryState('intent', 'All')
   const [vendor, setVendor] = useQueryState<Vendor | 'All'>('vendor', 'All')
   const stList = st === 'All' ? [] : st.split(',')
   const patch = useQueryPatch()
-  const clear = useClearQuery(['q', 'cat', 'state', 'intent', 'vendor'])
-  const anyFilter = cat !== 'All' || st !== 'All' || intentId !== 'All' || vendor !== 'All'
+  const clear = useClearQuery(['q', 'domain', 'cat', 'state', 'intent', 'vendor'])
+  const domainCats = domain === 'All' ? CATS : CATEGORIES_BY_DOMAIN[domain]
+  const setDomainScoped = (next: Domain | 'All') => {
+    setDomain(next)
+    if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
+  }
+  const pickDomain = (d: Domain) => setDomainScoped(domain === d ? 'All' : d)
+  const anyFilter = domain !== 'All' || cat !== 'All' || st !== 'All' || intentId !== 'All' || vendor !== 'All'
   const resultsRef = useScrollToResultsOnDrillIn(anyFilter)
 
   const n = {
@@ -47,6 +58,7 @@ export default function Workflows() {
   }
 
   const filtered = useMemo(() => workflows.filter((w) => {
+    if (domain !== 'All' && domainOf(w.category) !== domain) return false
     if (cat !== 'All' && w.category !== cat) return false
     if (stList.length && !stList.includes(w.state)) return false
     if (intentId !== 'All' && w.intentId !== intentId) return false
@@ -56,7 +68,7 @@ export default function Workflows() {
       if (!(w.id.toLowerCase().includes(t) || w.name.toLowerCase().includes(t) || w.vendor.toLowerCase().includes(t) || w.model.toLowerCase().includes(t))) return false
     }
     return true
-  }), [workflows, cat, st, intentId, vendor, q]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [workflows, domain, cat, st, intentId, vendor, q]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Coverage: which intent × vendor combinations actually have an active workflow. */
   const coverage = useMemo(() => {
@@ -71,18 +83,32 @@ export default function Workflows() {
     return map
   }, [workflows])
 
-  /* A Switch vendor has no BGP/VRF, so it can only ever cover an L2VPN
-     intent — those cells are "not applicable", not a real gap, and must be
-     excluded from the denominator or Coverage% would be permanently deflated
-     by combinations that can never be built. */
-  const applicablePairs = useMemo(() => intents.flatMap((i) => VENDOR_COLS
-    .filter((v) => i.category === 'L2VPN' || !SWITCH_VENDORS.includes(v))
+  /* A Switch vendor has no BGP/VRF, so it only ever covers an L2VPN intent;
+     a CPE vendor only ever covers a Broadband intent — everything else is
+     "not applicable", not a real gap, and must be excluded from the
+     denominator or Coverage% would be permanently deflated by combinations
+     that can never be built. */
+  const vendorApplicable = (category: Category, vendor: Vendor): boolean => {
+    if (category === 'Broadband') return CPE_VENDORS.includes(vendor)
+    if (CPE_VENDORS.includes(vendor)) return false
+    if (category === 'L2VPN') return true
+    return !SWITCH_VENDORS.includes(vendor)
+  }
+  const applicablePairs = useMemo(() => intents.flatMap((i) => ALL_VENDOR_COLS
+    .filter((v) => vendorApplicable(i.category, v))
     .map((v) => `${i.id}|${v}`)), [intents]) // eslint-disable-line react-hooks/exhaustive-deps
   const built = applicablePairs.filter((k) => (coverage.get(k)?.built ?? 0) > 0).length
   const draftCombos = applicablePairs.filter((k) => (coverage.get(k)?.built ?? 0) === 0 && (coverage.get(k)?.draft ?? 0) > 0).length
   const combinations = applicablePairs.length
   const gaps = combinations - built
   const coveragePct = combinations > 0 ? Math.round((built / combinations) * 100) : 100
+
+  /* The matrix stays single-domain — Transport's 6 vendors and Access's 3
+     CPE vendors are disjoint estates, so mixing them in one grid would be
+     mostly dashes. It follows the Domain filter; "All" defaults to Transport,
+     the larger domain, same as every other widget on this screen. */
+  const coverageIntents = domain === 'Access' ? intents.filter((i) => i.category === 'Broadband') : intents.filter((i) => i.category !== 'Broadband')
+  const coverageCols = domain === 'Access' ? CPE_VENDOR_COVER_COLS : VENDOR_COVER_COLS
 
   const columns: Column<Workflow>[] = [
     {
@@ -123,6 +149,7 @@ export default function Workflows() {
       <FilterBanner
         count={filtered.length} noun="workflows" onClear={clear}
         filters={[
+          ...(domain !== 'All' ? [{ key: 'domain', label: 'Domain', value: domain, onRemove: () => setDomain('All') }] : []),
           ...(cat !== 'All' ? [{ key: 'cat', label: 'Category', value: cat, onRemove: () => setCat('All') }] : []),
           ...(st !== 'All' ? [{ key: 'state', label: 'State', value: stList.join(' or '), onRemove: () => setSt('All') }] : []),
           ...(intentId !== 'All' ? [{ key: 'intent', label: 'Intent', value: intents.find((i) => i.id === intentId)?.name ?? intentId, onRemove: () => setIntentId('All') }] : []),
@@ -155,17 +182,22 @@ export default function Workflows() {
       </div>
 
       <Card>
-        <CardHead title="Coverage — intent by vendor" sub="Where an active workflow exists, and how much of the installed base rides on it"
-          info="Each tile shows whether an Active workflow exists for that intent on that vendor: a green count = that many active workflows, amber Draft = authoring has started but nothing is approved, a dashed tile = nothing exists, so orders for that combination cannot run. A vendor column is marked Router or Switch — a Switch has no BGP/VRF, so it only ever appears under L2VPN; L3VPN and IBW show a plain dash (—) in that column, not a gap, because that combination can never be built. The bar on the right is the live services riding on that intent — the bigger the bar, the more revenue depends on that row's coverage. Click a tile to filter the list below, or the bar to open those services."
+        <CardHead title="Coverage — intent by vendor" sub={`${domain === 'Access' ? 'Access domain' : 'Transport domain'} — where an active workflow exists, and how much of the installed base rides on it`}
+          info="Each tile shows whether an Active workflow exists for that intent on that vendor: a green count = that many active workflows, amber Draft = authoring has started but nothing is approved, a dashed tile = nothing exists, so orders for that combination cannot run. A vendor column is marked Router, Switch or CPE — those are disjoint estates, so a column only ever lights up under the domain it belongs to; everywhere else shows a plain dash (—), not a gap, because that combination can never be built. Use the Domain chip above the grid to switch between Transport and Access. The bar on the right is the live services riding on that intent — the bigger the bar, the more revenue depends on that row's coverage. Click a tile to filter the list below, or the bar to open those services."
           right={<>
             <Badge tone="good">Built {built}</Badge>
             {draftCombos > 0 && <Badge tone="warn">Draft {draftCombos}</Badge>}
             <Badge tone={gaps > 0 ? 'crit' : 'none'}>Gap {gaps}</Badge>
           </>} />
         <CardBody>
+          <div className="flex items-center gap-1.5 mb-3.5">
+            {DOMAINS.map((d) => (
+              <Chip key={d} tone={DOMAIN_TONE[d]} active={(domain === 'All' ? 'Transport' : domain) === d} onClick={() => pickDomain(d)}>{d}</Chip>
+            ))}
+          </div>
           <CoverageMatrix
-            cols={VENDOR_COVER_COLS}
-            rows={intents.map((i) => ({
+            cols={coverageCols}
+            rows={coverageIntents.map((i) => ({
               key: i.id,
               label: i.name,
               sub: `${workflows.filter((w) => w.intentId === i.id).length} workflows · v${i.version}`,
@@ -175,7 +207,7 @@ export default function Workflows() {
             onTrailingClick={(r) => nav(`/inventory?intent=${encodeURIComponent(r)}`)}
             cell={(r, c) => {
               const i = intents.find((x) => x.id === r)
-              if (i && i.category !== 'L2VPN' && SWITCH_VENDORS.includes(c as Vendor)) return { state: 'na' as const }
+              if (i && !vendorApplicable(i.category, c as Vendor)) return { state: 'na' as const }
               const v = coverage.get(`${r}|${c}`)
               if (v?.built) return { count: v.built, state: 'built' as const }
               if (v?.draft) return { state: 'draft' as const }
@@ -196,14 +228,19 @@ export default function Workflows() {
         minWidth={1180}
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Name, Code, Vendor' },
-          chips: CATS.map((c) => <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>),
+          chips: [
+            ...DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
+            ...domainCats.map((c) => <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>),
+          ],
           filters: [
+            { key: 'domain', label: 'Domain', value: domain, onChange: (v) => setDomainScoped(v as Domain | 'All'),
+              options: DOMAINS.map((d) => ({ value: d, label: d, count: workflows.filter((w) => domainOf(w.category) === d).length })) },
             { key: 'state', label: 'Status', value: st, onChange: (v) => setSt(v),
               options: STATES.filter((x) => n.state(x) > 0).map((x) => ({ value: x, label: x, count: n.state(x) })) },
             { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
-              options: CATS.map((c) => ({ value: c, label: c, count: n.cat(c) })) },
+              options: domainCats.map((c) => ({ value: c, label: c, count: n.cat(c) })) },
             { key: 'vendor', label: 'Vendor', value: vendor, onChange: (v) => setVendor(v as Vendor | 'All'),
-              options: VENDOR_COLS.map((v) => ({ value: v, label: VENDOR_LABEL[v], count: workflows.filter((w) => w.vendor === v).length })) },
+              options: ALL_VENDOR_COLS.map((v) => ({ value: v, label: VENDOR_LABEL[v], count: workflows.filter((w) => w.vendor === v).length })) },
             { key: 'intent', label: 'Intent', value: intentId, onChange: setIntentId,
               options: intents.map((i) => ({ value: i.id, label: i.name, count: workflows.filter((w) => w.intentId === i.id).length })) },
             { key: 'q', label: 'Name / Code / Vendor', type: 'text', value: q, onChange: setQ },

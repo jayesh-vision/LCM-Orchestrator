@@ -6,6 +6,7 @@ import { templateFor } from './templates'
 export const VENDOR_LABEL: Record<Vendor, string> = {
   CISCO: 'Cisco', JUNIPER: 'Juniper', NOKIA: 'Nokia', ADVA: 'Adva', TEJAS: 'Tejas',
   TECHROUTE: 'TechRoute', EDGECORE: 'EdgeCore', DLINK: 'D-Link',
+  HUAWEI: 'Huawei', ZTE: 'ZTE', ADTRAN: 'Adtran',
 }
 
 /**
@@ -20,9 +21,11 @@ export function buildWorkflows(): Workflow[] {
   const out: Workflow[] = []
   /* Doubled from the platform's original 2-vendor counts (74/26/38) now that
      eight vendors — six Router, two Switch — share the same coverage grid;
-     otherwise each vendor's slice would read as near-empty. */
-  const TARGET: Record<string, number> = { L2VPN: 148, L3VPN: 52, IBW: 76 }
-  const activeCount: Record<string, number> = { L2VPN: 0, L3VPN: 0, IBW: 0 }
+     otherwise each vendor's slice would read as near-empty. Broadband is the
+     Access domain's first category — smaller on purpose, it's a newer,
+     narrower estate (2 intents × 3 CPE vendors) next to Transport's. */
+  const TARGET: Record<string, number> = { L2VPN: 148, L3VPN: 52, IBW: 76, Broadband: 24 }
+  const activeCount: Record<string, number> = { L2VPN: 0, L3VPN: 0, IBW: 0, Broadband: 0 }
 
   const push = (pt: typeof PROFILE_TYPES[number], dm: typeof DEVICE_MODELS[number], role: 'Source' | 'Destination' | undefined, state: WorkflowState, suffix: string) => {
     const isNcs = dm.model.startsWith('NCS')
@@ -36,8 +39,9 @@ export function buildWorkflows(): Workflow[] {
     while (out.some((w) => w.name === name)) { name = compose(String(bump)); bump += 1 }
     const intentId =
       pt.category === 'IBW' ? 'INT-IBW-ACCESS'
-        : pt.category === 'L2VPN' ? (pt.type === 'Railwire' ? 'INT-L2-RAILWIRE' : 'INT-L2-P2P')
-          : (pt.type.startsWith('Hub') ? 'INT-L3-HUBSPOKE' : 'INT-L3-MESH')
+        : pt.category === 'Broadband' ? (pt.type === 'Business Gateway' ? 'INT-ACCESS-BUSINESS' : 'INT-ACCESS-RESIDENTIAL')
+          : pt.category === 'L2VPN' ? (pt.type === 'Railwire' ? 'INT-L2-RAILWIRE' : 'INT-L2-P2P')
+            : (pt.type.startsWith('Hub') ? 'INT-L3-HUBSPOKE' : 'INT-L3-MESH')
     const version = state === 'Active' ? between(1, 5) : 1
     n += 1
     const { stages, tasks } = templateFor(pt.category, dm.vendor, pt.type, role, pt.subtype)
@@ -79,12 +83,14 @@ export function buildWorkflows(): Workflow[] {
   })
 
   /* Active templates: cycle profile types × vendor models × ends until each
-     category hits its platform count. Router vendors cover every category;
-     Switch vendors (EdgeCore, D-Link) only ever carry L2VPN — a switch has
-     no BGP/VRF to run an L3VPN or IBW intent with. */
-  for (const cat of ['L2VPN', 'L3VPN', 'IBW'] as const) {
+     category hits its platform count. Router vendors cover every Transport
+     category; Switch vendors (EdgeCore, D-Link) only ever carry L2VPN — a
+     switch has no BGP/VRF to run an L3VPN or IBW intent with. Broadband is
+     single-ended, same as IBW — a CPE has no far end to configure. */
+  for (const cat of ['L2VPN', 'L3VPN', 'IBW', 'Broadband'] as const) {
     const pts = PROFILE_TYPES.filter((p) => p.category === cat)
     const models = modelsForCategory(cat)
+    const singleEnded = cat === 'IBW' || cat === 'Broadband'
     let i = 0
     while (activeCount[cat] < TARGET[cat]) {
       const pt = pts[i % pts.length]
@@ -93,7 +99,7 @@ export function buildWorkflows(): Workflow[] {
       const pass = Math.floor(i / pts.length)
       const dm = models[(i + pass) % models.length]
       const gen = Math.floor(pass / models.length) + 1
-      if (cat === 'IBW') {
+      if (singleEnded) {
         push(pt, dm, undefined, 'Active', gen > 1 ? String(gen) : '')
       } else {
         push(pt, dm, 'Source', 'Active', String(gen))
@@ -112,7 +118,7 @@ export function buildWorkflows(): Workflow[] {
     const pt = PROFILE_TYPES[(k * 5) % PROFILE_TYPES.length]
     const models = modelsForCategory(pt.category)
     const dm = models[k % models.length]
-    const role = pt.category === 'IBW' ? undefined : (k % 2 ? 'Destination' : 'Source')
+    const role = (pt.category === 'IBW' || pt.category === 'Broadband') ? undefined : (k % 2 ? 'Destination' : 'Source')
     push(pt, dm, role, state, String(2 + (k % 3)))
   })
 

@@ -3,18 +3,19 @@ import { useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
 import { Download, Eye, ListChecks, PlayCircle, Plus, ShieldCheck, Workflow } from 'lucide-react'
 import { useStore } from '@/store/useStore'
-import type { Category, Order, OrderState } from '@/types'
+import type { Category, Domain, Order, OrderState } from '@/types'
+import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Button, CellMain, CellSub, Chip, DataTable, Drawer,
   FilterBanner, KV, Kebab, Modal, Mono, Note, Progress, type Column,
 } from '@/components/ui'
 import { CategoryCard } from '@/components/charts'
-import { ageLabel, CATEGORY_TONE, clockTime, ORDER_TONE, relTime } from '@/lib/format'
+import { ageLabel, CATEGORY_TONE, clockTime, DOMAIN_TONE, ORDER_TONE, relTime } from '@/lib/format'
 
 const EXEC_STATES: OrderState[] = [
   'Approved', 'Rejected', 'Queued', 'In progress', 'Ready', 'Failed', 'Reinstantiate',
 ]
-const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW']
+const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband']
 
 export default function ProvisioningExecution() {
   const orders = useStore((s) => s.orders)
@@ -25,12 +26,19 @@ export default function ProvisioningExecution() {
   const nav = useNavigate()
 
   const [q, setQ] = useQueryState('q', '')
+  const [domain, setDomain] = useQueryState<Domain | 'All'>('domain', 'All')
   const [cat, setCat] = useQueryState<Category | 'All'>('cat', 'All')
   const [state, setState] = useQueryState<OrderState | 'All' | string>('state', 'All')
   const stateList = state === 'All' ? [] : state.split(',')
   const patch = useQueryPatch()
-  const clear = useClearQuery(['q', 'cat', 'state'])
-  const resultsRef = useScrollToResultsOnDrillIn(cat !== 'All' || state !== 'All')
+  const clear = useClearQuery(['q', 'domain', 'cat', 'state'])
+  const domainCats = domain === 'All' ? CATEGORIES : CATEGORIES_BY_DOMAIN[domain]
+  const setDomainScoped = (next: Domain | 'All') => {
+    setDomain(next)
+    if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
+  }
+  const pickDomain = (d: Domain) => setDomainScoped(domain === d ? 'All' : d)
+  const resultsRef = useScrollToResultsOnDrillIn(domain !== 'All' || cat !== 'All' || state !== 'All')
   const [verify, setVerify] = useState<Order | null>(null)
   const [creds, setCreds] = useState<Order | null>(null)
 
@@ -40,6 +48,7 @@ export default function ProvisioningExecution() {
   const pool = useMemo(() => orders.filter((o) => !['Draft', 'Planned', 'Validated', 'Invalid'].includes(o.state)), [orders])
 
   const filtered = useMemo(() => pool.filter((o) => {
+    if (domain !== 'All' && domainOf(o.category) !== domain) return false
     if (cat !== 'All' && o.category !== cat) return false
     if (stateList.length && !stateList.includes(o.state)) return false
     if (q) {
@@ -47,7 +56,7 @@ export default function ProvisioningExecution() {
       if (!(o.id.toLowerCase().includes(t) || o.name.toLowerCase().includes(t) || o.accountName.toLowerCase().includes(t))) return false
     }
     return true
-  }), [pool, cat, state, q]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [pool, domain, cat, state, q]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const n = (s: OrderState) => pool.filter((o) => o.state === s).length
 
@@ -105,15 +114,21 @@ export default function ProvisioningExecution() {
       <FilterBanner
         count={filtered.length} noun="requests" onClear={clear}
         filters={[
+          ...(domain !== 'All' ? [{ key: 'domain', label: 'Domain', value: domain, onRemove: () => setDomain('All') }] : []),
           ...(cat !== 'All' ? [{ key: 'cat', label: 'Category', value: cat, onRemove: () => setCat('All') }] : []),
           ...(state !== 'All' ? [{ key: 'state', label: 'Status', value: stateList.join(' or '), onRemove: () => setState('All') }] : []),
           ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
         ]}
       />
 
+      <div className="flex items-center gap-1.5">
+        {DOMAINS.map((d) => (
+          <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>
+        ))}
+      </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        {CATEGORIES.map((c) => {
+      <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.min(domainCats.length, 4)}, minmax(240px, 1fr))` }}>
+        {domainCats.map((c) => {
           const list = pool.filter((o) => o.category === c)
           const cnt = (st: OrderState) => list.filter((o) => o.state === st).length
           const seg = (label: string, value: number, fill: 'good' | 'brand' | 'none' | 'crit', states: string) =>
@@ -141,15 +156,20 @@ export default function ProvisioningExecution() {
         onRowClick={(r) => nav(`/execution/${r.id}?tab=lifecycle`)}
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Name, Code' },
-          chips: CATEGORIES.map((c) => <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>),
+          chips: [
+            ...DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
+            ...domainCats.map((c) => <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>),
+          ],
           filters: [
+            { key: 'domain', label: 'Domain', value: domain, onChange: (v) => setDomainScoped(v as Domain | 'All'),
+              options: DOMAINS.map((d) => ({ value: d, label: d, count: pool.filter((o) => domainOf(o.category) === d).length })) },
             { key: 'state', label: 'Status', value: state, onChange: (v) => setState(v),
               options: [
                 ...EXEC_STATES.filter((st) => n(st) > 0).map((st) => ({ value: st, label: st, count: n(st) })),
                 { value: 'Approved,Queued', label: 'Ready to run' },
               ] },
             { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
-              options: CATEGORIES.map((c) => ({ value: c, label: c, count: pool.filter((o) => o.category === c).length })) },
+              options: domainCats.map((c) => ({ value: c, label: c, count: pool.filter((o) => o.category === c).length })) },
             { key: 'q', label: 'Name / Code', type: 'text', value: q, onChange: setQ },
           ],
           onResetFilters: clear,

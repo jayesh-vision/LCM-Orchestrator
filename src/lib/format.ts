@@ -39,7 +39,12 @@ export const WORKFLOW_TONE: Record<WorkflowState, Tone> = {
   Active: 'good', Rejected: 'crit', Retired: 'none',
 }
 
-export const CATEGORY_TONE: Record<string, Tone> = { L2VPN: 'info', L3VPN: 'plum', IBW: 'teal' }
+export const CATEGORY_TONE: Record<string, Tone> = { L2VPN: 'info', L3VPN: 'plum', IBW: 'teal', Broadband: 'good' }
+
+/** Domain badge tone — one per Domain, deliberately disjoint from every tone
+ *  CATEGORY_TONE uses so a domain chip and a category chip never render the
+ *  same colour on the same screen. */
+export const DOMAIN_TONE: Record<string, Tone> = { Transport: 'none', Access: 'warn' }
 
 export const INTENT_TONE: Record<string, Tone> = {
   Create: 'info', Modify: 'plum', Suspend: 'warn', Resume: 'good', Cease: 'crit', 'Re-prove': 'teal',
