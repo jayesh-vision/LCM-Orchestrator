@@ -741,12 +741,12 @@ export const Mono = ({ children, className = '' }: { children: ReactNode; classN
 const PROGRESS_FILL: Record<'brand' | 'good' | 'warn' | 'crit' | 'plum', string> = {
   brand: 'bg-brand-500', good: 'bg-[#10b981]', warn: 'bg-warn-500', crit: 'bg-[#ef4444]', plum: 'bg-[#a855f7]',
 }
-export function Progress({ value, tone = 'brand', className = '' }:
-{ value: number; tone?: 'brand' | 'good' | 'warn' | 'crit' | 'plum'; className?: string }) {
+export function Progress({ value, tone = 'brand', color, className = '' }:
+{ value: number; tone?: 'brand' | 'good' | 'warn' | 'crit' | 'plum'; /** Raw CSS color; wins over `tone`. */ color?: string; className?: string }) {
   const c = PROGRESS_FILL[tone]
   return (
     <div className={`h-1.5 rounded-full bg-line-soft overflow-hidden ${className}`}>
-      <div className={`h-full rounded-full transition-all duration-500 ${c}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+      <div className={`h-full rounded-full transition-all duration-500 ${color ? '' : c}`} style={{ width: `${Math.max(0, Math.min(100, value))}%`, background: color }} />
     </div>
   )
 }

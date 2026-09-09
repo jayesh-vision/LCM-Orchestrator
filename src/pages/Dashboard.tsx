@@ -4,8 +4,8 @@ import { Cable, CheckCircle2, ClipboardList, PlayCircle, RadioTower, Router, Wif
 import { useStore } from '@/store/useStore'
 import type { Domain, Order, OrderState } from '@/types'
 import { DOMAINS, domainOf } from '@/types'
-import { Badge, Button, Card, CardBody, CardHead, Mono, Progress, Stat, type StatTone } from '@/components/ui'
-import { CHART, FILL, ColumnChart, StackedBar, TrendChart } from '@/components/charts'
+import { Badge, Button, Card, CardBody, CardHead, InfoTip, Mono, Progress, type StatTone } from '@/components/ui'
+import { CHART, Donut, FILL, ColumnChart, StackedBar, TrendChart } from '@/components/charts'
 import { CATEGORY_TONE, relTime } from '@/lib/format'
 
 const DAY = 86400000
@@ -14,10 +14,27 @@ const DOMAIN_ICON: Record<Domain, typeof Router> = { Transport: Router, Access: 
 const DOMAIN_BLURB: Record<Domain, string> = {
   Transport: 'L2VPN, L3VPN and IBW — router/switch CLI provisioning across 8 vendors.',
   Access: 'Broadband CPE activation — the platform\'s newest domain, 3 CPE vendors.',
-  Radio: 'Microwave point-to-point backhaul links — Ceragon, Aviat, NEC.',
+  Radio: 'Microwave point-to-point backhaul links and RAN CU/DU VNF instances.',
   Fiber: 'DWDM wavelength circuits over optical transport — Ciena, Infinera, ECI.',
 }
-const DOMAIN_STAT_TONE: Record<Domain, StatTone | undefined> = { Transport: undefined, Access: 'warn', Radio: 'plum', Fiber: 'good' }
+/* A distinct hue per domain, independent of the badge/stat tone palettes —
+   the donut and its legend need four colours that read apart from each
+   other side by side, which good/warn/crit/plum (4 slots, 2 already
+   reserved for real status meaning) doesn't comfortably give. */
+const DOMAIN_COLOR: Record<Domain, string> = { Transport: FILL.brand, Access: FILL.warn, Radio: '#a855f7', Fiber: '#06b6d4' }
+const DOMAIN_CHIP_CLS: Record<Domain, string> = {
+  Transport: 'bg-[#1c81ef]/10 text-[#1c81ef]',
+  Access: 'bg-[#f59e0b]/10 text-[#f59e0b]',
+  Radio: 'bg-[#a855f7]/10 text-[#a855f7]',
+  Fiber: 'bg-[#06b6d4]/10 text-[#06b6d4]',
+}
+const QUEUE_ICON_TONE: Record<'brand' | StatTone, { bg: string; fg: string; ring: string }> = {
+  brand: { bg: 'bg-brand-50', fg: 'text-brand-600', ring: 'ring-brand-200/60' },
+  good: { bg: 'bg-good-50', fg: 'text-good-700', ring: 'ring-good-200/70' },
+  warn: { bg: 'bg-warn-50', fg: 'text-warn-700', ring: 'ring-warn-200/70' },
+  crit: { bg: 'bg-crit-50', fg: 'text-crit-500', ring: 'ring-crit-200/70' },
+  plum: { bg: 'bg-plum-50', fg: 'text-plum-700', ring: 'ring-plum-200/70' },
+}
 
 /** Count per calendar day over the last `days`, oldest first. */
 function perDay(dates: string[], days: number) {
@@ -101,27 +118,117 @@ export default function Dashboard() {
       info: 'Requests whose execution failed and was rolled back — the device is back in its prior state and the order can be retried from Provisioning Execution.' },
   ]
 
+  const heroKpi = kpis[0]
+  const queueKpis = kpis.slice(1)
+
   return (
     <>
-      <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
-        {kpis.map((k) => (
-          <Stat key={k.label} label={k.label} icon={k.icon} value={k.value.toLocaleString()} tone={k.tone}
-            progress={k.progress} note={k.sub} info={k.info}
-            drillLabel={k.label.toLowerCase()} onClick={() => nav(k.go)} />
-        ))}
+      {/* ---------------- overview: headline + action queue ---------------- */}
+      <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
+        <Card className="vw-flex vw-flex-col">
+          <button type="button" onClick={() => nav(heroKpi.go)}
+            aria-label={`${heroKpi.value} ${heroKpi.label}. Open the full request list`}
+            className="text-left w-full flex-1 vw-flex vw-flex-col vw-card--clickable rounded-[var(--vw-radius-lg)]">
+            <CardBody className="flex-1 min-h-0 vw-flex vw-flex-col">
+              <div className="vw-flex vw-items-center vw-gap-sm">
+                <span className="w-11 h-11 rounded-xl grid place-items-center shrink-0 ring-1 ring-inset bg-brand-50 text-brand-600 ring-brand-200/60" aria-hidden>
+                  <heroKpi.icon size={20} />
+                </span>
+                <span className="min-w-0">
+                  <span className="vw-card-metric-label vw-flex vw-items-center vw-gap-xxs">
+                    {heroKpi.label}
+                    <InfoTip>{heroKpi.info}</InfoTip>
+                  </span>
+                  <span className="block vw-card-metric-xxxl tnum mt-0.5">{heroKpi.value.toLocaleString()}</span>
+                </span>
+              </div>
+              <div className="flex-1 min-h-[120px] mt-1">
+                <TrendChart height={150} ariaLabel="Requests raised per day, last 14 days"
+                  labels={trend.labels}
+                  series={[{ name: 'Raised per day', values: trend.raised, fill: 'brand', color: CHART.blue500 }]}
+                />
+              </div>
+              <div className="pt-3 border-t border-line-soft vw-flex vw-items-center vw-gap-lg vw-wrap">
+                <span className="vw-card-metric-label-sub">{n('Draft')} still in draft</span>
+                <span className="vw-card-metric-label-sub">{raised14} raised · {completed14} went live in the last 14 days</span>
+              </div>
+            </CardBody>
+          </button>
+        </Card>
+
+        <Card className="vw-flex vw-flex-col">
+          <CardHead title="Action queue" sub="What's waiting on a decision or a device, right now"
+            info="Requests that need a human or a device to act before they can move forward: waiting for a NOC lead's approval, approved and queued for the next execution window, or failed and rolled back. Click a row to open exactly those requests." />
+          <CardBody className="vw-flex vw-flex-col vw-gap-sm flex-1">
+            {queueKpis.map((k) => {
+              const t = QUEUE_ICON_TONE[k.tone ?? 'brand']
+              return (
+                <button key={k.label} type="button" onClick={() => nav(k.go)}
+                  aria-label={`${k.value} ${k.label}. Open ${k.label.toLowerCase()}`}
+                  className="vw-card-child vw-card--clickable w-full text-left">
+                  <span className="vw-flex vw-items-center vw-gap-sm">
+                    <span className={`w-8 h-8 rounded-lg grid place-items-center shrink-0 ring-1 ring-inset ${t.bg} ${t.fg} ${t.ring}`} aria-hidden>
+                      <k.icon size={15} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="vw-flex vw-items-center vw-justify-between vw-gap-sm">
+                        <span className="vw-card-activity-label truncate">{k.label}</span>
+                        <span className="vw-card-metric-sm tnum shrink-0">{k.value}</span>
+                      </span>
+                      <Progress value={k.progress ?? 0} tone={k.tone ?? 'brand'} className="mt-1.5" />
+                      <span className="vw-card-activity-value block mt-1 truncate">{k.sub}</span>
+                    </span>
+                  </span>
+                </button>
+              )
+            })}
+          </CardBody>
+        </Card>
       </div>
 
       {/* ---------------- by domain ---------------- */}
-      <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
-        {DOMAINS.map((d) => (
-          <Stat key={d} label={`${d} requests`} icon={DOMAIN_ICON[d]} value={domainCounts[d]}
-            tone={DOMAIN_STAT_TONE[d]}
-            progress={(domainCounts[d] / Math.max(1, orders.length)) * 100}
-            note={`${Math.round((domainCounts[d] / Math.max(1, orders.length)) * 100)}% of all requests · ${DOMAIN_BLURB[d]}`}
-            info={`Every request belongs to exactly one domain. ${DOMAIN_BLURB[d]}`}
-            drillLabel={`${d} domain requests`} onClick={() => nav(toRequests(undefined, undefined, d))} />
-        ))}
-      </div>
+      <Card>
+        <CardHead title="Provisioning by domain" sub="Every request belongs to exactly one domain — click a slice or a row to open it"
+          info="Requests split by network domain — Transport (router/switch), Access (CPE), Radio (microwave backhaul and RAN CU/DU) and Fiber (DWDM). Click a slice of the donut or a row on the right to open that domain's requests." />
+        <CardBody className="vw-flex vw-items-center vw-gap-6 vw-wrap lg:flex-nowrap">
+          <div className="shrink-0 w-full flex justify-center lg:w-auto lg:justify-start">
+            <Donut size={168} total={orders.length}
+              segments={DOMAINS.map((d) => ({
+                label: d, value: domainCounts[d], fill: 'brand', color: DOMAIN_COLOR[d],
+                onClick: () => nav(toRequests(undefined, undefined, d)),
+              }))}
+            />
+          </div>
+          <div className="grid gap-2 flex-1 min-w-0 w-full">
+            {DOMAINS.map((d) => {
+              const share = Math.round((domainCounts[d] / Math.max(1, orders.length)) * 100)
+              const Icon = DOMAIN_ICON[d]
+              return (
+                <button key={d} type="button" onClick={() => nav(toRequests(undefined, undefined, d))}
+                  aria-label={`${domainCounts[d]} ${d} domain requests. Open them`}
+                  className="vw-card-child vw-card--clickable w-full text-left">
+                  <span className="vw-flex vw-items-center vw-gap-sm">
+                    <span className={`w-9 h-9 rounded-lg grid place-items-center shrink-0 ${DOMAIN_CHIP_CLS[d]}`} aria-hidden>
+                      <Icon size={16} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="vw-flex vw-items-center vw-justify-between vw-gap-sm">
+                        <span className="vw-card-activity-label truncate">{d}</span>
+                        <span className="vw-flex vw-items-baseline vw-gap-xs shrink-0">
+                          <span className="vw-card-metric-sm tnum">{domainCounts[d]}</span>
+                          <span className="vw-label">{share}%</span>
+                        </span>
+                      </span>
+                      <Progress value={share} color={DOMAIN_COLOR[d]} className="mt-1.5" />
+                      <span className="vw-card-activity-value block mt-1 truncate">{DOMAIN_BLURB[d]}</span>
+                    </span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </CardBody>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
         {/* ---------------- pipeline ---------------- */}

@@ -178,7 +178,7 @@ export function StackedBar({ segments, ariaLabel, compact = false }:
 }
 
 /* ------------------------------------------------------------------ donut */
-export interface DonutSegment { label: string; value: number; fill: FillKey; onClick?: () => void }
+export interface DonutSegment { label: string; value: number; fill: FillKey; color?: string; onClick?: () => void }
 
 /**
  * The legend beside a donut. Every row is a drill-down when given an onClick,
@@ -191,7 +191,7 @@ export function DonutLegend({ segments, columns = 1 }: { segments: DonutSegment[
         const body = (
           <>
             <span className="flex items-center gap-1.5 min-w-0">
-              <i className="w-2 h-2 rounded-[2px] shrink-0" style={{ background: FILL[s.fill] }} />
+              <i className="w-2 h-2 rounded-[2px] shrink-0" style={{ background: paint(s.fill, s.color) }} />
               <span className="truncate">{s.label}</span>
             </span>
             <span className="font-semibold tnum text-ink-1">{s.value.toLocaleString()}</span>
@@ -228,7 +228,7 @@ export function Donut({ segments, total, caption, size = 132 }:
           const el = (
             <circle
               key={s.label} cx="66" cy="66" r={r} fill="none"
-              stroke={FILL[s.fill]} strokeWidth="15"
+              stroke={paint(s.fill, s.color)} strokeWidth="15"
               strokeDasharray={`${dash} ${c - dash}`}
               strokeDashoffset={-offset}
               transform="rotate(-90 66 66)"
@@ -250,8 +250,8 @@ export function Donut({ segments, total, caption, size = 132 }:
 }
 
 /* --------------------------------------------------------------- sparkline */
-export function TrendLine({ points, tone = 'brand', height = 96, labels }:
-{ points: number[]; tone?: FillKey; height?: number; labels?: string[] }) {
+export function TrendLine({ points, tone = 'brand', height = 96, labels, ariaLabel = 'Trend over the last four runs' }:
+{ points: number[]; tone?: FillKey; height?: number; labels?: string[]; ariaLabel?: string }) {
   if (points.length < 2) return null
   const w = 420; const pad = 26
   const min = Math.min(...points); const max = Math.max(...points)
@@ -260,7 +260,7 @@ export function TrendLine({ points, tone = 'brand', height = 96, labels }:
   const ys = points.map((p) => 18 + (1 - (p - min) / span) * (height - 46))
   const path = xs.map((x, i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ')
   return (
-    <svg viewBox={`0 0 ${w} ${height}`} className="w-full h-auto" role="img" aria-label="Trend over the last four runs">
+    <svg viewBox={`0 0 ${w} ${height}`} className="w-full h-auto" role="img" aria-label={ariaLabel}>
       <line x1={pad} y1={height - 22} x2={w - pad} y2={height - 22} stroke={FILL.grid} />
       <path d={path} fill="none" stroke={FILL[tone]} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       {xs.map((x, i) => (
