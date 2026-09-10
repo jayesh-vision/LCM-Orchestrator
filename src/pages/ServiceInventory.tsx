@@ -6,11 +6,11 @@ import { useStore } from '@/store/useStore'
 import type { Category, Conformance, Domain, Order, Service, ServiceState } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
-  Badge, Card, CardBody, CardHead, CellMain, CellSub, Chip, DataTable,
-  FilterBanner, Kebab, Mono, Stat, type Column,
+  Badge, Card, CardBody, CardHead, CellMain, CellSub, DataTable,
+  FieldDropdown, FilterBanner, Kebab, Mono, Stat, type Column,
 } from '@/components/ui'
 import { BarList, CHART, Donut, FILL, type FillKey } from '@/components/charts'
-import { CATEGORY_TONE, CONFORMANCE_TONE, DOMAIN_TONE, inr, relTime, SERVICE_TONE } from '@/lib/format'
+import { CATEGORY_TONE, CONFORMANCE_TONE, inr, relTime, SERVICE_TONE } from '@/lib/format'
 import { CONFORMANCE_ORDER, conformanceBreakdown } from '@/lib/conformance'
 import { byTraceability, serviceTrace, serviceOrigins, ORIGIN_LABEL, ORIGIN_BLURB, type ServiceOrigin } from '@/lib/traceability'
 
@@ -41,7 +41,6 @@ export default function ServiceInventory() {
     setDomain(next)
     if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
   }
-  const pickDomain = (d: Domain) => setDomainScoped(domain === d ? 'All' : d)
   const anyFilter = state !== 'All' || conf !== 'All' || domain !== 'All' || cat !== 'All' || intent !== 'All' || origin !== 'All'
   const { ref: resultsRef, scrollToResults } = useScrollToResultsOnDrillIn(
     anyFilter ? `s=${state}|cf=${conf}|d=${domain}|c=${cat}|i=${intent}|o=${origin}` : '',
@@ -353,23 +352,26 @@ export default function ServiceInventory() {
         onRowClick={(r) => nav(`/inventory/${r.id}`)}
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Service, Customer, Site' },
-          /* Domain is the one quick-chip facet kept inline; category and
-             everything else lives in the filter popover so this stays one line. */
-          chips: DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
+          /* The three facets worth one click rather than a trip through the
+             filter icon, matching Provisioning Requests. Conformance is not
+             among them because the summary cards and the donut above already
+             drill into it; State has no such shortcut, so it earns a slot. */
+          chips: [
+            <FieldDropdown key="domain" label="Domain" value={domain} onChange={(v) => setDomainScoped(v as Domain | 'All')}
+              options={DOMAINS.map((d) => ({ value: d, label: d, count: services.filter((x) => domainOf(x.category) === d).length }))} />,
+            <FieldDropdown key="cat" label="Category" value={cat} onChange={(v) => setCat(v as Category | 'All')}
+              options={domainCats.map((c) => ({ value: c, label: c, count: n.cat(c) }))} />,
+            <FieldDropdown key="state" label="State" value={state} onChange={(v) => setState(v as ServiceState | 'All')}
+              options={STATES.filter((st) => n.state(st) > 0).map((st) => ({ value: st, label: st, count: n.state(st) }))} />,
+          ],
           filters: [
-            { key: 'state', label: 'State', value: state, onChange: (v) => setState(v as ServiceState | 'All'),
-              options: STATES.map((st) => ({ value: st, label: st, count: n.state(st) })) },
+            { key: 'conf', label: 'Conformance', value: conf, onChange: (v) => setConf(v as Conformance | 'All'),
+              options: CONFS.filter((c) => n.conf(c) > 0).map((c) => ({ value: c, label: c, count: n.conf(c) })) },
             { key: 'origin', label: 'Origin', value: origin, onChange: (v) => setOrigin(v as ServiceOrigin | 'All'),
               options: (['provisioned', 'managed', 'inherited'] as ServiceOrigin[])
                 .map((o) => ({ value: o, label: ORIGIN_LABEL[o], count: services.filter((x) => origins(x.id) === o).length })) },
-            { key: 'conf', label: 'Conformance', value: conf, onChange: (v) => setConf(v as Conformance | 'All'),
-              options: CONFS.filter((c) => n.conf(c) > 0).map((c) => ({ value: c, label: c, count: n.conf(c) })) },
-            { key: 'domain', label: 'Domain', value: domain, onChange: (v) => setDomainScoped(v as Domain | 'All'),
-              options: DOMAINS.map((d) => ({ value: d, label: d, count: services.filter((s) => domainOf(s.category) === d).length })) },
-            { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
-              options: domainCats.map((c) => ({ value: c, label: c, count: n.cat(c) })) },
             { key: 'intent', label: 'Intent', value: intent, onChange: setIntent,
-              options: intents.map((i) => ({ value: i.id, label: i.name, count: services.filter((s) => s.intentId === i.id).length })) },
+              options: intents.map((i) => ({ value: i.id, label: i.name, count: services.filter((x) => x.intentId === i.id).length })) },
             { key: 'q', label: 'Service / Customer / Site', type: 'text', value: q, onChange: setQ },
           ],
           onResetFilters: clear,
