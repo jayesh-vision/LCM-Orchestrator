@@ -12,6 +12,7 @@ import {
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { VENDOR_LABEL } from '@/data/workflows'
 import { CATEGORY_TONE, ORDER_TONE } from '@/lib/format'
+import { byTraceability, orderTrace } from '@/lib/traceability'
 
 const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
 
@@ -22,6 +23,7 @@ const STATE_ORDER: OrderState[] = [
 
 export default function ProvisioningRequests() {
   const orders = useStore((s) => s.orders)
+  const runs = useStore((s) => s.runs)
   const approveOrder = useStore((s) => s.approveOrder)
   const rejectOrder = useStore((s) => s.rejectOrder)
   const nav = useNavigate()
@@ -90,6 +92,15 @@ export default function ProvisioningRequests() {
     }
     return true
   }), [orders, domain, cat, state, vendor, customer, qname, qcode, qmodel, q]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Requests that can actually be followed — through to the service they
+     produced, the run that executed them and the template on each endpoint —
+     lead the list, so the first page is the part of the estate that holds up
+     when someone opens it. Sorting a column still overrides this. */
+  const ranked = useMemo(() => {
+    const withRun = new Set(runs.map((r) => r.orderId))
+    return byTraceability(filtered, (o) => orderTrace(o, (id) => withRun.has(id)))
+  }, [filtered, runs])
 
   /* Same scope as `filtered` but ignoring the status filter itself — the
      Insights view breaks requests down BY status, so it needs the full
@@ -205,7 +216,7 @@ export default function ProvisioningRequests() {
         <>
           <div ref={resultsRef} />
           <DataTable
-            rows={filtered}
+            rows={ranked}
             total={orders.length}
             columns={columns}
             pageSize={12}

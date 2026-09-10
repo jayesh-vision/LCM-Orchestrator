@@ -6,7 +6,7 @@ import type {
 import { INTENTS, PROFILE_TYPES, intentById, pad } from '@/data/catalog'
 import { buildWorkflows } from '@/data/workflows'
 import { buildServices, serviceFromOrder } from '@/data/services'
-import { bindEndpoints, buildOrders, buildRuns, claimFor, orderedTasks, WAITING } from '@/data/orders'
+import { bindEndpoints, buildOrders, buildRuns, claimFor, linkProvenance, orderedTasks, WAITING } from '@/data/orders'
 import { renderCommand } from '@/data/templates'
 import { REPORTS, allocateForService, buildNotifications, buildPools, releaseForService } from '@/data/misc'
 
@@ -15,6 +15,7 @@ const workflows = buildWorkflows()
 const services = buildServices()
 const orders = buildOrders(services, workflows)
 const runs = buildRuns(orders, workflows)
+linkProvenance(services, orders)
 const pools = buildPools(services)
 
 export interface WizardDraft {

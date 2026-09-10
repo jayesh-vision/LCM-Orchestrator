@@ -12,6 +12,7 @@ import {
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { VENDOR_LABEL } from '@/data/workflows'
 import { ageLabel, CATEGORY_TONE, clockTime, ORDER_TONE, relTime } from '@/lib/format'
+import { byTraceability, orderTrace } from '@/lib/traceability'
 
 const EXEC_STATES: OrderState[] = [
   'Approved', 'Rejected', 'Queued', 'In progress', 'Ready', 'Failed', 'Reinstantiate',
@@ -82,6 +83,12 @@ export default function ProvisioningExecution() {
     }
     return true
   }), [pool, domain, cat, state, vendor, qname, qcode, qmodel, q]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Fully-traceable orders first — see ProvisioningRequests for the reasoning. */
+  const ranked = useMemo(() => {
+    const withRun = new Set(runs.map((r) => r.orderId))
+    return byTraceability(filtered, (o) => orderTrace(o, (id) => withRun.has(id)))
+  }, [filtered, runs])
 
   /* Same scope as `filtered` but ignoring the status filter itself — the
      Insights view breaks orders down BY status, so it needs the full
@@ -201,7 +208,7 @@ export default function ProvisioningExecution() {
         <>
           <div ref={resultsRef} />
           <DataTable
-            rows={filtered} total={pool.length} columns={columns} pageSize={12}
+            rows={ranked} total={pool.length} columns={columns} pageSize={12}
             onRowClick={(r) => nav(`/execution/${r.id}?tab=lifecycle`)}
             toolbar={{
               search: { value: q, onChange: setQ, placeholder: 'Name, Code, Model' },

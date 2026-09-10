@@ -813,3 +813,60 @@ export function buildRuns(orders: Order[], workflows: Workflow[]): Run[] {
   }
   return runs
 }
+
+/**
+ * Tie the two records together once both exist.
+ *
+ * Services are generated before orders, so at build time a service's change
+ * history has no real order to point at, and an order that completed a Create
+ * has no service to claim. Reconciling both directions is what makes the
+ * estate walkable: a completed create owns the service it produced, and every
+ * history entry either names an order that is genuinely in the system or
+ * carries no order id at all — which is the honest record for a change made
+ * before this platform held the request, or made straight on the device.
+ *
+ * Mutates in place; called once at seed time, after buildOrders.
+ */
+export function linkProvenance(services: Service[], orders: Order[]): void {
+  const realOrder = new Set(orders.map((o) => o.id))
+  const claimed = new Set(orders.map((o) => o.serviceId).filter(Boolean) as string[])
+
+  /* A Create that reached Ready did its work, so something in the estate is
+     the result of it. Pair each with an unclaimed service built from the same
+     intent, so the categories and endpoints line up rather than being a
+     nominal join between unrelated rows. */
+  const spare = new Map<string, Service[]>()
+  services.forEach((s) => {
+    if (claimed.has(s.id) || s.state === 'Ceased') return
+    const arr = spare.get(s.intentId) ?? []
+    arr.push(s)
+    spare.set(s.intentId, arr)
+  })
+  orders
+    .filter((o) => o.intent === 'Create' && o.state === 'Ready' && !o.serviceId)
+    .forEach((o) => {
+      const svc = spare.get(o.intentId)?.pop()
+      if (!svc) return
+      o.serviceId = svc.id
+      claimed.add(svc.id)
+    })
+
+  /* Point each service's history at the orders that actually touched it, and
+     strip the invented ids from everything else. */
+  const bySvc = new Map<string, Order[]>()
+  orders.forEach((o) => {
+    if (!o.serviceId) return
+    const arr = bySvc.get(o.serviceId) ?? []
+    arr.push(o)
+    bySvc.set(o.serviceId, arr)
+  })
+
+  services.forEach((s) => {
+    const own = [...(bySvc.get(s.id) ?? [])]
+    s.history = s.history.map((h) => {
+      if (!h.orderId || realOrder.has(h.orderId)) return h
+      const real = own.shift()
+      return real ? { ...h, orderId: real.id } : { ...h, orderId: undefined }
+    })
+  })
+}

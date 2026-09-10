@@ -12,6 +12,7 @@ import {
 import { BarList, CHART, Donut, FILL, type FillKey } from '@/components/charts'
 import { CATEGORY_TONE, CONFORMANCE_TONE, DOMAIN_TONE, inr, relTime, SERVICE_TONE } from '@/lib/format'
 import { CONFORMANCE_ORDER, conformanceBreakdown } from '@/lib/conformance'
+import { byTraceability, serviceTrace } from '@/lib/traceability'
 
 const STATES: ServiceState[] = ['Live', 'Activating', 'Degraded', 'Suspended', 'Ceased']
 const CONFS: Conformance[] = ['Conformant', 'Drifted', 'Never proven', 'Ghost', 'Not checked']
@@ -19,6 +20,7 @@ const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DW
 
 export default function ServiceInventory() {
   const services = useStore((s) => s.services)
+  const orders = useStore((s) => s.orders)
   const intents = useStore((s) => s.intents)
   const reprove = useStore((s) => s.reproveService)
   const raiseChange = useStore((s) => s.raiseChange)
@@ -89,6 +91,15 @@ export default function ServiceInventory() {
     }
     return true
   }), [services, state, conf, cat, intent, q])
+
+  /* Services the platform can account for — provisioned through a request in
+     the system, holding pool resources, with the evidence that proved them —
+     lead the list, ahead of inherited records that can only be taken at face
+     value. Sorting a column still overrides this. */
+  const ranked = useMemo(() => {
+    const referenced = new Set(orders.map((o) => o.serviceId).filter(Boolean) as string[])
+    return byTraceability(filtered, (s) => serviceTrace(s, referenced))
+  }, [filtered, orders])
 
   const columns: Column<Service>[] = [
     {
@@ -278,7 +289,7 @@ export default function ServiceInventory() {
 
       <div ref={resultsRef} />
       <DataTable
-        rows={filtered} total={services.length} columns={columns} pageSize={12}
+        rows={ranked} total={services.length} columns={columns} pageSize={12}
         onRowClick={(r) => nav(`/inventory/${r.id}`)}
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Service, Customer, Site' },
