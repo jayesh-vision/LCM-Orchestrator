@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
 import { Activity, Boxes, ChevronRight, Download, Eye, Ghost, GitBranch, GitCompare, Plus, RefreshCcw, ShieldCheck, ShieldQuestion, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
-import type { Category, Conformance, Domain, Service, ServiceState } from '@/types'
+import type { Category, Conformance, Domain, Order, Service, ServiceState } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Card, CardBody, CardHead, CellMain, CellSub, Chip, DataTable,
@@ -101,10 +101,48 @@ export default function ServiceInventory() {
     return byTraceability(filtered, (s) => serviceTrace(s, referenced))
   }, [filtered, orders])
 
+  /* The request behind each service. Where several touched it, the create
+     wins — that is the one that actually brought the service into existence,
+     and the one someone tracing provenance is looking for. */
+  const orderForService = useMemo(() => {
+    const m = new Map<string, Order>()
+    orders.forEach((o) => {
+      if (!o.serviceId) return
+      const held = m.get(o.serviceId)
+      if (!held || (held.intent !== 'Create' && o.intent === 'Create')) m.set(o.serviceId, o)
+    })
+    return m
+  }, [orders])
+
   const columns: Column<Service>[] = [
     {
       key: 'svc', header: 'Service', width: '210px', sortValue: (r) => r.id,
       render: (r) => (<><CellMain><Mono>{r.id}</Mono></CellMain><CellSub>{r.name}</CellSub></>),
+    },
+    {
+      /* Sits next to the service id because it explains where that id came
+         from. Blank on the inherited estate, which is itself worth seeing:
+         a row with no order is one the platform cannot account for. */
+      key: 'order', header: 'Order', width: '158px',
+      sortValue: (r) => orderForService.get(r.id)?.id ?? '',
+      render: (r) => {
+        const o = orderForService.get(r.id)
+        if (!o) return <span className="text-ink-3">—</span>
+        return (
+          <>
+            <CellMain>
+              <Link
+                to={`/requests/${o.id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="text-brand-600 hover:underline"
+              >
+                <Mono>{o.id}</Mono>
+              </Link>
+            </CellMain>
+            <CellSub>{o.intent}</CellSub>
+          </>
+        )
+      },
     },
     { key: 'acct', header: 'Customer', width: '186px', sortValue: (r) => r.accountName, render: (r) => r.accountName },
     {
