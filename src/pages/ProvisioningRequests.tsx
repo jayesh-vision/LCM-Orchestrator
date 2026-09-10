@@ -6,12 +6,12 @@ import { useStore } from '@/store/useStore'
 import type { Category, Domain, Order, OrderState, Vendor } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
-  Badge, Button, CellMain, CellSub, Chip, DataTable, Field,
-  FilterBanner, Kebab, Modal, Mono, Progress, SegmentedToggle, type Column,
+  Badge, Button, CellMain, CellSub, DataTable, Field,
+  FieldDropdown, FilterBanner, Kebab, Modal, Mono, Progress, SegmentedToggle, type Column,
 } from '@/components/ui'
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { VENDOR_LABEL } from '@/data/workflows'
-import { CATEGORY_TONE, DOMAIN_TONE, ORDER_TONE } from '@/lib/format'
+import { CATEGORY_TONE, ORDER_TONE } from '@/lib/format'
 
 const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
 
@@ -44,7 +44,6 @@ export default function ProvisioningRequests() {
     setDomain(next)
     if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
   }
-  const pickDomain = (d: Domain) => setDomainScoped(domain === d ? 'All' : d)
   const resultsRef = useScrollToResultsOnDrillIn(domain !== 'All' || cat !== 'All' || state !== 'All' || intent !== 'All' || owner !== 'All' || vendor !== 'All')
   /* The Requests⟷Execution toggle is a real navigation — the two screens'
      state vocabularies differ (Requests has Draft/Planned/Validated/Invalid,
@@ -194,12 +193,6 @@ export default function ProvisioningRequests() {
         ]}
       />
 
-      <div className="flex items-center gap-1.5">
-        {DOMAINS.map((d) => (
-          <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>
-        ))}
-      </div>
-
       {view === 'insights' ? (
         <ProvisioningInsights mode="requests" orders={scoped} onDrill={(p) => patch({ ...p, view: 'listing' })} />
       ) : (
@@ -213,12 +206,19 @@ export default function ProvisioningRequests() {
             onRowClick={(r) => nav(`/requests/${r.id}`)}
             toolbar={{
               search: { value: q, onChange: setQ, placeholder: 'Name, Code, Model' },
-              /* Domain already has its own quick-chip row above the table; every
-                 other facet (including category) lives in the filter popover so
-                 this toolbar stays one line regardless of how many exist. */
+              /* Domain, Vendor and Category are common enough to earn their own
+                 dropdown right in the toolbar, instead of a click-through to the
+                 filter icon — everything else stays in the popover. */
+              chips: [
+                <FieldDropdown key="domain" label="Domain" value={domain} onChange={(v) => setDomainScoped(v as Domain | 'All')}
+                  options={DOMAINS.map((d) => ({ value: d, label: d, count: orders.filter((o) => domainOf(o.category) === d).length }))} />,
+                <FieldDropdown key="vendor" label="Vendor" value={vendor} onChange={(v) => setVendor(v as Vendor | 'All')}
+                  options={[...new Set(orders.map((o) => o.endpoints[0]?.vendor).filter((v): v is Vendor => v !== undefined))].sort()
+                    .map((v) => ({ value: v, label: VENDOR_LABEL[v], count: orders.filter((o) => o.endpoints[0]?.vendor === v).length }))} />,
+                <FieldDropdown key="cat" label="Category" value={cat} onChange={(v) => setCat(v as Category | 'All')}
+                  options={domainCats.map((c) => ({ value: c, label: c, count: (byCategory.get(c) ?? []).length }))} />,
+              ],
               filters: [
-                { key: 'domain', label: 'Domain', value: domain, onChange: (v) => setDomainScoped(v as Domain | 'All'),
-                  options: DOMAINS.map((d) => ({ value: d, label: d, count: orders.filter((o) => domainOf(o.category) === d).length })) },
                 {
                   key: 'state', label: 'Status', value: state, onChange: (v) => setState(v),
                   options: [
@@ -229,8 +229,6 @@ export default function ProvisioningRequests() {
                     { value: 'Failed,Rejected,Invalid,Reinstantiate', label: 'Blocked' },
                   ],
                 },
-                { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
-                  options: domainCats.map((c) => ({ value: c, label: c, count: (byCategory.get(c) ?? []).length })) },
                 { key: 'intent', label: 'Intent', value: intent, onChange: setIntent,
                   options: ['Create', 'Modify', 'Suspend', 'Resume', 'Cease', 'Re-prove']
                     .filter((i) => orders.some((o) => o.intent === i))
@@ -238,9 +236,6 @@ export default function ProvisioningRequests() {
                 { key: 'owner', label: 'Owner', value: owner, onChange: setOwner,
                   options: [...new Set(orders.map((o) => o.owner).filter(Boolean))].sort()
                     .map((o) => ({ value: o as string, label: o as string, count: orders.filter((x) => x.owner === o).length })) },
-                { key: 'vendor', label: 'Vendor', value: vendor, onChange: (v) => setVendor(v as Vendor | 'All'),
-                  options: [...new Set(orders.map((o) => o.endpoints[0]?.vendor).filter((v): v is Vendor => v !== undefined))].sort()
-                    .map((v) => ({ value: v, label: VENDOR_LABEL[v], count: orders.filter((o) => o.endpoints[0]?.vendor === v).length })) },
                 { key: 'customer', label: 'Customer Name', type: 'text', value: customer, onChange: setCustomer },
                 { key: 'q', label: 'Name / Code / Model', type: 'text', value: q, onChange: setQ },
               ],

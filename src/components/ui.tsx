@@ -636,6 +636,66 @@ export function FilterPopover({ fields, onReset, onClose }:
   )
 }
 
+/**
+ * A single-field quick filter, rendered inline in the grid toolbar next to
+ * search instead of hidden behind the filter icon — for the handful of
+ * facets (domain, vendor, category) worth one click instead of two. Shows
+ * the field label when set to "All", and the selected option's label once
+ * something is picked, so the button doubles as its own active-filter tag.
+ */
+export function FieldDropdown({ label, value, onChange, options, width = 220 }:
+{ label: string; value: string; onChange: (v: string) => void; options: FilterOption[]; width?: number }) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  useEffect(() => {
+    if (!open) return
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [open])
+  const isAll = !value || value === 'All'
+  const selected = options.find((o) => o.value === value)
+  const filtered = options.filter((o) => !q || o.label.toLowerCase().includes(q.toLowerCase()))
+  return (
+    <div className="relative">
+      <button
+        type="button" onClick={() => { setOpen((v) => !v); setQ('') }}
+        className={`nst-input h-9 px-3 vw-flex vw-items-center vw-gap-xs whitespace-nowrap
+          ${open ? 'ring-2 ring-ink-1 border-ink-1' : ''} ${!isAll ? 'border-brand-300 bg-brand-50/60' : ''}`}
+        aria-haspopup="listbox" aria-expanded={open}
+      >
+        <span className={isAll ? 'text-ink-3' : 'font-medium text-ink-1'}>{isAll ? label : (selected?.label ?? value)}</span>
+        <ChevronDown size={14} className="text-ink-3" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="nst-surface--raised absolute left-0 top-[calc(100%+6px)] z-50 anim-in p-1 max-h-[280px] overflow-y-auto" style={{ width }} role="listbox" aria-label={label}>
+            <div className="relative mb-1">
+              <input autoFocus className="nst-input has-icon-right w-full border-0 border-b border-line-soft rounded-none focus:ring-0" placeholder="Search"
+                value={q} onChange={(e) => setQ(e.target.value)} />
+              <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none" />
+            </div>
+            <button role="option" aria-selected={isAll} onClick={() => { onChange('All'); setOpen(false) }}
+              className={`w-full text-left px-2.5 py-2 rounded-[var(--vw-radius-xs)] vw-value text-[13px] hover:bg-plane ${isAll ? 'bg-plane font-medium' : ''}`}>
+              Any {label.toLowerCase()}
+            </button>
+            {filtered.map((o) => (
+              <button key={o.value} role="option" aria-selected={value === o.value}
+                onClick={() => { onChange(o.value); setOpen(false) }}
+                className={`w-full text-left px-2.5 py-2 rounded-[var(--vw-radius-xs)] vw-value text-[13px] vw-flex vw-items-center vw-justify-between hover:bg-plane ${value === o.value ? 'bg-plane font-medium' : ''}`}>
+                {o.label}
+                {o.count !== undefined && <span className="vw-label tnum">{o.count}</span>}
+              </button>
+            ))}
+            {filtered.length === 0 && <div className="px-3 py-2.5 vw-label">No matches</div>}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 /* ----------------------------------------------------------------- table */
 export interface Column<T> {
   key: string

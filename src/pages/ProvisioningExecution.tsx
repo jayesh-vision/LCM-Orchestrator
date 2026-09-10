@@ -6,12 +6,12 @@ import { useStore } from '@/store/useStore'
 import type { Category, Domain, Order, OrderState, Vendor } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
-  Badge, Button, CellMain, CellSub, Chip, DataTable, Drawer,
-  FilterBanner, KV, Kebab, Modal, Mono, Note, Progress, SegmentedToggle, type Column,
+  Badge, Button, CellMain, CellSub, DataTable, Drawer,
+  FieldDropdown, FilterBanner, KV, Kebab, Modal, Mono, Note, Progress, SegmentedToggle, type Column,
 } from '@/components/ui'
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { VENDOR_LABEL } from '@/data/workflows'
-import { ageLabel, CATEGORY_TONE, clockTime, DOMAIN_TONE, ORDER_TONE, relTime } from '@/lib/format'
+import { ageLabel, CATEGORY_TONE, clockTime, ORDER_TONE, relTime } from '@/lib/format'
 
 const EXEC_STATES: OrderState[] = [
   'Approved', 'Rejected', 'Queued', 'In progress', 'Ready', 'Failed', 'Reinstantiate',
@@ -41,7 +41,6 @@ export default function ProvisioningExecution() {
     setDomain(next)
     if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
   }
-  const pickDomain = (d: Domain) => setDomainScoped(domain === d ? 'All' : d)
   const resultsRef = useScrollToResultsOnDrillIn(domain !== 'All' || cat !== 'All' || state !== 'All' || vendor !== 'All')
   const [verify, setVerify] = useState<Order | null>(null)
   const [creds, setCreds] = useState<Order | null>(null)
@@ -164,12 +163,6 @@ export default function ProvisioningExecution() {
         ]}
       />
 
-      <div className="flex items-center gap-1.5">
-        {DOMAINS.map((d) => (
-          <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>
-        ))}
-      </div>
-
       {view === 'insights' ? (
         <ProvisioningInsights mode="execution" orders={scoped} runs={runs} onDrill={(p) => patch({ ...p, view: 'listing' })} />
       ) : (
@@ -180,22 +173,25 @@ export default function ProvisioningExecution() {
             onRowClick={(r) => nav(`/execution/${r.id}?tab=lifecycle`)}
             toolbar={{
               search: { value: q, onChange: setQ, placeholder: 'Name, Code, Model' },
-              /* Domain already has its own quick-chip row above the table; every
-                 other facet (including category) lives in the filter popover so
-                 this toolbar stays one line regardless of how many exist. */
+              /* Domain, Vendor and Category are common enough to earn their own
+                 dropdown right in the toolbar, instead of a click-through to the
+                 filter icon — everything else (status, search-by-name) still
+                 lives in the popover, or the visible search box above. */
+              chips: [
+                <FieldDropdown key="domain" label="Domain" value={domain} onChange={(v) => setDomainScoped(v as Domain | 'All')}
+                  options={DOMAINS.map((d) => ({ value: d, label: d, count: pool.filter((o) => domainOf(o.category) === d).length }))} />,
+                <FieldDropdown key="vendor" label="Vendor" value={vendor} onChange={(v) => setVendor(v as Vendor | 'All')}
+                  options={[...new Set(pool.map((o) => o.endpoints[0]?.vendor).filter((v): v is Vendor => v !== undefined))].sort()
+                    .map((v) => ({ value: v, label: VENDOR_LABEL[v], count: pool.filter((o) => o.endpoints[0]?.vendor === v).length }))} />,
+                <FieldDropdown key="cat" label="Category" value={cat} onChange={(v) => setCat(v as Category | 'All')}
+                  options={domainCats.map((c) => ({ value: c, label: c, count: pool.filter((o) => o.category === c).length }))} />,
+              ],
               filters: [
-                { key: 'domain', label: 'Domain', value: domain, onChange: (v) => setDomainScoped(v as Domain | 'All'),
-                  options: DOMAINS.map((d) => ({ value: d, label: d, count: pool.filter((o) => domainOf(o.category) === d).length })) },
                 { key: 'state', label: 'Status', value: state, onChange: (v) => setState(v),
                   options: [
                     ...EXEC_STATES.filter((st) => n(st) > 0).map((st) => ({ value: st, label: st, count: n(st) })),
                     { value: 'Approved,Queued', label: 'Ready to run' },
                   ] },
-                { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
-                  options: domainCats.map((c) => ({ value: c, label: c, count: pool.filter((o) => o.category === c).length })) },
-                { key: 'vendor', label: 'Vendor', value: vendor, onChange: (v) => setVendor(v as Vendor | 'All'),
-                  options: [...new Set(pool.map((o) => o.endpoints[0]?.vendor).filter((v): v is Vendor => v !== undefined))].sort()
-                    .map((v) => ({ value: v, label: VENDOR_LABEL[v], count: pool.filter((o) => o.endpoints[0]?.vendor === v).length })) },
                 { key: 'q', label: 'Name / Code / Model', type: 'text', value: q, onChange: setQ },
               ],
               onResetFilters: clear,
