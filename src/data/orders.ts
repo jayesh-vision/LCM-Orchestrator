@@ -848,6 +848,68 @@ export function buildRuns(orders: Order[], workflows: Workflow[]): Run[] {
  *
  * Mutates in place; called once at seed time, after buildOrders.
  */
+/**
+ * How far back this platform's own request history reaches. Services older
+ * than this were already carrying traffic when it was deployed and were
+ * inherited from whatever it replaced; everything since was provisioned
+ * through it and has the completed request to prove it.
+ *
+ * This is the one number that decides how much of the estate is traceable,
+ * which is why it is stated here rather than falling out of how much seed
+ * data happened to be generated.
+ */
+export const PLATFORM_LIVE_DAYS = 365
+
+/**
+ * The completed create behind every service young enough to have come from
+ * this platform. Archived: they are the provenance record, not open work, so
+ * the request queue does not carry them by default.
+ *
+ * No runs are attached. The order is retained indefinitely because it is what
+ * the service points back to; the per-task device logs behind it are not, and
+ * pretending otherwise would mean holding a few thousand synthetic task lists
+ * to say nothing the order does not already say.
+ */
+export function buildHistoricalOrders(services: Service[], workflows: Workflow[]): Order[] {
+  const now = Date.now()
+  const out: Order[] = []
+  let n = 0
+
+  services.forEach((svc) => {
+    const ageDays = Math.floor((now - new Date(svc.liveSince).getTime()) / 86400000)
+    if (ageDays > PLATFORM_LIVE_DAYS || svc.state === 'Ceased') return
+    n += 1
+    const intent = intentById(svc.intentId)
+    const created = new Date(svc.liveSince)
+    out.push({
+      id: `ORD-2025-${pad(100000 + n * 3, 6)}`,
+      code: `NS-${pad(700000 + n, 6)}`,
+      name: intent.name,
+      intent: 'Create',
+      intentId: svc.intentId,
+      category: svc.category,
+      type: svc.type,
+      subtype: '—',
+      accountId: svc.accountId,
+      accountName: svc.accountName,
+      state: 'Ready',
+      serviceId: svc.id,
+      workflowId: workflows.find((w) => w.category === svc.category && w.state === 'Active')?.id,
+      endpoints: svc.endpoints,
+      params: [],
+      createdAt: created.toISOString(),
+      updatedAt: created.toISOString(),
+      ageDays,
+      owner: pick(OWNERS),
+      runIds: [],
+      approvals: [{ role: 'NOC lead', by: pick(OWNERS), at: created.toISOString(), decision: 'Approved' }],
+      slaBreached: false,
+      archived: true,
+    })
+  })
+  return out
+}
+
 export function linkProvenance(services: Service[], orders: Order[]): void {
   const realOrder = new Set(orders.map((o) => o.id))
   const claimed = new Set(orders.map((o) => o.serviceId).filter(Boolean) as string[])

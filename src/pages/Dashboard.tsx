@@ -72,7 +72,9 @@ function perDay(dates: string[], days: number) {
  * already uses in conversation, and every figure opens the list behind it.
  */
 export default function Dashboard() {
-  const orders = useStore((s) => s.orders)
+  /* Every figure on this page describes work in flight, so the archived
+     creates that back-fill service provenance are not part of it. */
+  const orders = useStore((s) => s.orders).filter((o) => !o.archived)
   const runs = useStore((s) => s.runs)
   const workflows = useStore((s) => s.workflows)
   const services = useStore((s) => s.services)

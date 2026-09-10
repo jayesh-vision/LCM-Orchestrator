@@ -6,15 +6,18 @@ import type {
 import { INTENTS, PROFILE_TYPES, intentById, pad } from '@/data/catalog'
 import { buildWorkflows } from '@/data/workflows'
 import { buildServices, serviceFromOrder } from '@/data/services'
-import { bindEndpoints, buildOrders, buildRuns, claimFor, linkProvenance, orderedTasks, WAITING } from '@/data/orders'
+import { bindEndpoints, buildHistoricalOrders, buildOrders, buildRuns, claimFor, linkProvenance, orderedTasks, WAITING } from '@/data/orders'
 import { renderCommand } from '@/data/templates'
 import { REPORTS, allocateForService, buildNotifications, buildPools, releaseForService } from '@/data/misc'
 
 /* Seed once, at module load, so the dataset is stable across navigation. */
 const workflows = buildWorkflows()
 const services = buildServices()
-const orders = buildOrders(services, workflows)
-const runs = buildRuns(orders, workflows)
+const liveOrders = buildOrders(services, workflows)
+const runs = buildRuns(liveOrders, workflows)
+/* The queue plus the archive. Both are orders and both are the same shape;
+   only `archived` separates work in flight from the record of work done. */
+const orders = [...liveOrders, ...buildHistoricalOrders(services, workflows)]
 linkProvenance(services, orders)
 const pools = buildPools(services)
 

@@ -318,6 +318,13 @@ export interface Order {
   delta?: { attribute: string; current: string; requested: string }[]
   slaBreached: boolean
   notes?: string
+  /**
+   * Closed long enough ago to be history rather than work. The platform keeps
+   * the record — it is what proves a service was provisioned here — but the
+   * request queue is a picture of what is in flight, so these sit outside it
+   * until someone asks for history.
+   */
+  archived?: boolean
 }
 
 /* ---------- services ---------- */

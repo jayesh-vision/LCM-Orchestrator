@@ -20,7 +20,7 @@ const EXEC_STATES: OrderState[] = [
 const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
 
 export default function ProvisioningExecution() {
-  const orders = useStore((s) => s.orders)
+  const orders = useStore((s) => s.orders).filter((o) => !o.archived)
   const runs = useStore((s) => s.runs)
   const runsForOrder = useStore((s) => s.runsForOrder)
   const startRun = useStore((s) => s.startRun)

@@ -21,7 +21,7 @@ const IMPACT: Record<string, { bounce: boolean; reconverge: boolean; note: strin
 }
 
 export default function ChangeCease() {
-  const orders = useStore((s) => s.orders)
+  const orders = useStore((s) => s.orders).filter((o) => !o.archived)
   const services = useStore((s) => s.services)
   const raiseChange = useStore((s) => s.raiseChange)
   const approve = useStore((s) => s.approveOrder)

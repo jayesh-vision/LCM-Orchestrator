@@ -6,7 +6,7 @@ import { useStore } from '@/store/useStore'
 import type { Category, Domain, Order, OrderIntent, OrderState, Vendor } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
-  Badge, Button, CellMain, CellSub, DataTable, Field,
+  Badge, Button, CellMain, CellSub, Chip, DataTable, Field,
   FieldDropdown, FilterBanner, Kebab, Modal, Mono, Progress, SegmentedToggle, type Column,
 } from '@/components/ui'
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
@@ -22,7 +22,7 @@ const STATE_ORDER: OrderState[] = [
 ]
 
 export default function ProvisioningRequests() {
-  const orders = useStore((s) => s.orders)
+  const allOrders = useStore((s) => s.orders)
   const runs = useStore((s) => s.runs)
   const approveOrder = useStore((s) => s.approveOrder)
   const rejectOrder = useStore((s) => s.rejectOrder)
@@ -35,6 +35,10 @@ export default function ProvisioningRequests() {
   const stateList = state === 'All' ? [] : state.split(',')
   const [vendor, setVendor] = useQueryState<Vendor | 'All'>('vendor', 'All')
   const [intent, setIntent] = useQueryState<OrderIntent | 'All'>('intent', 'All')
+  /* Off by default: this screen is a queue of work in flight. The archive is
+     every create this platform has ever completed, which is provenance for
+     Service Inventory rather than something anyone is working on. */
+  const [history, setHistory] = useQueryState('history', 'off')
   const [customer, setCustomer] = useQueryState('customer', '')
   /* Independent name/code/model filters for the popover — separate from
      the toolbar's broad `q` search box, which still matches across all
@@ -45,7 +49,7 @@ export default function ProvisioningRequests() {
   const [view, setView] = useQueryState<'listing' | 'insights'>('view', 'insights')
   const pushToast = useStore((st) => st.pushToast)
   const patch = useQueryPatch()
-  const clear = useClearQuery(['q', 'domain', 'cat', 'state', 'vendor', 'intent', 'customer', 'name', 'code', 'model'])
+  const clear = useClearQuery(['q', 'domain', 'cat', 'state', 'vendor', 'intent', 'customer', 'name', 'code', 'model', 'history'])
   const domainCats = domain === 'All' ? CATEGORIES : CATEGORIES_BY_DOMAIN[domain]
   const setDomainScoped = (next: Domain | 'All') => {
     setDomain(next)
@@ -70,6 +74,12 @@ export default function ProvisioningRequests() {
   const [rejectNote, setRejectNote] = useState('')
 
   const doApprove = (o: Order) => { approveOrder(o.id, 'Ravi K.'); pushToast('good', `${o.id} approved — ready to run in Provisioning Execution.`) }
+
+  const orders = useMemo(
+    () => (history === 'on' ? allOrders : allOrders.filter((o) => !o.archived)),
+    [allOrders, history],
+  )
+  const archivedCount = useMemo(() => allOrders.filter((o) => o.archived).length, [allOrders])
 
   const byCategory = useMemo(() => {
     const m = new Map<Category, Order[]>()
@@ -221,6 +231,7 @@ export default function ProvisioningRequests() {
         count={filtered.length} noun="requests" onClear={clear}
         filters={[
           ...(state !== 'All' ? [{ key: 'state', label: 'Status', value: stateList.join(' or '), onRemove: () => setState('All') }] : []),
+          ...(history === 'on' ? [{ key: 'history', label: 'Scope', value: 'Including completed history', onRemove: () => setHistory('off') }] : []),
           ...(intent !== 'All' ? [{ key: 'intent', label: 'Request type', value: intent, onRemove: () => setIntent('All') }] : []),
           ...(customer ? [{ key: 'customer', label: 'Customer', value: customer, onRemove: () => setCustomer('') }] : []),
           ...(qname ? [{ key: 'name', label: 'Name', value: qname, onRemove: () => setQname('') }] : []),
@@ -254,6 +265,10 @@ export default function ProvisioningRequests() {
                     .map((v) => ({ value: v, label: VENDOR_LABEL[v], count: orders.filter((o) => o.endpoints[0]?.vendor === v).length }))} />,
                 <FieldDropdown key="cat" label="Category" value={cat} onChange={(v) => setCat(v as Category | 'All')}
                   options={domainCats.map((c) => ({ value: c, label: c, count: (byCategory.get(c) ?? []).length }))} />,
+                <Chip key="history" active={history === 'on'} onClick={() => setHistory(history === 'on' ? 'off' : 'on')}>
+                  Include history
+                  <span className="tnum opacity-70">{archivedCount.toLocaleString()}</span>
+                </Chip>,
               ],
               filters: [
                 {
