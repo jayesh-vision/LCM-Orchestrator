@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, CheckCircle2, PlayCircle, Plus, Save, Trash2 } from 'lucide-react'
+import {
+  ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, PlayCircle, Plus, Save, Trash2,
+} from 'lucide-react'
 import { useStore, type WizardDraft } from '@/store/useStore'
 import { ACCOUNTS, DEVICE_MODELS, SITES, modelsForCategory } from '@/data/catalog'
 import { bindEndpoints } from '@/data/orders'
@@ -22,11 +24,21 @@ interface EndpointDraft { role: 'A' | 'Z' | 'hub' | 'spoke'; siteCode: string; p
 const roleOfIdx = (i: number): EndpointRole => (i === 0 ? 'Source' : 'Destination')
 const mgmtIpFor = (i: number) => `172.31.33.${20 + i * 80}`
 
-/* Which parameter values the operator may type. `pool` values are allocated by
-   the platform and `derived` ones come from the site/port already chosen — both
-   would be overwritten on submit, so they are shown read-only rather than
-   offered as inputs that silently do nothing. */
-const EDITABLE_SOURCES = ['user', 'template']
+/**
+ * How a parameter's starting value was arrived at, and whether the operator can
+ * take it from there. Only `derived` is locked: Interface and Neighbor IP are
+ * the port picked in Step 2 and the far end's address, so a value typed here
+ * would contradict the endpoint the request is actually reserving. Everything
+ * else — including pool allocations — is a starting point, not a decision: the
+ * pool offers the next free VLAN or circuit ID, and the operator overrides it
+ * per endpoint when the estate needs something specific.
+ */
+const PARAM_ORIGIN: Record<string, { badge: string; hint: string; locked?: boolean }> = {
+  pool: { badge: 'from pool', hint: 'Pre-filled with the next free value — change it if this device needs a different one.' },
+  derived: { badge: 'derived', hint: 'Comes from the site and port chosen for this endpoint in Step 2.', locked: true },
+  template: { badge: 'default', hint: 'Template default — change it for this endpoint only.' },
+  user: { badge: '', hint: 'Rendered into this endpoint\'s commands only.' },
+}
 
 const DOMAIN_HINT: Record<Domain, string> = {
   Transport: 'Router/switch network services.',
@@ -84,9 +96,15 @@ export default function NewServiceWizard() {
   const [wfByEp, setWfByEp] = useState<Record<number, string>>({})
   /** Per-endpoint parameter values: endpoint index → parameter name → value. */
   const [valsByEp, setValsByEp] = useState<Record<number, Record<string, string>>>({})
-  /** Service-level settings from the intent — one value for the whole circuit. */
+  /** Service-level settings from the intent — the defaults each endpoint starts from. */
   const [svc, setSvc] = useState<Record<string, string>>({})
   const [createdId, setCreatedId] = useState<string | null>(null)
+  /* Collapse is per step: an endpoint folded away on Step 2 because its devices
+     are settled shouldn't also hide its parameter fields on Step 3. */
+  const [shut2, setShut2] = useState<Record<number, boolean>>({})
+  const [shut3, setShut3] = useState<Record<number, boolean>>({})
+  const [shutSvc, setShutSvc] = useState(false)
+  const toggle = (set: typeof setShut2, i: number) => set((p) => ({ ...p, [i]: !p[i] }))
 
   const intent = intents.find((i) => i.id === intentId)!
   const catIntents = intents.filter((i) => i.category === category)
@@ -265,29 +283,35 @@ export default function NewServiceWizard() {
     setStep(4)
   }
 
-  /** The template chooser for one endpoint — every endpoint gets its own. */
+  /**
+   * The template chooser for one endpoint. Laid out as a wide grid under that
+   * endpoint's device fields rather than beside them — a scrolling column of
+   * templates next to three short inputs leaves most of the card empty, and
+   * with a destination per site there can be a lot of those cards.
+   */
   const workflowPicker = (i: number) => {
     const candidates = candidatesForIdx(i)
     const chosen = wfByEp[i]
     return (
       <div>
-        <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 mb-2">
           <div className="text-[11px] font-semibold uppercase tracking-[.08em] text-ink-3">Workflow template</div>
           {vendorOfIdx(i) && <Badge tone="none">{vendorOfIdx(i)}</Badge>}
+          <span className="text-[11px] text-ink-3">{candidates.length} available for this vendor</span>
         </div>
         {candidates.length === 0 && (
           <Note tone="crit" className="!py-2 !px-2.5 text-[12px]">No active workflow matches this vendor for {intent.name}.</Note>
         )}
-        <div className="flex flex-col gap-1.5 max-h-[210px] overflow-y-auto">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3 max-h-[168px] overflow-y-auto">
           {candidates.map((w) => (
             <button
               key={w.id}
               type="button"
               onClick={() => setWfByEp({ ...wfByEp, [i]: w.id })}
-              className={`text-left border rounded-md px-3 py-2 transition-colors
+              className={`text-left border rounded-md px-3 py-2 transition-colors h-fit
                 ${chosen === w.id ? 'border-brand-500 bg-brand-50 ring-[2px] ring-brand-100' : 'border-line hover:bg-plane'}`}
             >
-              <div className="text-[12.5px] font-medium truncate">{w.name}</div>
+              <div className="text-[12px] font-medium truncate" title={w.name}>{w.name}</div>
               <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                 <Mono className="text-[10.5px] text-ink-3">{w.model}</Mono>
                 <Badge tone={w.firstPassRate >= 80 ? 'good' : 'warn'} className="!text-[10px] !py-0">{w.firstPassRate}% first-pass</Badge>
@@ -299,53 +323,78 @@ export default function NewServiceWizard() {
     )
   }
 
+  /** Shared collapsible header used by the endpoint cards on Steps 2 and 3. */
+  const sectionHead = (open: boolean, onToggle: () => void, left: ReactNode, right?: ReactNode) => (
+    <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-plane/50 border-b border-line-soft">
+      <button type="button" onClick={onToggle}
+        className="flex items-center gap-2 min-w-0 text-left flex-1 rounded
+          focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
+        aria-expanded={open}>
+        {open ? <ChevronDown size={15} className="text-ink-3 shrink-0" /> : <ChevronRight size={15} className="text-ink-3 shrink-0" />}
+        {left}
+      </button>
+      {right}
+    </div>
+  )
+
   /** One endpoint's parameter card on Step 3 — its own template, its own values. */
   const paramCard = (i: number) => {
     const wf = workflows.find((w) => w.id === wfByEp[i])
     const list = epParams[i] ?? []
+    const open = !shut3[i]
+    const edited = Object.keys(valsByEp[i] ?? {}).length
     return (
       <div key={i} className="border border-line rounded-lg overflow-hidden">
-        <div className="px-4 py-3 border-b border-line-soft bg-plane/50">
-          <div className="flex items-center gap-2 flex-wrap">
+        {sectionHead(open, () => toggle(setShut3, i),
+          <>
             <Badge tone={i === 0 ? 'info' : 'none'}>{labelOfIdx(i)}</Badge>
-            <span className="text-[12px] text-ink-3">{activeEps[i]?.siteCode} · {activeEps[i]?.port}</span>
-          </div>
-          <div className="text-[12.5px] font-medium mt-1.5 truncate" title={wf?.name}>
-            {wf ? wf.name : <span className="text-crit-700">No workflow selected</span>}
-          </div>
-        </div>
-        <div className="p-4 grid gap-4 sm:grid-cols-2">
-          {list.map((p) => {
-            const editable = EDITABLE_SOURCES.includes(p.source)
-            const label = (
-              <span className="flex items-center gap-1.5">
-                <span className="font-mono">{p.name}</span>
-                {!editable && <Badge tone={p.source === 'pool' ? 'info' : 'none'} className="!text-[9.5px] !py-0">{p.source}</Badge>}
-              </span>
-            )
-            if (!editable) {
+            <span className="text-[12px] text-ink-3 truncate" title={wf?.name}>
+              {activeEps[i]?.siteCode} · {wf ? wf.name : 'no template selected'}
+            </span>
+          </>,
+          <span className="text-[11px] text-ink-3 whitespace-nowrap">
+            {list.length} parameter{list.length === 1 ? '' : 's'}{edited > 0 ? ` · ${edited} changed` : ''}
+          </span>,
+        )}
+        {open && (
+          <div className="p-4 grid gap-4 sm:grid-cols-2">
+            {list.map((p) => {
+              const origin = PARAM_ORIGIN[p.source] ?? PARAM_ORIGIN.user
+              const overridden = valsByEp[i]?.[p.name] !== undefined
+              const label = (
+                <span className="flex items-center gap-1.5">
+                  <span className="font-mono">{p.name}</span>
+                  {origin.badge && (
+                    <Badge tone={overridden ? 'good' : p.source === 'pool' ? 'info' : 'none'} className="!text-[9.5px] !py-0">
+                      {overridden ? 'changed' : origin.badge}
+                    </Badge>
+                  )}
+                </span>
+              )
+              if (origin.locked) {
+                return (
+                  <Field key={p.name} label={label} hint={origin.hint}>
+                    <TextInput readOnly value={p.value} className="bg-plane font-mono text-ink-3" />
+                  </Field>
+                )
+              }
               return (
-                <Field key={p.name} label={label}
-                  hint={p.source === 'pool' ? 'Allocated by the platform — identical on every endpoint.' : 'Derived from the site and port chosen for this endpoint.'}>
-                  <TextInput readOnly value={p.value} className="bg-plane font-mono text-ink-3" />
+                <Field key={p.name} label={label} required hint={origin.hint}>
+                  <TextInput
+                    className="font-mono"
+                    value={p.value}
+                    onChange={(e) => setEpValue(i, p.name, e.target.value)}
+                  />
                 </Field>
               )
-            }
-            return (
-              <Field key={p.name} label={label} required hint="Rendered into this endpoint's commands only.">
-                <TextInput
-                  value={p.value}
-                  onChange={(e) => setEpValue(i, p.name, e.target.value)}
-                />
-              </Field>
-            )
-          })}
-          {list.length === 0 && (
-            <div className="sm:col-span-2 text-[12.5px] text-ink-3">
-              Pick a workflow template for this endpoint to see the parameters it renders.
-            </div>
-          )}
-        </div>
+            })}
+            {list.length === 0 && (
+              <div className="sm:col-span-2 text-[12.5px] text-ink-3">
+                Pick a workflow template for this endpoint to see the parameters it renders.
+              </div>
+            )}
+          </div>
+        )}
       </div>
     )
   }
@@ -459,45 +508,53 @@ export default function NewServiceWizard() {
           {/* ---- 2 source, destinations & workflow ---- */}
           {step === 1 && (
             <div className="flex flex-col gap-4">
-              {activeEps.map((e, i) => (
-                <div key={i} className="border border-line rounded-lg p-4">
-                  <div className="flex items-center justify-between gap-3 mb-3">
-                    <div className="flex items-center gap-2">
-                      <Badge tone={i === 0 ? 'info' : 'none'}>{labelOfIdx(i)}</Badge>
-                      <span className="text-[12px] text-ink-3">runs its own template</span>
-                    </div>
-                    {/* A source is mandatory, and a service needs at least one
-                       far end — only the destinations beyond the first can go. */}
-                    {!single && i > 1 && (
-                      <Button size="sm" variant="danger" onClick={() => removeEndpoint(i)}>
-                        <Trash2 size={14} />Remove
-                      </Button>
+              {activeEps.map((e, i) => {
+                const open = !shut2[i]
+                const wf = workflows.find((w) => w.id === wfByEp[i])
+                return (
+                  <div key={i} className="border border-line rounded-lg overflow-hidden">
+                    {sectionHead(open, () => toggle(setShut2, i),
+                      <>
+                        <Badge tone={i === 0 ? 'info' : 'none'}>{labelOfIdx(i)}</Badge>
+                        <span className="text-[12px] text-ink-3 truncate">
+                          {open ? 'runs its own template' : `${e.siteCode} · ${e.port} · ${wf ? wf.name : 'no template selected'}`}
+                        </span>
+                      </>,
+                      /* A source is mandatory, and a service needs at least one
+                         far end — only destinations beyond the first can go. */
+                      !single && i > 1 ? (
+                        <Button size="sm" variant="danger" onClick={() => removeEndpoint(i)}>
+                          <Trash2 size={14} />Remove
+                        </Button>
+                      ) : undefined,
+                    )}
+                    {open && (
+                      <div className="p-4 flex flex-col gap-4">
+                        <div className="grid gap-4 sm:grid-cols-3">
+                          <Field label="Site" required>
+                            <Select value={e.siteCode} onChange={(ev) => {
+                              const next = [...eps]; next[i] = { ...e, siteCode: ev.target.value }; setEps(next)
+                            }}>
+                              {SITES.map((s) => <option key={s.code} value={s.code}>{s.code} — {s.city}</option>)}
+                            </Select>
+                          </Field>
+                          <Field label={DOMAIN_PORT_LABEL[domain]} required>
+                            <Select value={e.port} onChange={(ev) => {
+                              const next = [...eps]; next[i] = { ...e, port: ev.target.value }; setEps(next)
+                            }}>
+                              {portsPool.flatMap((d) => d.ports).map((p) => <option key={p} value={p}>{p}</option>)}
+                            </Select>
+                          </Field>
+                          <Field label="Management IP" hint="Derived from the site and port you chose.">
+                            <TextInput readOnly value={mgmtIpFor(i)} className="bg-plane text-ink-3" />
+                          </Field>
+                        </div>
+                        {workflowPicker(i)}
+                      </div>
                     )}
                   </div>
-                  <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
-                    <div className="grid gap-4 sm:grid-cols-3 h-fit">
-                      <Field label="Site" required>
-                        <Select value={e.siteCode} onChange={(ev) => {
-                          const next = [...eps]; next[i] = { ...e, siteCode: ev.target.value }; setEps(next)
-                        }}>
-                          {SITES.map((s) => <option key={s.code} value={s.code}>{s.code} — {s.city}</option>)}
-                        </Select>
-                      </Field>
-                      <Field label={DOMAIN_PORT_LABEL[domain]} required>
-                        <Select value={e.port} onChange={(ev) => {
-                          const next = [...eps]; next[i] = { ...e, port: ev.target.value }; setEps(next)
-                        }}>
-                          {portsPool.flatMap((d) => d.ports).map((p) => <option key={p} value={p}>{p}</option>)}
-                        </Select>
-                      </Field>
-                      <Field label="Management IP" hint="Derived from the site and port you chose.">
-                        <TextInput readOnly value={mgmtIpFor(i)} className="bg-plane text-ink-3" />
-                      </Field>
-                    </div>
-                    {workflowPicker(i)}
-                  </div>
-                </div>
-              ))}
+                )
+              })}
 
               {!single && (
                 <div>
@@ -536,14 +593,24 @@ export default function NewServiceWizard() {
           {/* ---- 3 parameters & values ---- */}
           {step === 2 && (
             <div className="flex flex-col gap-5">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">
-                  Service settings · one value for the whole circuit
-                </div>
+              <div className="border border-line rounded-lg overflow-hidden">
+                {sectionHead(!shutSvc, () => setShutSvc((v) => !v),
+                  <>
+                    <span className="text-[12.5px] font-semibold">Service design defaults</span>
+                    <span className="text-[12px] text-ink-3 truncate">
+                      {shutSvc
+                        ? svcParams.map((p) => `${p.name} ${p.value}`).join(' · ')
+                        : 'optional — these only pre-fill the endpoints below'}
+                    </span>
+                  </>,
+                )}
+                {!shutSvc && (
+                <div className="p-4">
                 <Note className="mb-3.5">
-                  These come from {intent.name}'s own definition and describe the circuit rather than either end of
-                  it — a VLAN or pseudowire ID that differed between two ends would simply never come up, so they are
-                  allocated once and applied everywhere.
+                  {intent.name} describes the circuit as a whole, and these are the values it starts every endpoint
+                  from — the VLAN and circuit ID come off the resource pools, the rest are the intent's own defaults.
+                  <b> Nothing here is final:</b> each endpoint's parameters are edited below, and a value changed
+                  there applies to that device alone.
                 </Note>
                 <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
                   {intent.params.map((p) => {
@@ -598,18 +665,20 @@ export default function NewServiceWizard() {
                     )
                   })}
                 </div>
+                </div>
+                )}
               </div>
-
-              <div className="h-px bg-line-soft" />
 
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">
                   Per-endpoint parameters · {endpointCount} endpoint{endpointCount === 1 ? '' : 's'}
                 </div>
                 <Note className="mb-3.5">
-                  Each endpoint runs its own workflow template, and each template renders its own set of
-                  parameters — so the fields below differ per endpoint, and every value is entered
-                  independently. Nothing typed on one endpoint is copied to another.
+                  Each endpoint runs its own workflow template, and each template renders its own set of parameters —
+                  so the fields below differ per endpoint. Every value is editable and belongs to that device alone:
+                  the pool-allocated ones arrive pre-filled but you can type your own, and nothing entered on one
+                  endpoint is copied to another. Only Interface and Neighbor IP stay fixed, because they are the port
+                  and far end already chosen in Step 2.
                 </Note>
                 <div className="flex flex-col gap-4">
                   {activeEps.map((_, i) => paramCard(i))}
