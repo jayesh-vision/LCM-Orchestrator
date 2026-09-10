@@ -81,7 +81,7 @@ interface State {
   abortRun: (runId: string) => void
   retryOrder: (orderId: string) => void
 
-  raiseChange: (serviceId: string, intent: OrderIntent, delta?: Order['delta']) => Order
+  raiseChange: (serviceId: string, intent: OrderIntent, delta?: Order['delta'], params?: OrderParamValue[], notes?: string) => Order
   reproveService: (serviceId: string) => void
 
   addProfileType: (category: string, type: string, subtype: string, description: string) => void
@@ -470,10 +470,21 @@ export const useStore = create<State>((set, get) => ({
     setTimeout(() => { get().startRun(orderId) }, 1100)
   },
 
-  raiseChange: (serviceId, intent, delta) => {
+  raiseChange: (serviceId, intent, delta, params, notes) => {
     const svc = get().serviceById(serviceId)!
     const seq = get().orders.length + 1
     const now = new Date().toISOString()
+    /* The endpoint's rendered command needs the service's full parameter set,
+       with whatever was actually requested overlaid on top of it — not the
+       stale current values, and not only the changed ones (a command missing
+       its unrelated placeholders can't render at all). */
+    const overrides = new Map((params ?? []).map((p) => [p.name, p.value]))
+    const mergedAttrs: OrderParamValue[] = svc.attributes.map((a) => (
+      overrides.has(a.name)
+        ? { name: a.name, value: overrides.get(a.name)!, source: 'user' as const }
+        : { name: a.name, value: a.intent, source: 'derived' as const }
+    ))
+    const bandwidth = overrides.has('Bandwidth') ? (parseInt(overrides.get('Bandwidth')!, 10) || svc.bandwidthMbps) : svc.bandwidthMbps
     const order: Order = {
       id: `ORD-2026-${pad(4500 + seq, 6)}`,
       code: `NS-${pad(400 + seq, 6)}`,
@@ -488,13 +499,14 @@ export const useStore = create<State>((set, get) => ({
       serviceId,
       state: 'Validated',
       workflowId: get().workflows.find((w) => w.intentId === svc.intentId && w.state === 'Active')?.id,
-      endpoints: bindEndpoints(svc.endpoints, svc.category, svc.type, '—', get().workflows,
-        svc.attributes.map((a) => ({ name: a.name, value: a.intent, source: 'derived' as const })), svc.bandwidthMbps),
-      params: svc.attributes.map((a) => ({ name: a.name, value: a.intent, source: 'derived' as const })),
+      endpoints: bindEndpoints(svc.endpoints, svc.category, svc.type, '—', get().workflows, mergedAttrs, bandwidth),
+      /* Only what was actually changed goes on the request — everything else
+         about the service is unaffected and has no business being here. */
+      params: params ?? mergedAttrs,
       createdAt: now, updatedAt: now, ageDays: 0,
       owner: 'Priya S.', waitingOn: 'NOC lead',
       runIds: [], approvals: [{ role: 'NOC lead' }],
-      delta, slaBreached: false,
+      delta, slaBreached: false, notes,
     }
     set((s) => ({ orders: [order, ...s.orders] }))
     get().pushToast('good', `${intent} order ${order.id} raised against ${serviceId}.`)

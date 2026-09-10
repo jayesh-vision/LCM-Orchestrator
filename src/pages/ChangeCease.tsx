@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { useQueryState } from '@/lib/useQueryState'
 import { CalendarClock, CheckCircle2, CircleOff, Eye, PauseCircle, Pencil, Plus, Server, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
-import type { Order, OrderIntent } from '@/types'
+import type { Order, OrderIntent, Service } from '@/types'
 import {
   Badge, Button, Card, CardBody, CardHead, CellMain, CellSub, Chip, DataTable,
   Field, Kebab, Modal, Mono, Note, Select, Stat, type Column,
 } from '@/components/ui'
 import { INTENT_TONE, ORDER_TONE, relTime } from '@/lib/format'
+import { CeaseServiceModal, ModifyServiceDrawer } from '@/components/ServiceChangeDialogs'
 
 const INTENTS: OrderIntent[] = ['Modify', 'Suspend', 'Resume', 'Cease', 'Re-prove']
 
@@ -35,6 +36,8 @@ export default function ChangeCease() {
   const [open, setOpen] = useState(false)
   const [newIntent, setNewIntent] = useState<OrderIntent>('Modify')
   const [serviceId, setServiceId] = useState('')
+  const [modifyTarget, setModifyTarget] = useState<Service | null>(null)
+  const [ceaseTarget, setCeaseTarget] = useState<Service | null>(null)
 
   const changes = useMemo(() => orders.filter((o) => o.intent !== 'Create'), [orders])
   const filtered = useMemo(() => changes.filter((o) => {
@@ -178,10 +181,12 @@ export default function ChangeCease() {
               variant="primary" disabled={!serviceId}
               onClick={() => {
                 const svc = services.find((s) => s.id === serviceId)!
-                raiseChange(serviceId, newIntent, newIntent === 'Modify'
-                  ? [{ attribute: 'Bandwidth', current: `${svc.bandwidthMbps} Mbps`, requested: `${svc.bandwidthMbps * 2} Mbps` }]
-                  : undefined)
                 setOpen(false); setServiceId('')
+                /* Modify and Cease open their own enter-details / confirm dialog
+                   rather than raising the order straight from this picker. */
+                if (newIntent === 'Modify') { setModifyTarget(svc); return }
+                if (newIntent === 'Cease') { setCeaseTarget(svc); return }
+                raiseChange(serviceId, newIntent)
               }}
             >
               <CheckCircle2 size={15} />Raise order
@@ -206,6 +211,9 @@ export default function ChangeCease() {
           </Note>
         </div>
       </Modal>
+
+      <ModifyServiceDrawer service={modifyTarget} onClose={() => setModifyTarget(null)} />
+      <CeaseServiceModal service={ceaseTarget} onClose={() => setCeaseTarget(null)} />
     </>
   )
 }

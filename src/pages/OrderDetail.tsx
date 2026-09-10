@@ -177,6 +177,35 @@ export default function OrderDetail() {
         </div>
       </Card>
 
+      {/* Every attribute the requester actually asked to change, current vs
+          requested — kept visible across tabs since not every attribute has
+          a device command parameter to show up in below (MTU, for one, is
+          not a modelled command placeholder for any vendor in this
+          prototype), so this is the only place some of them are ever shown. */}
+      {order.delta && order.delta.length > 0 && (
+        <Card>
+          <CardHead title="Requested change" sub={order.notes ? `Reason: ${order.notes}` : undefined} />
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead><tr>
+                {['Attribute', 'Current', 'Requested'].map((h) => (
+                  <th key={h} scope="col" className="text-left px-[18px] py-3 border-b border-line text-[12px] font-medium text-ink-3">{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {order.delta.map((d) => (
+                  <tr key={d.attribute} className="border-b border-line-soft last:border-0">
+                    <td className="px-[18px] py-3 font-medium">{d.attribute}</td>
+                    <td className="px-[18px] py-3 font-mono text-ink-3">{d.current}</td>
+                    <td className="px-[18px] py-3 font-mono font-semibold text-brand-600">{d.requested}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
       {/* ---------------- network service ---------------- */}
       {tab === 'service' && (
         <div className="grid gap-4 lg:grid-cols-[300px_1fr]">

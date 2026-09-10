@@ -7,6 +7,7 @@ import {
 } from '@/components/ui'
 import { CATEGORY_TONE, CONFORMANCE_TONE, inr, relTime, SERVICE_TONE, shortDate } from '@/lib/format'
 import { ORIGIN_BLURB, ORIGIN_LABEL, serviceOrigins } from '@/lib/traceability'
+import { CeaseServiceModal, ModifyServiceDrawer } from '@/components/ServiceChangeDialogs'
 
 type Tab = 'overview' | 'realised' | 'evidence' | 'history' | 'resources'
 
@@ -18,6 +19,8 @@ export default function ServiceDetail() {
   const raiseChange = useStore((s) => s.raiseChange)
   const reprove = useStore((s) => s.reproveService)
   const [tab, setTab] = useState<Tab>('overview')
+  const [modifyOpen, setModifyOpen] = useState(false)
+  const [ceaseOpen, setCeaseOpen] = useState(false)
   const orders = useMemo(() => allOrders.filter((o) => o.serviceId === id), [allOrders, id])
   const origin = useMemo(() => serviceOrigins(allOrders).get(id ?? '') ?? 'inherited', [allOrders, id])
 
@@ -63,11 +66,11 @@ export default function ServiceDetail() {
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <Button onClick={() => { raiseChange(svc.id, 'Modify', [{ attribute: 'Bandwidth', current: `${svc.bandwidthMbps} Mbps`, requested: `${svc.bandwidthMbps * 2} Mbps` }]); nav('/change') }}>Modify</Button>
+              <Button onClick={() => setModifyOpen(true)}>Modify</Button>
               <Button onClick={() => { raiseChange(svc.id, svc.state === 'Suspended' ? 'Resume' : 'Suspend'); nav('/change') }}>
                 {svc.state === 'Suspended' ? <><PlayCircle size={15} />Resume</> : <><PauseCircle size={15} />Suspend</>}
               </Button>
-              <Button variant="danger" onClick={() => { raiseChange(svc.id, 'Cease'); nav('/change') }}><Trash2 size={15} />Cease</Button>
+              <Button variant="danger" onClick={() => setCeaseOpen(true)}><Trash2 size={15} />Cease</Button>
               <Button variant="primary" onClick={() => reprove(svc.id)}><RefreshCcw size={15} />Re-prove now</Button>
             </div>
           </div>
@@ -313,6 +316,9 @@ export default function ServiceDetail() {
           </CardBody>
         </Card>
       )}
+
+      <ModifyServiceDrawer service={modifyOpen ? svc : null} onClose={() => setModifyOpen(false)} />
+      <CeaseServiceModal service={ceaseOpen ? svc : null} onClose={() => setCeaseOpen(false)} />
     </>
   )
 }
