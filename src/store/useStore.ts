@@ -26,8 +26,19 @@ export interface WizardDraft {
   name: string
   intentId: string
   workflowId: string
-  /** `workflowId` on an endpoint overrides the vendor-matched template bindEndpoints would otherwise pick — set from the wizard's per-endpoint workflow picker. */
-  endpoints: { role: 'A' | 'Z' | 'hub' | 'spoke'; siteCode: string; deviceName: string; vendor: string; mgmtIp: string; port: string; workflowId?: string }[]
+  /**
+   * `workflowId` overrides the vendor-matched template bindEndpoints would
+   * otherwise pick, and `params` overrides the values it would render — both
+   * come from the wizard, where the operator picks a template per endpoint and
+   * fills in that template's own parameters. Two endpoints running different
+   * templates have different parameter sets and different values, so neither
+   * can be derived from a single service-wide list.
+   */
+  endpoints: {
+    role: 'A' | 'Z' | 'hub' | 'spoke'; siteCode: string; deviceName: string
+    vendor: string; mgmtIp: string; port: string
+    workflowId?: string; params?: OrderParamValue[]
+  }[]
   params: OrderParamValue[]
 }
 
@@ -135,7 +146,17 @@ export const useStore = create<State>((set, get) => ({
         })),
         draft.category, draft.type, draft.subtype, get().workflows, draft.params,
         Number(draft.params.find((p) => p.name === 'bandwidth_mbps')?.value ?? 100),
-      ).map((ep, i) => (draft.endpoints[i]?.workflowId ? { ...ep, workflowId: draft.endpoints[i].workflowId } : ep)),
+      /* bindEndpoints supplies the derived/pool-allocated values; anything the
+         operator chose per endpoint in the wizard (its template, and that
+         template's own parameter values) wins over it. */
+      ).map((ep, i) => {
+        const d = draft.endpoints[i]
+        return {
+          ...ep,
+          ...(d?.workflowId ? { workflowId: d.workflowId } : {}),
+          ...(d?.params?.length ? { params: d.params } : {}),
+        }
+      }),
       params: draft.params,
       createdAt: now,
       updatedAt: now,

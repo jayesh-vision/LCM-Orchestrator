@@ -544,6 +544,26 @@ export function paramsIn(text: string | undefined): string[] {
   return [...out]
 }
 
+/**
+ * Every `${Parameter}` this template actually renders, in the order its tasks
+ * reference them. This is the real per-workflow parameter set — two templates
+ * bound to the same intent genuinely differ (the Cisco L2VPN tasks render
+ * `${Xconnect group}`, the Juniper ones never do), so a request that runs a
+ * different template at each end has a different set of values to fill in at
+ * each end. Read from the tasks themselves rather than a hand-kept list, so it
+ * can never drift from what the device is actually sent.
+ */
+export function workflowParams(tasks: WorkflowTaskDef[]): string[] {
+  const out = new Set<string>()
+  tasks.forEach((t) => {
+    paramsIn(t.setCommand).forEach((p) => out.add(p))
+    paramsIn(t.inverseCommand).forEach((p) => out.add(p))
+    t.validations.forEach((r) => paramsIn(r.text).forEach((p) => out.add(p)))
+    t.rollbackValidations.forEach((r) => paramsIn(r.text).forEach((p) => out.add(p)))
+  })
+  return [...out]
+}
+
 /** Render `${Parameter}` placeholders from a name→value map; unknown names are left as-is. */
 export function renderCommand(text: string, values: Record<string, string>): string {
   return text.replace(/\$\{([^}]+)\}/g, (m, k: string) => (k in values ? values[k] : m))

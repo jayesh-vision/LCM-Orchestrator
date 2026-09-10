@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, CheckCircle2, PlayCircle, Pencil, Save } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCircle2, PlayCircle, Plus, Save, Trash2 } from 'lucide-react'
 import { useStore, type WizardDraft } from '@/store/useStore'
 import { ACCOUNTS, DEVICE_MODELS, SITES, modelsForCategory } from '@/data/catalog'
 import { bindEndpoints } from '@/data/orders'
+import { workflowParams } from '@/data/templates'
 import type { Category, Domain, EndpointRole, OrderParamValue } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS } from '@/types'
 import {
@@ -18,7 +19,14 @@ const STEPS = [
 
 interface EndpointDraft { role: 'A' | 'Z' | 'hub' | 'spoke'; siteCode: string; port: string }
 
-const roleOf = (i: number): EndpointRole => (i === 0 ? 'Source' : 'Destination')
+const roleOfIdx = (i: number): EndpointRole => (i === 0 ? 'Source' : 'Destination')
+const mgmtIpFor = (i: number) => `172.31.33.${20 + i * 80}`
+
+/* Which parameter values the operator may type. `pool` values are allocated by
+   the platform and `derived` ones come from the site/port already chosen — both
+   would be overwritten on submit, so they are shown read-only rather than
+   offered as inputs that silently do nothing. */
+const EDITABLE_SOURCES = ['user', 'template']
 
 const DOMAIN_HINT: Record<Domain, string> = {
   Transport: 'Router/switch network services.',
@@ -43,6 +51,17 @@ function subtypeOptions(domain: Domain, category: Category, type: string): strin
   return DOMAIN_SUBTYPES[domain]
 }
 
+/** Re-key an index-keyed map after the endpoint at `removed` is dropped. */
+function reindex<T>(map: Record<number, T>, removed: number): Record<number, T> {
+  const out: Record<number, T> = {}
+  Object.entries(map).forEach(([k, v]) => {
+    const i = Number(k)
+    if (i === removed) return
+    out[i > removed ? i - 1 : i] = v
+  })
+  return out
+}
+
 export default function NewServiceWizard() {
   const nav = useNavigate()
   const intents = useStore((s) => s.intents)
@@ -61,9 +80,12 @@ export default function NewServiceWizard() {
     { role: 'A', siteCode: SITES[0].code, port: DEVICE_MODELS[2].ports[0] },
     { role: 'Z', siteCode: SITES[1].code, port: DEVICE_MODELS[2].ports[2] },
   ])
-  /** One chosen workflow per role — Source and Destination devices run different templates. */
-  const [workflowByRole, setWorkflowByRole] = useState<Partial<Record<EndpointRole, string>>>({})
-  const [values, setValues] = useState<Record<string, string>>({})
+  /** One template per ENDPOINT, not per role — every destination picks its own. */
+  const [wfByEp, setWfByEp] = useState<Record<number, string>>({})
+  /** Per-endpoint parameter values: endpoint index → parameter name → value. */
+  const [valsByEp, setValsByEp] = useState<Record<number, Record<string, string>>>({})
+  /** Service-level settings from the intent — one value for the whole circuit. */
+  const [svc, setSvc] = useState<Record<string, string>>({})
   const [createdId, setCreatedId] = useState<string | null>(null)
 
   const intent = intents.find((i) => i.id === intentId)!
@@ -79,77 +101,138 @@ export default function NewServiceWizard() {
     setSubtype(subtypeOptions(d, c, first.type)[0])
   }
 
-  const endpointCount = intent.topology === 'Single-ended' ? 1 : intent.topology === 'Two-ended' ? 2 : eps.length
-  const roles: EndpointRole[] = intent.topology === 'Single-ended' ? ['Source'] : ['Source', 'Destination']
-  const vendorForRole = (role: EndpointRole) => {
-    const i = role === 'Source' ? 0 : 1
-    return DEVICE_MODELS.find((d) => d.ports.includes(eps[i]?.port ?? ''))?.vendor
+  /* A single-ended intent (CPE activation, a RAN VNF) provisions one device and
+     has no far end; everything else terminates on a source plus one or more
+     destinations, which the operator adds and removes below. */
+  const single = intent.topology === 'Single-ended'
+  const star = intent.topology === 'Star'
+  const activeEps = single ? eps.slice(0, 1) : eps
+  const endpointCount = activeEps.length
+
+  const labelOfIdx = (i: number) => {
+    if (single) return 'Access device'
+    if (star) return i === 0 ? 'Hub' : `Spoke ${i}`
+    if (i === 0) return 'Source (A-end)'
+    return endpointCount > 2 ? `Destination ${i}` : 'Destination (Z-end)'
   }
-  const candidatesFor = (role: EndpointRole) => {
-    const v = vendorForRole(role)
+  const vendorOfIdx = (i: number) => DEVICE_MODELS.find((d) => d.ports.includes(activeEps[i]?.port ?? ''))?.vendor
+  const candidatesForIdx = (i: number) => {
+    const role = roleOfIdx(i)
+    const v = vendorOfIdx(i)
     return workflows.filter((w) => w.intentId === intentId && w.state === 'Active'
       && (w.endpointRole === role || !w.endpointRole) && (!v || w.vendor === v))
   }
 
-  /* The best-performing active template for each role is preselected; the
-     operator can override either side independently. */
+  /* Preselect the best-performing active template per endpoint, keeping any
+     choice the operator already made that is still valid for that endpoint's
+     vendor — adding a destination must not silently reshuffle the others. */
+  const portSig = activeEps.map((e) => e.port).join('|')
+  /* Site drives the derived values (description, VRF name), port drives the
+     vendor match — the bound-endpoint memo has to see both change. */
+  const epSig = activeEps.map((e) => `${e.siteCode}@${e.port}`).join('|')
   useEffect(() => {
-    const next: Partial<Record<EndpointRole, string>> = {}
-    roles.forEach((role) => {
-      const best = [...candidatesFor(role)].sort((a, b) => b.firstPassRate - a.firstPassRate)[0]
-      if (best) next[role] = best.id
+    setWfByEp((prev) => {
+      const next: Record<number, string> = {}
+      activeEps.forEach((_, i) => {
+        const cands = candidatesForIdx(i)
+        const kept = prev[i] && cands.some((c) => c.id === prev[i]) ? prev[i] : undefined
+        const best = [...cands].sort((a, b) => b.firstPassRate - a.firstPassRate)[0]
+        const chosen = kept ?? best?.id
+        if (chosen) next[i] = chosen
+      })
+      return next
     })
-    setWorkflowByRole(next)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intentId, eps[0]?.port, eps[1]?.port])
+  }, [intentId, portSig, endpointCount])
 
-  /* Parameters come from the intent; pool-backed ones are allocated, not typed. */
-  const params: OrderParamValue[] = useMemo(() => intent.params.map((p) => {
+  /* Service-level settings: the intent's own parameters, which describe the
+     circuit rather than either end of it. Pool-backed ones are allocated once
+     and must be identical everywhere, or the circuit simply will not come up. */
+  const svcParams: OrderParamValue[] = useMemo(() => intent.params.map((p) => {
     if (p.fromPool) {
       const pool = pools.find((x) => x.kind === p.fromPool)
       const free = pool?.entries.find((e) => e.state === 'Free')
-      return { name: p.name, value: values[p.name] ?? free?.value ?? '—', source: 'pool' as const }
+      return { name: p.name, value: svc[p.name] ?? free?.value ?? '—', source: 'pool' as const }
     }
-    if (values[p.name] !== undefined) return { name: p.name, value: values[p.name], source: 'user' as const }
+    if (svc[p.name] !== undefined) return { name: p.name, value: svc[p.name], source: 'user' as const }
     if (p.default !== undefined) return { name: p.name, value: String(p.default), source: 'template' as const }
     return { name: p.name, value: '', source: 'user' as const }
-  }), [intent, values, pools])
+  }), [intent, svc, pools])
 
-  const endpointsOk = eps.slice(0, endpointCount).every((e) => e.siteCode && e.port)
-    && (intent.topology !== 'Two-ended' || (eps[0].siteCode !== eps[1]?.siteCode))
-  const workflowsOk = roles.every((r) => !!workflowByRole[r])
-  const valuesOk = params.every((p) => p.value !== '' && p.value !== '—')
+  const overArity = intent.topology === 'Two-ended' && endpointCount > 2
+  const sitesDistinct = new Set(activeEps.map((e) => e.siteCode)).size === activeEps.length
+  const endpointsOk = activeEps.every((e) => e.siteCode && e.port) && (single || sitesDistinct)
+  const workflowsOk = activeEps.every((_, i) => !!wfByEp[i])
 
-  /* What each endpoint's workflow will actually receive — the same
-     derivation `createOrder` uses, run early so Step 3 can show it instead
-     of just asserting it. This is how the answer to "which workflow does
-     this belong to" is verified, not just claimed: some values here come
-     straight from what's typed above (shared), others are derived per
-     endpoint (its own port, or the far end's management IP) regardless of
-     anything entered on this screen. */
-  const previewEndpoints = useMemo(() => {
+  /* The derived and pool-allocated values each endpoint's template will render
+     — the same function `createOrder` runs on submit, so what Step 3 shows is
+     what the device is actually sent, not a parallel guess at it. */
+  const boundEps = useMemo(() => {
     if (!endpointsOk) return []
-    const draftEps = eps.slice(0, endpointCount).map((e) => {
+    const draftEps = activeEps.map((e, i) => {
       const dm = DEVICE_MODELS.find((d) => d.ports.includes(e.port)) ?? DEVICE_MODELS[0]
       return {
-        id: e.siteCode, role: e.role, siteCode: e.siteCode, deviceName: dm.model, vendor: dm.vendor,
-        mgmtIp: `172.31.33.${20 + eps.indexOf(e) * 80}`, port: e.port,
+        id: `EP-W${i}`, role: e.role, siteCode: e.siteCode, deviceName: dm.model,
+        vendor: dm.vendor, mgmtIp: mgmtIpFor(i), port: e.port,
       }
     })
-    const bandwidth = Number(values.bandwidth_mbps ?? intent.params.find((p) => p.name === 'bandwidth_mbps')?.default ?? 100)
-    return bindEndpoints(draftEps, category, intent.type, subtype, workflows, params, bandwidth)
-      .map((ep, i) => ({ ...ep, role: roleOf(i) as EndpointRole, workflowId: workflowByRole[roleOf(i)] }))
+    const bw = Number(svcParams.find((p) => p.name === 'bandwidth_mbps')?.value ?? 100)
+    return bindEndpoints(draftEps, category, intent.type, subtype, workflows, svcParams, bw)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eps, endpointCount, endpointsOk, category, intent, subtype, workflows, params, values.bandwidth_mbps, workflowByRole])
+  }, [epSig, endpointCount, endpointsOk, category, intent.type, subtype, workflows, svcParams])
+
+  /**
+   * The parameter set ONE endpoint's chosen template renders, with the value it
+   * currently holds. The names come from that template's own tasks, so two
+   * endpoints running different templates genuinely list different parameters —
+   * and each keeps its own value for the ones they share.
+   */
+  const epParams = useMemo(() => activeEps.map((_, i): OrderParamValue[] => {
+    const wf = workflows.find((w) => w.id === wfByEp[i])
+    const bound = boundEps[i]?.params ?? []
+    const byName = new Map(bound.map((p) => [p.name, p]))
+    const names = wf ? workflowParams(wf.tasks) : bound.map((p) => p.name)
+    return names.map((n) => {
+      const base = byName.get(n)
+      const typed = valsByEp[i]?.[n]
+      return {
+        name: n,
+        value: typed ?? base?.value ?? '',
+        source: base?.source ?? ('user' as const),
+      }
+    })
+  }), [activeEps, workflows, wfByEp, boundEps, valsByEp])
+
+  const setEpValue = (i: number, param: string, value: string) =>
+    setValsByEp((prev) => ({ ...prev, [i]: { ...(prev[i] ?? {}), [param]: value } }))
+
+  const svcOk = svcParams.every((p) => p.value !== '' && p.value !== '—')
+  const epValuesOk = epParams.length > 0
+    && epParams.every((list) => list.length > 0 && list.every((p) => p.value !== '' && p.value !== '—'))
+  const valuesOk = svcOk && epValuesOk
+
+  const addDestination = () => setEps((prev) => {
+    const free = SITES.find((s) => !prev.some((p) => p.siteCode === s.code)) ?? SITES[0]
+    return [...prev, { role: star ? 'spoke' : 'Z', siteCode: free.code, port: portsPool[0].ports[0] }]
+  })
+  const removeEndpoint = (i: number) => {
+    setEps((prev) => prev.filter((_, x) => x !== i))
+    setWfByEp((prev) => reindex(prev, i))
+    setValsByEp((prev) => reindex(prev, i))
+  }
 
   const problems: string[] = []
   if (!endpointsOk) {
-    problems.push(intent.topology === 'Two-ended' && eps[0]?.siteCode === eps[1]?.siteCode
-      ? 'A two-ended service needs two different sites.'
+    problems.push(!sitesDistinct && !single
+      ? 'Every endpoint must sit on a different site.'
       : `This intent needs ${intent.endpointArity} endpoint(s), all with a site and a port.`)
   }
-  if (!workflowsOk) problems.push(`No workflow template selected for ${roles.filter((r) => !workflowByRole[r]).join(' and ')}.`)
-  if (!valuesOk) problems.push('Every parameter needs a value before the request can be submitted.')
+  if (!workflowsOk) {
+    const missing = activeEps.map((_, i) => i).filter((i) => !wfByEp[i]).map(labelOfIdx)
+    problems.push(`No workflow template selected for ${missing.join(' and ')}.`)
+  }
+  if (!svcOk) problems.push('Every service setting needs a value before the request can be submitted.')
+  if (!epValuesOk) problems.push('Every endpoint needs a value for each parameter its template renders.')
 
   const canNext = () => {
     if (step === 0) return !!intentId && !!accountId
@@ -165,40 +248,42 @@ export default function NewServiceWizard() {
       category, type: intent.type, subtype,
       accountId: acct.id, accountName: acct.name,
       name: name || `${intent.name}`,
-      intentId, workflowId: workflowByRole.Source ?? workflowByRole.Destination ?? '',
-      endpoints: eps.slice(0, endpointCount).map((e, i) => {
+      intentId, workflowId: wfByEp[0] ?? '',
+      endpoints: activeEps.map((e, i) => {
         const dm = DEVICE_MODELS.find((d) => d.ports.includes(e.port)) ?? DEVICE_MODELS[0]
         return {
           role: e.role, siteCode: e.siteCode, deviceName: dm.model, vendor: dm.vendor,
-          mgmtIp: `172.31.33.${20 + eps.indexOf(e) * 80}`, port: e.port,
-          workflowId: workflowByRole[roleOf(i)],
+          mgmtIp: mgmtIpFor(i), port: e.port,
+          workflowId: wfByEp[i],
+          params: epParams[i],
         }
       }),
-      params,
+      params: svcParams,
     }
     const order = createOrder(draft)
     setCreatedId(order.id)
     setStep(4)
   }
 
-  const workflowPicker = (role: EndpointRole) => {
-    const candidates = candidatesFor(role)
-    const chosen = workflowByRole[role]
+  /** The template chooser for one endpoint — every endpoint gets its own. */
+  const workflowPicker = (i: number) => {
+    const candidates = candidatesForIdx(i)
+    const chosen = wfByEp[i]
     return (
-      <div key={role} className="border border-line rounded-lg p-3.5">
-        <div className="flex items-center justify-between gap-2 mb-2.5">
-          <div className="text-[12.5px] font-semibold">{role} workflow</div>
-          {vendorForRole(role) && <Badge tone="none">{vendorForRole(role)}</Badge>}
+      <div>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="text-[11px] font-semibold uppercase tracking-[.08em] text-ink-3">Workflow template</div>
+          {vendorOfIdx(i) && <Badge tone="none">{vendorOfIdx(i)}</Badge>}
         </div>
         {candidates.length === 0 && (
           <Note tone="crit" className="!py-2 !px-2.5 text-[12px]">No active workflow matches this vendor for {intent.name}.</Note>
         )}
-        <div className="flex flex-col gap-1.5">
-          {candidates.slice(0, 4).map((w) => (
+        <div className="flex flex-col gap-1.5 max-h-[210px] overflow-y-auto">
+          {candidates.map((w) => (
             <button
               key={w.id}
               type="button"
-              onClick={() => setWorkflowByRole({ ...workflowByRole, [role]: w.id })}
+              onClick={() => setWfByEp({ ...wfByEp, [i]: w.id })}
               className={`text-left border rounded-md px-3 py-2 transition-colors
                 ${chosen === w.id ? 'border-brand-500 bg-brand-50 ring-[2px] ring-brand-100' : 'border-line hover:bg-plane'}`}
             >
@@ -209,6 +294,57 @@ export default function NewServiceWizard() {
               </div>
             </button>
           ))}
+        </div>
+      </div>
+    )
+  }
+
+  /** One endpoint's parameter card on Step 3 — its own template, its own values. */
+  const paramCard = (i: number) => {
+    const wf = workflows.find((w) => w.id === wfByEp[i])
+    const list = epParams[i] ?? []
+    return (
+      <div key={i} className="border border-line rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-line-soft bg-plane/50">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge tone={i === 0 ? 'info' : 'none'}>{labelOfIdx(i)}</Badge>
+            <span className="text-[12px] text-ink-3">{activeEps[i]?.siteCode} · {activeEps[i]?.port}</span>
+          </div>
+          <div className="text-[12.5px] font-medium mt-1.5 truncate" title={wf?.name}>
+            {wf ? wf.name : <span className="text-crit-700">No workflow selected</span>}
+          </div>
+        </div>
+        <div className="p-4 grid gap-4 sm:grid-cols-2">
+          {list.map((p) => {
+            const editable = EDITABLE_SOURCES.includes(p.source)
+            const label = (
+              <span className="flex items-center gap-1.5">
+                <span className="font-mono">{p.name}</span>
+                {!editable && <Badge tone={p.source === 'pool' ? 'info' : 'none'} className="!text-[9.5px] !py-0">{p.source}</Badge>}
+              </span>
+            )
+            if (!editable) {
+              return (
+                <Field key={p.name} label={label}
+                  hint={p.source === 'pool' ? 'Allocated by the platform — identical on every endpoint.' : 'Derived from the site and port chosen for this endpoint.'}>
+                  <TextInput readOnly value={p.value} className="bg-plane font-mono text-ink-3" />
+                </Field>
+              )
+            }
+            return (
+              <Field key={p.name} label={label} required hint="Rendered into this endpoint's commands only.">
+                <TextInput
+                  value={p.value}
+                  onChange={(e) => setEpValue(i, p.name, e.target.value)}
+                />
+              </Field>
+            )
+          })}
+          {list.length === 0 && (
+            <div className="sm:col-span-2 text-[12.5px] text-ink-3">
+              Pick a workflow template for this endpoint to see the parameters it renders.
+            </div>
+          )}
         </div>
       </div>
     )
@@ -232,8 +368,8 @@ export default function NewServiceWizard() {
       <div className="vw-card-section p-0 flex flex-col">
         <CardHead title={`Step ${Math.min(step + 1, 5)} · ${STEPS[step]}`} sub={
           step === 0 ? 'Choose the service category and the intent it is built from.'
-            : step === 1 ? 'Pick the routers this service terminates on, and the template that runs on each.'
-              : step === 2 ? 'These parameters come from the intent definition — fill in what the template needs.'
+            : step === 1 ? 'Pick the devices this service terminates on, and the template that runs on each.'
+              : step === 2 ? 'Each endpoint runs its own template, so each one gets its own parameter values.'
                 : step === 3 ? 'Everything is validated before submission.'
                   : 'The service exists and pre-validation has been triggered.'
         } />
@@ -320,241 +456,188 @@ export default function NewServiceWizard() {
             </div>
           )}
 
-          {/* ---- 2 source, destination & workflow (merged) ---- */}
+          {/* ---- 2 source, destinations & workflow ---- */}
           {step === 1 && (
-            <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
-              <div className="flex flex-col gap-4">
-                {Array.from({ length: endpointCount }).map((_, i) => {
-                  const e = eps[i] ?? { role: 'Z' as const, siteCode: SITES[0].code, port: portsPool[0].ports[0] }
-                  const label = intent.topology === 'Single-ended' ? 'Access device'
-                    : intent.topology === 'Star' ? (i === 0 ? 'Hub' : `Spoke ${i}`)
-                      : i === 0 ? 'Source (A-end)' : 'Destination (Z-end)'
-                  return (
-                    <div key={i} className="border border-line rounded-lg p-4">
-                      <div className="text-[12.5px] font-semibold mb-3">{label}</div>
-                      <div className="grid gap-4 sm:grid-cols-3">
-                        <Field label="Site" required>
-                          <Select value={e.siteCode} onChange={(ev) => {
-                            const next = [...eps]; next[i] = { ...e, siteCode: ev.target.value }; setEps(next)
-                          }}>
-                            {SITES.map((s) => <option key={s.code} value={s.code}>{s.code} — {s.city}</option>)}
-                          </Select>
-                        </Field>
-                        <Field label={DOMAIN_PORT_LABEL[domain]} required>
-                          <Select value={e.port} onChange={(ev) => {
-                            const next = [...eps]; next[i] = { ...e, port: ev.target.value }; setEps(next)
-                          }}>
-                            {portsPool.flatMap((d) => d.ports).map((p) => <option key={p} value={p}>{p}</option>)}
-                          </Select>
-                        </Field>
-                        <Field label="Management IP" hint="Derived from the site and port you chose.">
-                          <TextInput readOnly value={`172.31.33.${20 + i * 80}`} className="bg-plane text-ink-3" />
-                        </Field>
-                      </div>
+            <div className="flex flex-col gap-4">
+              {activeEps.map((e, i) => (
+                <div key={i} className="border border-line rounded-lg p-4">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-2">
+                      <Badge tone={i === 0 ? 'info' : 'none'}>{labelOfIdx(i)}</Badge>
+                      <span className="text-[12px] text-ink-3">runs its own template</span>
                     </div>
-                  )
-                })}
-                {intent.topology === 'Star' && (
-                  <div>
-                    <Button size="sm" onClick={() => setEps([...eps, { role: 'spoke', siteCode: SITES[2].code, port: portsPool[0].ports[0] }])}>
-                      Add spoke
-                    </Button>
+                    {/* A source is mandatory, and a service needs at least one
+                       far end — only the destinations beyond the first can go. */}
+                    {!single && i > 1 && (
+                      <Button size="sm" variant="danger" onClick={() => removeEndpoint(i)}>
+                        <Trash2 size={14} />Remove
+                      </Button>
+                    )}
                   </div>
-                )}
-                {!endpointsOk && <Note tone="warn">{problems[0]}</Note>}
-
-                <div className="border border-line rounded-lg p-4 bg-plane/50">
-                  <div className="text-[11px] font-semibold uppercase tracking-[.08em] text-ink-3 mb-2.5">Request so far</div>
-                  <KV items={[
-                    ['Category', <Badge key="c" tone={CATEGORY_TONE[category]}>{category}</Badge>],
-                    ['Intent', intent.name],
-                    ['Subtype', subtype],
-                    ['Customer', ACCOUNTS.find((a) => a.id === accountId)?.name ?? '—'],
-                    ['Service name', name || <span className="text-ink-3">{intent.name} (default)</span>],
-                  ]} />
+                  <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
+                    <div className="grid gap-4 sm:grid-cols-3 h-fit">
+                      <Field label="Site" required>
+                        <Select value={e.siteCode} onChange={(ev) => {
+                          const next = [...eps]; next[i] = { ...e, siteCode: ev.target.value }; setEps(next)
+                        }}>
+                          {SITES.map((s) => <option key={s.code} value={s.code}>{s.code} — {s.city}</option>)}
+                        </Select>
+                      </Field>
+                      <Field label={DOMAIN_PORT_LABEL[domain]} required>
+                        <Select value={e.port} onChange={(ev) => {
+                          const next = [...eps]; next[i] = { ...e, port: ev.target.value }; setEps(next)
+                        }}>
+                          {portsPool.flatMap((d) => d.ports).map((p) => <option key={p} value={p}>{p}</option>)}
+                        </Select>
+                      </Field>
+                      <Field label="Management IP" hint="Derived from the site and port you chose.">
+                        <TextInput readOnly value={mgmtIpFor(i)} className="bg-plane text-ink-3" />
+                      </Field>
+                    </div>
+                    {workflowPicker(i)}
+                  </div>
                 </div>
-              </div>
+              ))}
 
-              <div className="flex flex-col gap-4">
-                {roles.map((r) => workflowPicker(r))}
+              {!single && (
+                <div>
+                  <Button size="sm" onClick={addDestination}>
+                    <Plus size={14} />Add destination
+                  </Button>
+                </div>
+              )}
+              {/* Star and full-mesh intents are built for many far ends; a
+                 two-ended one is not. Adding anyway is allowed — the operator
+                 knows the estate — but the mismatch is surfaced rather than
+                 quietly accepted. */}
+              {overArity && (
+                <Note tone="warn">
+                  <b>{intent.name}</b> is a {intent.topology.toLowerCase()} intent — it expects {intent.endpointArity} endpoint(s),
+                  and this request now has {endpointCount}. A multipoint intent models extra far ends properly; carry on if the
+                  estate really does terminate this service on all of them.
+                </Note>
+              )}
+              {!endpointsOk && <Note tone="warn">{problems[0]}</Note>}
+
+              <div className="border border-line rounded-lg p-4 bg-plane/50">
+                <div className="text-[11px] font-semibold uppercase tracking-[.08em] text-ink-3 mb-2.5">Request so far</div>
+                <KV items={[
+                  ['Category', <Badge key="c" tone={CATEGORY_TONE[category]}>{category}</Badge>],
+                  ['Intent', intent.name],
+                  ['Subtype', subtype],
+                  ['Customer', ACCOUNTS.find((a) => a.id === accountId)?.name ?? '—'],
+                  ['Endpoints', single ? '1 device' : `1 source · ${endpointCount - 1} destination(s)`],
+                  ['Service name', name || <span className="text-ink-3">{intent.name} (default)</span>],
+                ]} />
               </div>
             </div>
           )}
 
-          {/* ---- 3 parameters & values (merged) ---- */}
+          {/* ---- 3 parameters & values ---- */}
           {step === 2 && (
-            <div className="flex flex-col gap-4">
-              {/* These parameters come from the intent, not either endpoint's
-                 workflow — the same values apply whichever router runs the
-                 config. Restating both chosen workflows here (rather than
-                 leaving the operator to remember them from the previous
-                 step) makes that explicit instead of implied. */}
-              <div className="flex flex-wrap gap-2">
-                {roles.map((r) => {
-                  const wf = workflows.find((w) => w.id === workflowByRole[r])
-                  return (
-                    <button
-                      key={r} type="button" onClick={() => setStep(1)}
-                      title={wf ? wf.name : 'No workflow selected — go back and pick one'}
-                      className="flex items-center gap-2 border border-line rounded-lg px-3 py-2 hover:border-brand-300 hover:bg-plane transition-colors
-                        focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
-                    >
-                      <span className="text-[11px] font-semibold uppercase tracking-[.07em] text-ink-3">{r}</span>
-                      <span className="text-[12.5px] font-medium truncate max-w-[240px]">{wf ? wf.name : 'no workflow selected'}</span>
-                      <Pencil size={12} className="text-ink-3 shrink-0" />
-                    </button>
-                  )
-                })}
-              </div>
-              <Note>
-                <b>{intent.params.filter((p) => p.required).length} required</b> · {intent.params.filter((p) => p.fromPool).length} pool-allocated ·
-                every field below is generated from {intent.name}'s parameter definition and feeds
-                both the {roles.join(' and ')} workflow — see exactly what each one receives under
-                "What each workflow receives" below.
-              </Note>
-              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                {intent.params.map((p) => {
-                  const v = params.find((x) => x.name === p.name)!
-                  const modTone = p.modifiable === 'hitless' ? 'good' : p.modifiable === 'bounce' ? 'warn' : 'crit'
-                  const label = (
-                    <span className="flex items-center gap-1.5">
-                      <span className="font-mono">{p.name}</span>
-                      <Badge tone={modTone} className="!text-[9.5px] !py-0">{p.modifiable}</Badge>
-                    </span>
-                  )
-                  const hint = `${p.type} · ${p.constraint}`
-                  if (p.fromPool) {
-                    return (
-                      <Field key={p.name} label={label} hint={`Allocated from the ${p.fromPool} pool and held for 72 hours.`}>
-                        <div className="flex items-center gap-2">
-                          <TextInput readOnly value={v.value} className="bg-plane font-mono" />
-                          <Badge tone="info">reserved</Badge>
-                        </div>
-                      </Field>
+            <div className="flex flex-col gap-5">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">
+                  Service settings · one value for the whole circuit
+                </div>
+                <Note className="mb-3.5">
+                  These come from {intent.name}'s own definition and describe the circuit rather than either end of
+                  it — a VLAN or pseudowire ID that differed between two ends would simply never come up, so they are
+                  allocated once and applied everywhere.
+                </Note>
+                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                  {intent.params.map((p) => {
+                    const v = svcParams.find((x) => x.name === p.name)!
+                    const modTone = p.modifiable === 'hitless' ? 'good' : p.modifiable === 'bounce' ? 'warn' : 'crit'
+                    const label = (
+                      <span className="flex items-center gap-1.5">
+                        <span className="font-mono">{p.name}</span>
+                        <Badge tone={modTone} className="!text-[9.5px] !py-0">{p.modifiable}</Badge>
+                      </span>
                     )
-                  }
-                  if (p.options) {
-                    return (
-                      <Field key={p.name} label={label} required={p.required} hint={hint}>
-                        <Select value={v.value} onChange={(e) => setValues({ ...values, [p.name]: e.target.value })}>
-                          {p.options.map((o) => <option key={o}>{o}</option>)}
-                        </Select>
-                      </Field>
-                    )
-                  }
-                  if (p.type === 'boolean') {
-                    return (
-                      <div key={p.name} className="pt-6">
-                        <Toggle
-                          checked={v.value === 'true'}
-                          onChange={(on) => setValues({ ...values, [p.name]: String(on) })}
-                          label={p.name} hint={hint}
-                        />
-                      </div>
-                    )
-                  }
-                  return (
-                    <Field key={p.name} label={label} required={p.required} hint={hint}>
-                      <TextInput
-                        value={v.value}
-                        type={p.type === 'integer' ? 'number' : 'text'}
-                        min={p.min} max={p.max}
-                        onChange={(e) => setValues({ ...values, [p.name]: e.target.value })}
-                      />
-                    </Field>
-                  )
-                })}
-              </div>
-
-              {previewEndpoints.length > 0 && (
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">
-                    What each workflow receives
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {previewEndpoints.map((ep) => {
-                      const wf = workflows.find((w) => w.id === ep.workflowId)
+                    const hint = `${p.type} · ${p.constraint}`
+                    if (p.fromPool) {
                       return (
-                        <div key={ep.role} className="border border-line rounded-lg overflow-hidden">
-                          <div className="px-3.5 py-2.5 border-b border-line-soft bg-plane/60 flex items-center gap-2 min-w-0">
-                            <Badge tone="none" className="shrink-0">{ep.role}</Badge>
-                            <span className="text-[12.5px] font-medium truncate" title={wf?.name}>
-                              {wf ? wf.name : 'no workflow selected'}
-                            </span>
+                        <Field key={p.name} label={label} hint={`Allocated from the ${p.fromPool} pool and held for 72 hours.`}>
+                          <div className="flex items-center gap-2">
+                            <TextInput readOnly value={v.value} className="bg-plane font-mono" />
+                            <Badge tone="info">reserved</Badge>
                           </div>
-                          <table className="w-full text-[12px] table-fixed">
-                            <tbody>
-                              {(ep.params ?? []).map((p) => (
-                                <tr key={p.name} className="border-b border-line-soft last:border-0">
-                                  <td className="w-[38%] px-3.5 py-1.5 font-mono text-ink-3 truncate" title={p.name}>{p.name}</td>
-                                  <td className="w-[62%] px-3.5 py-1.5 font-mono font-medium text-right truncate" title={p.value}>{p.value}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                        </Field>
+                      )
+                    }
+                    if (p.options) {
+                      return (
+                        <Field key={p.name} label={label} required={p.required} hint={hint}>
+                          <Select value={v.value} onChange={(e) => setSvc({ ...svc, [p.name]: e.target.value })}>
+                            {p.options.map((o) => <option key={o}>{o}</option>)}
+                          </Select>
+                        </Field>
+                      )
+                    }
+                    if (p.type === 'boolean') {
+                      return (
+                        <div key={p.name} className="pt-6">
+                          <Toggle
+                            checked={v.value === 'true'}
+                            onChange={(on) => setSvc({ ...svc, [p.name]: String(on) })}
+                            label={p.name} hint={hint}
+                          />
                         </div>
                       )
-                    })}
-                  </div>
+                    }
+                    return (
+                      <Field key={p.name} label={label} required={p.required} hint={hint}>
+                        <TextInput
+                          value={v.value}
+                          type={p.type === 'integer' ? 'number' : 'text'}
+                          min={p.min} max={p.max}
+                          onChange={(e) => setSvc({ ...svc, [p.name]: e.target.value })}
+                        />
+                      </Field>
+                    )
+                  })}
                 </div>
-              )}
+              </div>
+
+              <div className="h-px bg-line-soft" />
+
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">
+                  Per-endpoint parameters · {endpointCount} endpoint{endpointCount === 1 ? '' : 's'}
+                </div>
+                <Note className="mb-3.5">
+                  Each endpoint runs its own workflow template, and each template renders its own set of
+                  parameters — so the fields below differ per endpoint, and every value is entered
+                  independently. Nothing typed on one endpoint is copied to another.
+                </Note>
+                <div className="flex flex-col gap-4">
+                  {activeEps.map((_, i) => paramCard(i))}
+                </div>
+              </div>
             </div>
           )}
 
           {/* ---- 4 preview ---- */}
           {step === 3 && (
-            <div className="grid gap-6 lg:grid-cols-2">
-              <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-5">
+              <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
                 <div>
                   <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">Service</div>
                   <KV items={[
                     ['Name', name || intent.name],
                     ['Category / type', `${category} · ${intent.type} · ${subtype}`],
                     ['Customer', ACCOUNTS.find((a) => a.id === accountId)?.name ?? '—'],
+                    ['Endpoints', single ? '1 device' : `1 source · ${endpointCount - 1} destination(s)`],
                   ]} />
                 </div>
                 <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">Endpoints & workflows</div>
-                  <div className="flex flex-col gap-2">
-                    {eps.slice(0, endpointCount).map((e, i) => {
-                      const role = roleOf(i)
-                      const wf = workflows.find((w) => w.id === workflowByRole[role])
-                      return (
-                        <button
-                          key={i} type="button" onClick={() => setStep(1)}
-                          title="Edit this endpoint or its workflow"
-                          className="text-left w-full border border-line rounded-lg px-3.5 py-2.5 text-[12.5px]
-                            hover:border-brand-300 hover:bg-plane transition-colors
-                            focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="flex items-center gap-2 min-w-0">
-                              <Badge tone="none" className="shrink-0">{role}</Badge>
-                              <span className="font-medium truncate">{e.siteCode}</span>
-                            </span>
-                            <span className="flex items-center gap-1.5 shrink-0">
-                              <Mono className="text-ink-3">{e.port}</Mono>
-                              <Pencil size={12} className="text-ink-3" />
-                            </span>
-                          </div>
-                          <div className="text-[11.5px] text-ink-3 mt-1 truncate">{wf ? wf.name : 'no workflow selected'}</div>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-                <Note>Pre-validation starts automatically the moment this request is created — no separate step needed. Success moves it to <b>Validated</b>, ready for approval; failure moves it to <b>Invalid</b>, back with the requester.</Note>
-              </div>
-
-              <div className="flex flex-col gap-4">
-                <div>
-                  <div className="flex items-baseline justify-between gap-2 mb-2.5">
-                    <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3">Parameters entered</div>
-                    <div className="text-[11px] text-ink-3">Feeds both workflows below</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">
+                    Service settings
                   </div>
                   <table className="w-full text-[12.5px] border border-line rounded-lg overflow-hidden">
                     <tbody>
-                      {params.map((p) => (
+                      {svcParams.map((p) => (
                         <tr key={p.name} className="border-b border-line-soft last:border-0">
                           <td className="px-3.5 py-2 font-mono text-ink-2">{p.name}</td>
                           <td className="px-3.5 py-2 font-mono font-medium">{p.value || <span className="text-crit-700">missing</span>}</td>
@@ -564,41 +647,53 @@ export default function NewServiceWizard() {
                     </tbody>
                   </table>
                 </div>
-
-                {previewEndpoints.length > 0 && (
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">
-                      What each workflow receives
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {previewEndpoints.map((ep) => {
-                        const wf = workflows.find((w) => w.id === ep.workflowId)
-                        return (
-                          <div key={ep.role} className="border border-line rounded-lg overflow-hidden">
-                            <div className="px-3 py-2 border-b border-line-soft bg-plane/60 flex items-center gap-1.5 min-w-0">
-                              <Badge tone="none" className="shrink-0">{ep.role}</Badge>
-                              <span className="text-[11.5px] font-medium truncate" title={wf?.name}>{wf ? wf.name : 'no workflow selected'}</span>
-                            </div>
-                            <table className="w-full text-[11.5px] table-fixed">
-                              <tbody>
-                                {(ep.params ?? []).map((p) => (
-                                  <tr key={p.name} className="border-b border-line-soft last:border-0">
-                                    <td className="w-[42%] px-3 py-1 font-mono text-ink-3 truncate" title={p.name}>{p.name}</td>
-                                    <td className="w-[58%] px-3 py-1 font-mono font-medium text-right truncate" title={p.value}>{p.value}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-                {problems.length > 0
-                  ? <Note tone="crit"><b>{problems.length} problem(s) block submission.</b><ul className="list-disc pl-5 mt-1.5">{problems.map((p) => <li key={p}>{p}</li>)}</ul></Note>
-                  : <Note tone="good"><b>Validation passed.</b> All parameters resolve, endpoints are distinct, and an active workflow is bound to every endpoint.</Note>}
               </div>
+
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">
+                  What each endpoint's workflow receives
+                </div>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {activeEps.map((e, i) => {
+                    const wf = workflows.find((w) => w.id === wfByEp[i])
+                    return (
+                      <div key={i} className="border border-line rounded-lg overflow-hidden">
+                        <button
+                          type="button" onClick={() => setStep(1)}
+                          title="Edit this endpoint or its workflow"
+                          className="w-full text-left px-3.5 py-2.5 border-b border-line-soft bg-plane/50
+                            hover:bg-plane transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
+                        >
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge tone={i === 0 ? 'info' : 'none'}>{labelOfIdx(i)}</Badge>
+                            <Mono className="text-[11px] text-ink-3">{e.siteCode} · {e.port}</Mono>
+                          </div>
+                          <div className="text-[12px] font-medium mt-1 truncate" title={wf?.name}>
+                            {wf ? wf.name : <span className="text-crit-700">no workflow selected</span>}
+                          </div>
+                        </button>
+                        <table className="w-full text-[11.5px] table-fixed">
+                          <tbody>
+                            {(epParams[i] ?? []).map((p) => (
+                              <tr key={p.name} className="border-b border-line-soft last:border-0">
+                                <td className="w-[45%] px-3 py-1 font-mono text-ink-3 truncate" title={p.name}>{p.name}</td>
+                                <td className="w-[55%] px-3 py-1 font-mono font-medium text-right truncate" title={p.value}>
+                                  {p.value || <span className="text-crit-700">missing</span>}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {problems.length > 0
+                ? <Note tone="crit"><b>{problems.length} problem(s) block submission.</b><ul className="list-disc pl-5 mt-1.5">{problems.map((p) => <li key={p}>{p}</li>)}</ul></Note>
+                : <Note tone="good"><b>Validation passed.</b> Every endpoint sits on a distinct site, is bound to an active workflow, and has a value for every parameter that workflow renders.</Note>}
+              <Note>Pre-validation starts automatically the moment this request is created — no separate step needed. Success moves it to <b>Validated</b>, ready for approval; failure moves it to <b>Invalid</b>, back with the requester.</Note>
             </div>
           )}
 
