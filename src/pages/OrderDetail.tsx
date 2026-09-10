@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, CheckCircle2, PlayCircle, RotateCcw, Square, XCircle } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, GitBranch, PlayCircle, RotateCcw, Server, Square, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { Endpoint, Run, RunTask, StageKind } from '@/types'
 import { endpointRole } from '@/types'
@@ -28,11 +28,20 @@ function attemptReason(group: Run[], r: Run): string {
   return prev ? `Retry after ${prev.outcome.toLowerCase()}` : 'Retry'
 }
 
+type Delta = { attribute: string; current: string; requested: string }[]
+
+/** What the change actually is, in one line: "Circuit capacity 400 Gbps → 800
+ *  Gbps". A create has no delta because nothing existed to differ from. */
+function changeSummary(intent: string, delta?: Delta): string {
+  if (!delta?.length) return intent === 'Create' ? 'initial configuration' : `${intent.toLowerCase()} applied`
+  return delta.map((d) => `${d.attribute} ${d.current} → ${d.requested}`).join(', ')
+}
+
 /** The request's own reason, for the header above each endpoint's attempts. */
-function requestReason(intent: string, delta?: { attribute: string; current: string; requested: string }[]): string {
+function requestReason(intent: string, delta?: Delta): string {
   const why = intent === 'Create' ? 'Initial provisioning' : `${intent} request`
   if (!delta?.length) return why
-  return `${why} · ${delta.map((d) => `${d.attribute} ${d.current} → ${d.requested}`).join(', ')}`
+  return `${why} · ${changeSummary(intent, delta)}`
 }
 
 export default function OrderDetail() {
@@ -102,6 +111,27 @@ export default function OrderDetail() {
     if (unassigned.length > 0) groups.push({ role: 'Source', endpoint: undefined, runs: unassigned })
     return groups
   }, [allOrderRuns, endpoints])
+
+  /**
+   * Which task definitions actually write to the device.
+   *
+   * Most of a run's audit value sits in these: read and validation tasks prove
+   * what the state was, write tasks *are* the state change. A run that wrote
+   * nothing and a run that reconfigured the circuit otherwise look identical
+   * in a list of outcomes and durations. A RunTask carries only the id of the
+   * definition it came from, so the kind has to be resolved back through the
+   * workflow that produced the run.
+   */
+  const writeTaskIds = useMemo(() => {
+    const m = new Map<string, Set<string>>()
+    workflows.forEach((w) => m.set(w.id, new Set(w.tasks.filter((t) => t.kind === 'write').map((t) => t.id))))
+    return m
+  }, [workflows])
+  const writesIn = (r: Run) => {
+    const ids = writeTaskIds.get(r.workflowId)
+    const w = ids ? r.tasks.filter((t) => ids.has(t.taskDefId)) : []
+    return { total: w.length, passed: w.filter((t) => t.state === 'Passed').length }
+  }
 
   const tab = (sp.get('tab') ?? 'service') as 'service' | 'lifecycle' | 'runs'
   /* replace: true — switching tabs shouldn't push a browser-history entry, so
@@ -217,7 +247,26 @@ export default function OrderDetail() {
           prototype), so this is the only place some of them are ever shown. */}
       {order.delta && order.delta.length > 0 && (
         <Card>
-          <CardHead title="Requested change" sub={order.notes ? `Reason: ${order.notes}` : undefined} />
+          {/* A change is raised somewhere and lands somewhere: Change & Cease is
+              where it was raised and where its siblings against this service
+              sit, the service is what it acts on. Both were a search away from
+              here and are now one click. */}
+          <CardHead
+            title="Requested change"
+            sub={order.notes ? `Reason: ${order.notes}` : `Raised as a ${order.intent.toLowerCase()} against this service`}
+            right={
+              <>
+                <Link to={`/change?q=${order.id}`} className="nst-btn nst-btn--xs no-underline">
+                  <GitBranch size={14} />Open in Change &amp; Cease
+                </Link>
+                {order.serviceId && (
+                  <Link to={`/inventory/${order.serviceId}`} className="nst-btn nst-btn--xs no-underline">
+                    <Server size={14} />Open service
+                  </Link>
+                )}
+              </>
+            }
+          />
           <div className="overflow-x-auto">
             <table className="w-full text-[13px]">
               <thead><tr>
@@ -370,6 +419,21 @@ export default function OrderDetail() {
                 }
               />
               <CardBody>
+                {/* What this particular run did to this particular device.
+                    Opening a run used to drop you straight into a stage list
+                    with no statement of what the run was for — fine for a
+                    create, where the whole configuration is the change, but on
+                    a modify it left the one question worth asking unanswered. */}
+                <Note tone={run.outcome === 'Accepted' ? 'good' : run.outcome === 'Running' ? 'info' : 'warn'} className="mb-4">
+                  {(() => {
+                    const w = writesIn(run)
+                    const what = changeSummary(order.intent, order.delta)
+                    if (!w.total) return <>This run only read and validated <strong>{ep?.mgmtIp}</strong> — no configuration was written.</>
+                    if (run.outcome === 'Running') return <>Applying <strong>{what}</strong> to {ep?.mgmtIp} — {w.passed} of {w.total} commands written so far.</>
+                    if (run.outcome === 'Accepted') return <>Applied <strong>{what}</strong> to {ep?.mgmtIp}, writing {w.total} command{w.total === 1 ? '' : 's'}, and proved it afterwards.</>
+                    return <>Attempted <strong>{what}</strong> on {ep?.mgmtIp} — {w.passed} of {w.total} commands written before the run ended {run.outcome.toLowerCase()}.</>
+                  })()}
+                </Note>
                 <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
                   {/* stages */}
                   <div className="flex flex-col gap-2">
@@ -488,7 +552,7 @@ export default function OrderDetail() {
               <div className="overflow-x-auto">
                 <table className="w-full text-[13px]">
                   <thead><tr>
-                    {['Run', 'Reason', 'Outcome', 'Started', 'Duration', 'Tasks passed', 'Residue', ''].map((h) => (
+                    {['Run', 'Reason', 'Outcome', 'Started', 'Duration', 'Tasks passed', 'Config written', 'Residue', ''].map((h) => (
                       <th key={h} scope="col" className="text-left px-[18px] py-3 border-b border-line text-[12px] font-medium text-ink-3">{h}</th>
                     ))}
                   </tr></thead>
@@ -510,6 +574,21 @@ export default function OrderDetail() {
                           <div className="text-[12px] text-ink-3 whitespace-nowrap">{r.endedAt ? `ended ${clockTime(r.endedAt)}` : 'still running'}</div>
                         </td>
                         <td className="px-[18px] py-3 tnum">{r.tasks.filter((t) => t.state === 'Passed').length} of {r.tasks.length}</td>
+                        {/* Separates a run that changed the device from one that
+                            only read and validated it — the difference an audit
+                            actually cares about, and invisible in a pass count. */}
+                        <td className="px-[18px] py-3">
+                          {(() => {
+                            const w = writesIn(r)
+                            if (!w.total) return <span className="text-ink-3">nothing written</span>
+                            return (
+                              <>
+                                <div className="tnum">{w.passed} of {w.total} commands</div>
+                                <div className="text-[12px] text-ink-3">{changeSummary(order.intent, order.delta)}</div>
+                              </>
+                            )
+                          })()}
+                        </td>
                         <td className="px-[18px] py-3 text-ink-3">{r.residue ? r.residue.join('; ') : '—'}</td>
                         <td className="px-[18px] py-3 text-right">
                           <Button
