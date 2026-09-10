@@ -361,9 +361,26 @@ export default function NewServiceWizard() {
           {/* ---- 3 parameters & values (merged) ---- */}
           {step === 2 && (
             <div className="flex flex-col gap-4">
+              {/* These parameters come from the intent, not either endpoint's
+                 workflow — the same values apply whichever router runs the
+                 config. Restating both chosen workflows here (rather than
+                 leaving the operator to remember them from the previous
+                 step) makes that explicit instead of implied. */}
+              <div className="flex flex-wrap gap-2">
+                {roles.map((r) => {
+                  const wf = workflows.find((w) => w.id === workflowByRole[r])
+                  return (
+                    <div key={r} className="flex items-center gap-2 border border-line rounded-lg px-3 py-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-[.07em] text-ink-3">{r}</span>
+                      <span className="text-[12.5px] font-medium truncate max-w-[240px]">{wf ? wf.name : 'no workflow selected'}</span>
+                    </div>
+                  )
+                })}
+              </div>
               <Note>
                 <b>{intent.params.filter((p) => p.required).length} required</b> · {intent.params.filter((p) => p.fromPool).length} pool-allocated ·
-                every field below is generated from {intent.name}'s parameter definition, so nothing here can drift from what validation checks.
+                every field below is generated from {intent.name}'s parameter definition and applies to the whole service —
+                not to the {roles.join(' or ')} workflow individually.
               </Note>
               <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
                 {intent.params.map((p) => {
@@ -437,12 +454,16 @@ export default function NewServiceWizard() {
                   <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">Endpoints & workflows</div>
                   <div className="flex flex-col gap-2">
                     {eps.slice(0, endpointCount).map((e, i) => {
-                      const wf = workflows.find((w) => w.id === workflowByRole[roleOf(i)])
+                      const role = roleOf(i)
+                      const wf = workflows.find((w) => w.id === workflowByRole[role])
                       return (
                         <div key={i} className="border border-line rounded-lg px-3.5 py-2.5 text-[12.5px]">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-medium">{e.siteCode}</span>
-                            <Mono className="text-ink-3">{e.port}</Mono>
+                            <span className="flex items-center gap-2 min-w-0">
+                              <Badge tone="none" className="shrink-0">{role}</Badge>
+                              <span className="font-medium truncate">{e.siteCode}</span>
+                            </span>
+                            <Mono className="text-ink-3 shrink-0">{e.port}</Mono>
                           </div>
                           <div className="text-[11.5px] text-ink-3 mt-1 truncate">{wf ? wf.name : 'no workflow selected'}</div>
                         </div>
@@ -455,7 +476,10 @@ export default function NewServiceWizard() {
 
               <div className="flex flex-col gap-4">
                 <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">Parameters</div>
+                  <div className="flex items-baseline justify-between gap-2 mb-2.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3">Parameters</div>
+                    <div className="text-[11px] text-ink-3">Shared across every endpoint — not per workflow</div>
+                  </div>
                   <table className="w-full text-[12.5px] border border-line rounded-lg overflow-hidden">
                     <tbody>
                       {params.map((p) => (
