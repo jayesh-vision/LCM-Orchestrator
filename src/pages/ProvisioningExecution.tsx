@@ -181,13 +181,13 @@ export default function ProvisioningExecution() {
           value={view} onChange={setView} />
       </div>
 
+      {/* Domain, Vendor and Category each have their own dropdown in the
+         toolbar below, which already shows the selected value — no need to
+         say it twice up here. */}
       <FilterBanner
         count={filtered.length} noun="requests" onClear={clear}
         filters={[
-          ...(domain !== 'All' ? [{ key: 'domain', label: 'Domain', value: domain, onRemove: () => setDomain('All') }] : []),
-          ...(cat !== 'All' ? [{ key: 'cat', label: 'Category', value: cat, onRemove: () => setCat('All') }] : []),
           ...(state !== 'All' ? [{ key: 'state', label: 'Status', value: stateList.join(' or '), onRemove: () => setState('All') }] : []),
-          ...(vendor !== 'All' ? [{ key: 'vendor', label: 'Vendor', value: VENDOR_LABEL[vendor], onRemove: () => setVendor('All') }] : []),
           ...(qname ? [{ key: 'name', label: 'Name', value: qname, onRemove: () => setQname('') }] : []),
           ...(qcode ? [{ key: 'code', label: 'Code', value: qcode, onRemove: () => setQcode('') }] : []),
           ...(qmodel ? [{ key: 'model', label: 'Model', value: qmodel, onRemove: () => setQmodel('') }] : []),

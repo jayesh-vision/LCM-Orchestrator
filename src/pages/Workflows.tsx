@@ -186,10 +186,11 @@ export default function Workflows() {
   return (
     <>
 
+      {/* Domain has its own quick-chip row in the toolbar below, which
+         already shows which one is selected — no need to say it twice. */}
       <FilterBanner
         count={filtered.length} noun="workflows" onClear={clear}
         filters={[
-          ...(domain !== 'All' ? [{ key: 'domain', label: 'Domain', value: domain, onRemove: () => setDomain('All') }] : []),
           ...(cat !== 'All' ? [{ key: 'cat', label: 'Category', value: cat, onRemove: () => setCat('All') }] : []),
           ...(st !== 'All' ? [{ key: 'state', label: 'State', value: stList.join(' or '), onRemove: () => setSt('All') }] : []),
           ...(intentId !== 'All' ? [{ key: 'intent', label: 'Intent', value: intents.find((i) => i.id === intentId)?.name ?? intentId, onRemove: () => setIntentId('All') }] : []),

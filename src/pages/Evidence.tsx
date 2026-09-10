@@ -74,10 +74,11 @@ export default function Evidence() {
   return (
     <>
 
+      {/* Verdict has its own quick-chip row in the toolbar below, which
+         already shows which one is selected — no need to say it twice. */}
       <FilterBanner
         count={filtered.length} noun="assertions" onClear={clear}
         filters={[
-          ...(verdict !== 'All' ? [{ key: 'verdict', label: 'Verdict', value: verdict, onRemove: () => setVerdict('All') }] : []),
           ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
         ]}
       />

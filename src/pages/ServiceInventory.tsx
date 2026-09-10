@@ -122,10 +122,11 @@ export default function ServiceInventory() {
   return (
     <>
 
+      {/* Domain has its own quick-chip row in the toolbar below, which
+         already shows which one is selected — no need to say it twice. */}
       <FilterBanner
         count={filtered.length} noun="services" onClear={clear}
         filters={[
-          ...(domain !== 'All' ? [{ key: 'domain', label: 'Domain', value: domain, onRemove: () => setDomain('All') }] : []),
           ...(cat !== 'All' ? [{ key: 'cat', label: 'Category', value: cat, onRemove: () => setCat('All') }] : []),
           ...(state !== 'All' ? [{ key: 'state', label: 'State', value: state, onRemove: () => setState('All') }] : []),
           ...(conf !== 'All' ? [{ key: 'conf', label: 'Conformance', value: conf, onRemove: () => setConf('All') }] : []),

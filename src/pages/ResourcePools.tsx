@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Cable, Database, Gauge, Hourglass, Network, ShieldCheck, Spline, TriangleAlert, Waypoints } from 'lucide-react'
-import { useClearQuery, useQueryPatch, useQueryState } from '@/lib/useQueryState'
+import { useClearQuery, useQueryState } from '@/lib/useQueryState'
 import { useStore } from '@/store/useStore'
 import type { PoolKind, ResourcePool } from '@/types'
 import {
@@ -19,7 +19,6 @@ export default function ResourcePools() {
   const [open, setOpen] = useState<ResourcePool | null>(null)
   /* A pool can be opened straight from another screen: /pools?pool=POOL-VLAN-01 */
   const [poolId, setPoolId] = useQueryState('pool', '')
-  const patch = useQueryPatch()
   const clear = useClearQuery(['kind', 'q', 'pool'])
   useEffect(() => {
     if (!poolId) { setOpen(null); return }
@@ -70,10 +69,12 @@ export default function ResourcePools() {
   return (
     <>
 
+      {/* Kind has its own quick-chip row in the toolbar below, which already
+         shows which one is selected — repeating it here would just be the
+         same state said twice. */}
       <FilterBanner
         count={filtered.length} noun="pools" onClear={clear}
         filters={[
-          ...(kind !== 'All' ? [{ key: 'kind', label: 'Kind', value: kind, onRemove: () => patch({ kind: null }) }] : []),
           ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
         ]}
       />

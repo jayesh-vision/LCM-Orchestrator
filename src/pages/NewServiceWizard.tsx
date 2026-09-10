@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, CheckCircle2, PlayCircle, Save } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCircle2, PlayCircle, Pencil, Save } from 'lucide-react'
 import { useStore, type WizardDraft } from '@/store/useStore'
 import { ACCOUNTS, DEVICE_MODELS, SITES, modelsForCategory } from '@/data/catalog'
 import type { Category, Domain, EndpointRole, OrderParamValue } from '@/types'
@@ -370,10 +370,16 @@ export default function NewServiceWizard() {
                 {roles.map((r) => {
                   const wf = workflows.find((w) => w.id === workflowByRole[r])
                   return (
-                    <div key={r} className="flex items-center gap-2 border border-line rounded-lg px-3 py-2">
+                    <button
+                      key={r} type="button" onClick={() => setStep(1)}
+                      title={wf ? wf.name : 'No workflow selected — go back and pick one'}
+                      className="flex items-center gap-2 border border-line rounded-lg px-3 py-2 hover:border-brand-300 hover:bg-plane transition-colors
+                        focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
+                    >
                       <span className="text-[11px] font-semibold uppercase tracking-[.07em] text-ink-3">{r}</span>
                       <span className="text-[12.5px] font-medium truncate max-w-[240px]">{wf ? wf.name : 'no workflow selected'}</span>
-                    </div>
+                      <Pencil size={12} className="text-ink-3 shrink-0" />
+                    </button>
                   )
                 })}
               </div>
@@ -457,16 +463,25 @@ export default function NewServiceWizard() {
                       const role = roleOf(i)
                       const wf = workflows.find((w) => w.id === workflowByRole[role])
                       return (
-                        <div key={i} className="border border-line rounded-lg px-3.5 py-2.5 text-[12.5px]">
+                        <button
+                          key={i} type="button" onClick={() => setStep(1)}
+                          title="Edit this endpoint or its workflow"
+                          className="text-left w-full border border-line rounded-lg px-3.5 py-2.5 text-[12.5px]
+                            hover:border-brand-300 hover:bg-plane transition-colors
+                            focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
+                        >
                           <div className="flex items-center justify-between gap-2">
                             <span className="flex items-center gap-2 min-w-0">
                               <Badge tone="none" className="shrink-0">{role}</Badge>
                               <span className="font-medium truncate">{e.siteCode}</span>
                             </span>
-                            <Mono className="text-ink-3 shrink-0">{e.port}</Mono>
+                            <span className="flex items-center gap-1.5 shrink-0">
+                              <Mono className="text-ink-3">{e.port}</Mono>
+                              <Pencil size={12} className="text-ink-3" />
+                            </span>
                           </div>
                           <div className="text-[11.5px] text-ink-3 mt-1 truncate">{wf ? wf.name : 'no workflow selected'}</div>
-                        </div>
+                        </button>
                       )
                     })}
                   </div>
