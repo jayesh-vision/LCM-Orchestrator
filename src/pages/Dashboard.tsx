@@ -1,11 +1,15 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Cable, CheckCircle2, ClipboardList, PlayCircle, RadioTower, Router, Wifi, XCircle } from 'lucide-react'
+import {
+  AlertTriangle, Boxes, Cable, CheckCircle2, ClipboardList, Clock, HelpCircle,
+  PlayCircle, RadioTower, Router, Wifi, Workflow as WorkflowIcon, XCircle,
+} from 'lucide-react'
 import { useStore } from '@/store/useStore'
-import type { Domain, Order, OrderState } from '@/types'
+import type { Conformance, Domain, Order, OrderState } from '@/types'
 import { DOMAINS, domainOf } from '@/types'
 import { Badge, Button, Card, CardBody, CardHead, InfoTip, Mono, Progress, type StatTone } from '@/components/ui'
 import { CHART, Donut, FILL, ColumnChart, StackedBar, TrendChart } from '@/components/charts'
+import { CPE_VENDORS, OPTICAL_VENDORS, RADIO_VENDORS, ROUTER_VENDORS, SWITCH_VENDORS, VNF_VENDORS } from '@/data/catalog'
 import { CATEGORY_TONE, relTime } from '@/lib/format'
 
 const DAY = 86400000
@@ -36,6 +40,29 @@ const QUEUE_ICON_TONE: Record<'brand' | StatTone, { bg: string; fg: string; ring
   plum: { bg: 'bg-plum-50', fg: 'text-plum-700', ring: 'ring-plum-200/70' },
 }
 
+/* Service health — whether what's already provisioned still matches its
+   intent. The other half of the LCM story the request funnel doesn't show:
+   Requests raise the order, Workflows execute it, but only this closes the
+   loop on whether the result still holds. */
+const CONF_ORDER: Conformance[] = ['Conformant', 'Drifted', 'Never proven', 'Ghost']
+const CONF_ICON: Record<string, typeof CheckCircle2> = { Conformant: CheckCircle2, Drifted: AlertTriangle, 'Never proven': HelpCircle, Ghost: XCircle }
+const CONF_COLOR: Record<string, string> = { Conformant: FILL.good, Drifted: FILL.warn, 'Never proven': '#9ca3af', Ghost: FILL.crit }
+const CONF_CHIP_CLS: Record<string, string> = {
+  Conformant: 'bg-[#10b981]/10 text-[#10b981]',
+  Drifted: 'bg-[#f59e0b]/10 text-[#f59e0b]',
+  'Never proven': 'bg-[#9ca3af]/10 text-[#6b7280]',
+  Ghost: 'bg-[#ef4444]/10 text-[#ef4444]',
+}
+/* Kept short on purpose — this card is half-width (unlike the full-width
+   domain card's blurbs), so the row has roughly half the horizontal room
+   before `truncate` starts clipping it. */
+const CONF_BLURB: Record<string, string> = {
+  Conformant: 'Matches the intent exactly.',
+  Drifted: 'Changed since it was last proven.',
+  'Never proven': 'Never independently verified.',
+  Ghost: 'No configuration on the device.',
+}
+
 /** Count per calendar day over the last `days`, oldest first. */
 function perDay(dates: string[], days: number) {
   const today = new Date(); today.setHours(0, 0, 0, 0)
@@ -54,12 +81,30 @@ function perDay(dates: string[], days: number) {
 export default function Dashboard() {
   const orders = useStore((s) => s.orders)
   const runs = useStore((s) => s.runs)
+  const workflows = useStore((s) => s.workflows)
+  const services = useStore((s) => s.services)
+  const intents = useStore((s) => s.intents)
   const nav = useNavigate()
 
   const n = (s: OrderState) => orders.filter((o) => o.state === s).length
   const running = runs.filter((r) => r.outcome === 'Running')
   const waitingApproval = n('Validated')
   const readyToRun = n('Approved') + n('Queued')
+
+  /* ---- templates & coverage: can we actually provision what's asked? ---- */
+  const activeWf = workflows.filter((w) => w.state === 'Active').length
+  const awaitingWf = workflows.filter((w) => w.state === 'Assigned' || w.state === 'Awaiting approval').length
+  const vendorsActive = new Set(workflows.filter((w) => w.state === 'Active').map((w) => w.vendor)).size
+  const allVendors = new Set([...ROUTER_VENDORS, ...SWITCH_VENDORS, ...CPE_VENDORS, ...RADIO_VENDORS, ...OPTICAL_VENDORS, ...VNF_VENDORS]).size
+  const coverageGaps = intents.filter((i) => !workflows.some((w) => w.intentId === i.id && w.state === 'Active')).length
+
+  /* ---- service health: does what's live still match its own intent? ---- */
+  const confCounts = useMemo(() => {
+    const out: Record<string, number> = { Conformant: 0, Drifted: 0, 'Never proven': 0, Ghost: 0 }
+    services.forEach((s) => { if (s.conformance in out) out[s.conformance] += 1 })
+    return out
+  }, [services])
+  const confTotal = CONF_ORDER.reduce((a, c) => a + confCounts[c], 0)
   const toRequests = (state?: string, cat?: string, domain?: string) => {
     const p = new URLSearchParams()
     if (state) p.set('state', state)
@@ -120,6 +165,17 @@ export default function Dashboard() {
 
   const heroKpi = kpis[0]
   const queueKpis = kpis.slice(1)
+
+  const templateRows: { label: string; value: number; sub: string; icon: typeof WorkflowIcon; go: string; tone?: StatTone; progress: number }[] = [
+    { label: 'Active workflows', value: activeWf, sub: 'Ready to execute an order', icon: WorkflowIcon, go: '/workflows?state=Active', tone: 'good',
+      progress: (activeWf / Math.max(1, workflows.length)) * 100 },
+    { label: 'Awaiting approval', value: awaitingWf, sub: 'Authored, not yet published', icon: Clock, go: '/workflows?state=Assigned,Awaiting approval', tone: 'plum',
+      progress: (awaitingWf / Math.max(1, workflows.length)) * 100 },
+    { label: 'Vendors in service', value: vendorsActive, sub: `Of ${allVendors} vendors the platform supports`, icon: Boxes, go: '/workflows',
+      progress: (vendorsActive / Math.max(1, allVendors)) * 100 },
+    { label: 'Coverage gaps', value: coverageGaps, sub: 'Intents with no active workflow at all', icon: AlertTriangle, go: '/workflows', tone: coverageGaps ? 'crit' : 'good',
+      progress: (coverageGaps / Math.max(1, intents.length)) * 100 },
+  ]
 
   return (
     <>
@@ -182,6 +238,81 @@ export default function Dashboard() {
                 </button>
               )
             })}
+          </CardBody>
+        </Card>
+      </div>
+
+      {/* ---------------- templates & coverage · service health ---------------- */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="vw-flex vw-flex-col">
+          <CardHead title="Templates & coverage" sub="Can we actually provision what's being asked for?"
+            info="Workflow templates are the executable recipes — CLI or VNF-lifecycle commands — bound to one category, vendor and model. An order can only run once an Active template exists for its intent, on its vendor. Click a row to open Workflows filtered to it." />
+          <CardBody className="vw-flex vw-flex-col vw-gap-sm flex-1">
+            {templateRows.map((k) => {
+              const t = QUEUE_ICON_TONE[k.tone ?? 'brand']
+              return (
+                <button key={k.label} type="button" onClick={() => nav(k.go)}
+                  aria-label={`${k.value} ${k.label}. Open Workflows`}
+                  className="vw-card-child vw-card--clickable w-full text-left">
+                  <span className="vw-flex vw-items-center vw-gap-sm">
+                    <span className={`w-8 h-8 rounded-lg grid place-items-center shrink-0 ring-1 ring-inset ${t.bg} ${t.fg} ${t.ring}`} aria-hidden>
+                      <k.icon size={15} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="vw-flex vw-items-center vw-justify-between vw-gap-sm">
+                        <span className="vw-card-activity-label truncate">{k.label}</span>
+                        <span className="vw-card-metric-sm tnum shrink-0">{k.value}</span>
+                      </span>
+                      <Progress value={k.progress} tone={k.tone ?? 'brand'} className="mt-1.5" />
+                      <span className="vw-card-activity-value block mt-1 truncate">{k.sub}</span>
+                    </span>
+                  </span>
+                </button>
+              )
+            })}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHead title="Service health" sub="Every live service, checked against its own intent"
+            info="Whether what's already been provisioned still matches what was ordered. Conformant means the device matches the intent exactly; Drifted means it changed after being proven; Never proven means it was never independently verified; Ghost means there's no configuration on the device at all. Click a slice of the donut or a row to open those services." />
+          <CardBody className="vw-flex vw-items-center vw-gap-6 vw-wrap lg:flex-nowrap">
+            <div className="shrink-0 w-full flex justify-center lg:w-auto lg:justify-start">
+              <Donut size={168} total={confTotal}
+                segments={CONF_ORDER.map((c) => ({
+                  label: c, value: confCounts[c], fill: 'brand', color: CONF_COLOR[c],
+                  onClick: () => nav(`/inventory?conf=${encodeURIComponent(c)}`),
+                }))}
+              />
+            </div>
+            <div className="grid gap-2 flex-1 min-w-0 w-full">
+              {CONF_ORDER.map((c) => {
+                const share = Math.round((confCounts[c] / Math.max(1, confTotal)) * 100)
+                const Icon = CONF_ICON[c]
+                return (
+                  <button key={c} type="button" onClick={() => nav(`/inventory?conf=${encodeURIComponent(c)}`)}
+                    aria-label={`${confCounts[c]} ${c} services. Open them`}
+                    className="vw-card-child vw-card--clickable w-full text-left">
+                    <span className="vw-flex vw-items-center vw-gap-sm">
+                      <span className={`w-9 h-9 rounded-lg grid place-items-center shrink-0 ${CONF_CHIP_CLS[c]}`} aria-hidden>
+                        <Icon size={16} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="vw-flex vw-items-center vw-justify-between vw-gap-sm">
+                          <span className="vw-card-activity-label truncate">{c}</span>
+                          <span className="vw-flex vw-items-baseline vw-gap-xs shrink-0">
+                            <span className="vw-card-metric-sm tnum">{confCounts[c]}</span>
+                            <span className="vw-label">{share}%</span>
+                          </span>
+                        </span>
+                        <Progress value={share} color={CONF_COLOR[c]} className="mt-1.5" />
+                        <span className="vw-card-activity-value block mt-1 truncate">{CONF_BLURB[c]}</span>
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
           </CardBody>
         </Card>
       </div>
