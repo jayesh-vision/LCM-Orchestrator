@@ -607,3 +607,124 @@ export function TrendChart({ labels, series, height = 200, ariaLabel }:
     </div>
   )
 }
+
+/* --------------------------------------------------------- stacked trend */
+export interface StackedTrendSeries { name: string; values: number[]; color: string }
+
+/**
+ * One stacked bar per day (composition by category) with an optional single
+ * line overlay for a second, uncategorised metric drawn over the same axis
+ * — e.g. "raised, by domain" as stacked bars against a "completed" total as
+ * a line, so the category breakdown and the inflow/outflow comparison both
+ * read at once instead of needing two separate charts, and two same-hue
+ * lines never have to stand in for four different categories.
+ */
+export function StackedTrendChart({ labels, series, overlay, height = 220, ariaLabel }:
+{ labels: string[]; series: StackedTrendSeries[]; overlay?: { name: string; values: number[]; color: string }; height?: number; ariaLabel: string }) {
+  const [fillRef, size] = useFill<HTMLDivElement>({ w: 640, h: height })
+  const [hover, setHover] = useState<number | null>(null)
+  const W = 640; const H = size.w > 0 ? size.h * (W / size.w) : height
+  const m = { t: 14, r: 12, b: 30, l: 30 }
+  const cW = W - m.l - m.r; const cH = H - m.t - m.b
+  const n = labels.length
+  const totals = labels.map((_, i) => series.reduce((a, s) => a + (s.values[i] ?? 0), 0))
+  const yMax = niceMax(Math.max(1, ...totals, ...(overlay?.values ?? [0])))
+  const ticks = [0, 0.5, 1].map((f) => Math.round(yMax * f))
+  const sy = (v: number) => cH - (v / yMax) * cH
+  const slot = cW / n; const bw = Math.min(28, slot * 0.5)
+  const cx = (i: number) => i * slot + slot / 2
+  const sx = (i: number) => (i / Math.max(1, n - 1)) * cW
+  const overlayPts = overlay ? overlay.values.map((v, i) => ({ x: sx(i), y: sy(v) })) : []
+
+  const trackPointer = (e: { clientX: number; clientY: number; currentTarget: SVGRectElement }) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const localX = ((e.clientX - rect.left) / Math.max(1, rect.width)) * cW
+    const i = Math.round((localX / cW) * Math.max(1, n - 1))
+    setHover(Math.min(n - 1, Math.max(0, i)))
+  }
+  const tipLeftPct = hover === null ? 0 : ((m.l + cx(hover)) / W) * 100
+
+  return (
+    <div className="h-full vw-flex vw-flex-col">
+      <div ref={fillRef} className="flex-1 min-h-0 relative">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full block overflow-visible" role="img" aria-label={ariaLabel}>
+        <g transform={`translate(${m.l},${m.t})`}>
+          {ticks.map((t) => (
+            <g key={t}>
+              <line x1={0} x2={cW} y1={sy(t)} y2={sy(t)} stroke={GRID} />
+              <text x={-8} y={sy(t) + 4} textAnchor="end" {...TICK}>{t}</text>
+            </g>
+          ))}
+          {hover !== null && (
+            <line x1={cx(hover)} x2={cx(hover)} y1={0} y2={cH} stroke="#cbd5e1" strokeWidth={1} strokeDasharray="3 3" />
+          )}
+          {labels.map((_, i) => {
+            let cum = 0
+            const x = cx(i) - bw / 2
+            return (
+              <g key={i}>
+                {series.map((s) => {
+                  const v = s.values[i] ?? 0
+                  if (v <= 0) return null
+                  const y0 = sy(cum); const y1 = sy(cum + v)
+                  cum += v
+                  return <rect key={s.name} x={x} y={y1} width={bw} height={Math.max(y0 - y1, 1)} rx={2} fill={s.color} />
+                })}
+              </g>
+            )
+          })}
+          {overlay && (
+            <>
+              <path d={smooth(overlayPts, 0, cH)} fill="none" stroke={overlay.color} strokeWidth={2.5} strokeLinecap="round" />
+              {overlayPts.map((p, i) => (
+                <circle key={i} cx={p.x} cy={p.y} r={hover === i ? 5 : 3} fill="#fff" stroke={overlay.color} strokeWidth={2} />
+              ))}
+            </>
+          )}
+          {labels.map((l, i) => (i % 2 === 0 || i === n - 1) && (
+            <text key={l} x={cx(i)} y={cH + 20} textAnchor="middle" {...TICK}>{l}</text>
+          ))}
+          <rect
+            x={0} y={0} width={cW} height={cH} fill="transparent"
+            onMouseMove={trackPointer}
+            onMouseLeave={() => setHover(null)}
+          />
+        </g>
+      </svg>
+      {hover !== null && (
+        <div
+          className="absolute top-1.5 -translate-x-1/2 pointer-events-none z-10 whitespace-nowrap
+            bg-ink-1 text-white text-[11.5px] rounded-md px-2.5 py-1.5 shadow-lg vw-flex vw-flex-col vw-gap-0.5"
+          style={{ left: `${Math.min(94, Math.max(6, tipLeftPct))}%` }}
+        >
+          <span className="font-medium">{labels[hover]}</span>
+          {series.map((s) => (
+            <span key={s.name} className="vw-flex vw-items-center vw-gap-xs">
+              <i className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} />
+              {s.name}: <b className="tnum">{s.values[hover] ?? 0}</b>
+            </span>
+          ))}
+          {overlay && (
+            <span className="vw-flex vw-items-center vw-gap-xs">
+              <i className="w-2 h-2 rounded-full shrink-0" style={{ background: overlay.color }} />
+              {overlay.name}: <b className="tnum">{overlay.values[hover] ?? 0}</b>
+            </span>
+          )}
+        </div>
+      )}
+      </div>
+      <div className="vw-flex vw-items-center vw-gap-lg vw-wrap mt-2">
+        {series.map((s) => (
+          <span key={s.name} className="vw-flex vw-items-center vw-gap-xs vw-label">
+            <i className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} />{s.name}
+          </span>
+        ))}
+        {overlay && (
+          <span className="vw-flex vw-items-center vw-gap-xs vw-label">
+            <i className="w-2.5 h-2.5 rounded-full" style={{ background: overlay.color }} />{overlay.name}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}

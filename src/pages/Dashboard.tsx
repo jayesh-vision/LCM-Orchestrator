@@ -8,7 +8,7 @@ import { useStore } from '@/store/useStore'
 import type { Conformance, Domain, Order, OrderState } from '@/types'
 import { DOMAINS, domainOf } from '@/types'
 import { Badge, Button, Card, CardBody, CardHead, InfoTip, Mono, Progress, type StatTone } from '@/components/ui'
-import { CHART, Donut, FILL, ColumnChart, StackedBar, TrendChart } from '@/components/charts'
+import { Donut, FILL, ColumnChart, StackedBar, StackedTrendChart, TrendChart } from '@/components/charts'
 import { CPE_VENDORS, OPTICAL_VENDORS, RADIO_VENDORS, ROUTER_VENDORS, SWITCH_VENDORS, VNF_VENDORS } from '@/data/catalog'
 import { CATEGORY_TONE, relTime } from '@/lib/format'
 
@@ -119,18 +119,27 @@ export default function Dashboard() {
     orders.forEach((o) => { out[domainOf(o.category)] += 1 })
     return out
   }, [orders])
+  /* "Active" = actually moving right now (approved/queued/in progress), as
+     opposed to merely open (which also counts things still waiting on a
+     decision, or already finished/failed) — the hero's per-domain strip
+     needs both, since "246 open" alone can't say where the live work is. */
+  const activeInDomain = (d: Domain) => orders.filter((o) => domainOf(o.category) === d && ['Approved', 'Queued', 'In progress'].includes(o.state)).length
 
-  /* ---- 14-day trend: raised vs completed ---- */
+  /* ---- 14-day trend: raised vs completed, plus per domain for the hero ---- */
   const DAYS = 14
   const trend = useMemo(() => {
     const labels = Array.from({ length: DAYS }, (_, i) => {
       const d = new Date(Date.now() - (DAYS - 1 - i) * DAY)
       return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
     })
+    const raisedByDomain = Object.fromEntries(
+      DOMAINS.map((d) => [d, perDay(orders.filter((o) => domainOf(o.category) === d).map((o) => o.createdAt), DAYS)]),
+    ) as Record<Domain, number[]>
     return {
       labels,
       raised: perDay(orders.map((o) => o.createdAt), DAYS),
       completed: perDay(orders.filter((o) => o.state === 'Ready').map((o) => o.updatedAt), DAYS),
+      raisedByDomain,
     }
   }, [orders])
   const raised14 = trend.raised.reduce((a, b) => a + b, 0)
@@ -182,34 +191,44 @@ export default function Dashboard() {
       {/* ---------------- overview: headline + action queue ---------------- */}
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
         <Card className="vw-flex vw-flex-col">
-          <button type="button" onClick={() => nav(heroKpi.go)}
-            aria-label={`${heroKpi.value} ${heroKpi.label}. Open the full request list`}
-            className="text-left w-full flex-1 vw-flex vw-flex-col vw-card--clickable rounded-[var(--vw-radius-lg)]">
-            <CardBody className="flex-1 min-h-0 vw-flex vw-flex-col">
-              <div className="vw-flex vw-items-center vw-gap-sm">
-                <span className="w-11 h-11 rounded-xl grid place-items-center shrink-0 ring-1 ring-inset bg-brand-50 text-brand-600 ring-brand-200/60" aria-hidden>
-                  <heroKpi.icon size={20} />
+          <CardBody className="flex-1 min-h-0 vw-flex vw-flex-col">
+            <button type="button" onClick={() => nav(heroKpi.go)}
+              aria-label={`${heroKpi.value} ${heroKpi.label}. Open the full request list`}
+              className="text-left w-full vw-flex vw-items-center vw-gap-sm group rounded-lg
+                focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100">
+              <span className="w-11 h-11 rounded-xl grid place-items-center shrink-0 ring-1 ring-inset bg-brand-50 text-brand-600 ring-brand-200/60 transition-colors group-hover:bg-brand-100" aria-hidden>
+                <heroKpi.icon size={20} />
+              </span>
+              <span className="min-w-0">
+                <span className="vw-card-metric-label vw-flex vw-items-center vw-gap-xxs">
+                  {heroKpi.label}
+                  <InfoTip>{heroKpi.info}</InfoTip>
                 </span>
-                <span className="min-w-0">
-                  <span className="vw-card-metric-label vw-flex vw-items-center vw-gap-xxs">
-                    {heroKpi.label}
-                    <InfoTip>{heroKpi.info}</InfoTip>
-                  </span>
-                  <span className="block vw-card-metric-xxxl tnum mt-0.5">{heroKpi.value.toLocaleString()}</span>
-                </span>
-              </div>
-              <div className="flex-1 min-h-[120px] mt-1">
-                <TrendChart height={150} ariaLabel="Requests raised per day, last 14 days"
-                  labels={trend.labels}
-                  series={[{ name: 'Raised per day', values: trend.raised, fill: 'brand', color: CHART.blue500 }]}
-                />
-              </div>
-              <div className="pt-3 border-t border-line-soft vw-flex vw-items-center vw-gap-lg vw-wrap">
-                <span className="vw-card-metric-label-sub">{n('Draft')} still in draft</span>
-                <span className="vw-card-metric-label-sub">{raised14} raised · {completed14} went live in the last 14 days</span>
-              </div>
-            </CardBody>
-          </button>
+                <span className="block vw-card-metric-xxxl tnum mt-0.5 group-hover:text-brand-600 transition-colors">{heroKpi.value.toLocaleString()}</span>
+              </span>
+            </button>
+            <div className="flex-1 min-h-[120px] mt-1">
+              <TrendChart height={150} ariaLabel="Requests raised per day by domain, last 14 days"
+                labels={trend.labels}
+                series={DOMAINS.map((d) => ({ name: d, values: trend.raisedByDomain[d], fill: 'brand', color: DOMAIN_COLOR[d] }))}
+              />
+            </div>
+            {/* Per-domain breakdown — the number a domain contributes to "open",
+               and how many of those are actually moving ("active") right now,
+               so the hero doesn't read as one opaque total across every domain. */}
+            <div className="pt-3 border-t border-line-soft vw-flex vw-items-center vw-gap-x-5 vw-gap-y-2 vw-wrap">
+              {DOMAINS.map((d) => (
+                <button key={d} type="button" onClick={() => nav(toRequests(undefined, undefined, d))}
+                  aria-label={`${domainCounts[d]} ${d} requests, ${activeInDomain(d)} active. Open them`}
+                  className="vw-flex vw-items-center vw-gap-xs text-[12.5px] text-ink-2 hover:text-ink-1">
+                  <i className="w-2 h-2 rounded-full shrink-0" style={{ background: DOMAIN_COLOR[d] }} aria-hidden />
+                  <span className="font-medium text-ink-1">{d}</span>
+                  <span className="tnum">{domainCounts[d]}</span>
+                  <span className="text-ink-3">· {activeInDomain(d)} active</span>
+                </button>
+              ))}
+            </div>
+          </CardBody>
         </Card>
 
         <Card className="vw-flex vw-flex-col">
@@ -420,15 +439,13 @@ export default function Dashboard() {
         {/* ---------------- trend ---------------- */}
         <Card className="h-full vw-flex vw-flex-col">
           <CardHead title="Raised vs completed" sub={`Last 14 days · ${raised14} raised, ${completed14} went live`}
-            info="New requests raised per day against requests that went live, over the last 14 days. When the raised line stays above the completed line, work is arriving faster than the team is finishing it and the backlog grows. Hover the chart for exact daily numbers." />
+            info="New requests raised per day, stacked by domain, against the total that went live — over the last 14 days. When the bars stack up above the Completed line, work is arriving faster than the team is finishing it and the backlog grows. Hover the chart for exact daily numbers." />
           <CardBody className="flex-1 min-h-0 vw-flex vw-flex-col">
-            <TrendChart height={330}
-              ariaLabel="Requests raised and completed per day, last 14 days"
+            <StackedTrendChart height={330}
+              ariaLabel="Requests raised per day by domain, versus completed, last 14 days"
               labels={trend.labels}
-              series={[
-                { name: 'Raised', values: trend.raised, fill: 'brand', color: CHART.blue500 },
-                { name: 'Completed', values: trend.completed, fill: 'brand', color: CHART.blue300 },
-              ]}
+              series={DOMAINS.map((d) => ({ name: d, values: trend.raisedByDomain[d], color: DOMAIN_COLOR[d] }))}
+              overlay={{ name: 'Completed', values: trend.completed, color: '#111827' }}
             />
           </CardBody>
         </Card>
