@@ -177,7 +177,8 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
       <div className="flex flex-col gap-4">
         <div className="grid gap-4 lg:grid-cols-2">
           <Card className="h-full flex flex-col">
-            <CardHead title="Requests" sub="At a glance, for the current selection" />
+            <CardHead title="Requests" sub="At a glance, for the current selection"
+              info="A quick read of every request in the current selection, broken down by where it sits between draft and execution. Click a row to open exactly those requests." />
             <CardBody className="flex flex-col gap-2 flex-1 justify-between">
               <StatRow label="Total requests" icon={ClipboardList} value={total.toLocaleString()}
                 note={`${cnt('Draft')} still in draft`} drillLabel="every request in scope" onClick={() => onDrill({ state: null })} />
@@ -197,14 +198,16 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
 
         <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
           <Card className="h-full flex flex-col">
-            <CardHead title="Requests by stage" sub="Where every request in scope is right now — click a bar to open that list" />
+            <CardHead title="Requests by stage" sub="Where every request in scope is right now — click a bar to open that list"
+              info="Each bar is one stage of the provisioning pipeline for the current selection, left to right in the order a request moves through it: Draft → Planned → Validated → Approved → In progress → Ready. Grey stages are pre-approval, blue are actively being worked, green is done and red is failed." />
             <CardBody className="flex-1 min-h-0 flex flex-col">
               <ColumnChart height={300} ariaLabel="Requests by stage"
                 data={stages.map((s) => ({ label: s.label, color: s.color, value: s.states.reduce((a, st) => a + cnt(st), 0), onClick: () => onDrill({ state: s.states.join(',') }) }))} />
             </CardBody>
           </Card>
           <Card className="h-full flex flex-col">
-            <CardHead title="Raised vs completed" sub={`Last 14 days · ${trend.raised.reduce((a, b) => a + b, 0)} raised, ${trend.completed.reduce((a, b) => a + b, 0)} went live`} />
+            <CardHead title="Raised vs completed" sub={`Last 14 days · ${trend.raised.reduce((a, b) => a + b, 0)} raised, ${trend.completed.reduce((a, b) => a + b, 0)} went live`}
+              info="New requests raised per day against the total that went live, over the last 14 days for the current selection. When Raised runs above Completed, work is arriving faster than the team is finishing it and the backlog grows. Hover the chart for exact daily numbers." />
             <CardBody className="flex-1 min-h-0 flex flex-col">
               <TrendChart height={280} ariaLabel="Requests raised and completed per day, last 14 days" labels={trend.labels}
                 series={[{ name: 'Raised', values: trend.raised, fill: 'brand', color: SOFT.brand }, { name: 'Completed', values: trend.completed, fill: 'good', color: SOFT.good }]} />
@@ -213,6 +216,7 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
         </div>
 
         <RankedBreakdown title="By category" sub="Every category in scope, split by where it stands — click a badge or a segment to open exactly those"
+          info="Every service category in the current selection, biggest first, split into Ready, In progress, Waiting and Failed. Click the count to open the whole category, or a segment of its bar to open just that slice."
           groups={byCategory} noun={noun} onDrill={onDrill}
           renderLabel={(c) => <Badge tone={CATEGORY_TONE[c]}>{c}</Badge>}
           labelFor={(c) => c}
@@ -241,7 +245,8 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
     <div className="flex flex-col gap-4">
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="h-full flex flex-col">
-          <CardHead title="Execution" sub="At a glance, for the current selection" />
+          <CardHead title="Execution" sub="At a glance, for the current selection"
+            info="A quick read of everything in the current selection that has moved into execution — what's finished, what's running, and what failed. Click a row to open exactly those orders." />
           <CardBody className="flex flex-col gap-2 flex-1 justify-between">
             <StatRow label="Total in execution" icon={PlayCircle} value={total.toLocaleString()}
               note={`${inProgress} in progress`} drillLabel="everything in execution" onClick={() => onDrill({ state: null })} />
@@ -260,6 +265,7 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
       </div>
 
       <RankedBreakdown title="By category" sub="Every category in scope, split by where it stands — click a badge or a segment to open exactly those"
+        info="Every service category in the current selection, biggest first, split into Ready, In progress and Failed. Click the count to open the whole category, or a segment of its bar to open just that slice."
         groups={byCategory} noun={noun} onDrill={onDrill}
         renderLabel={(c) => <Badge tone={CATEGORY_TONE[c]}>{c}</Badge>}
         labelFor={(c) => c}
@@ -276,7 +282,8 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
       <VendorBreakdown byVendor={byVendor} noun={noun} failStates={failStates} onDrill={onDrill} />
 
       <Card>
-        <CardHead title="Completions" sub={`Last 14 days · ${trend.completed.reduce((a, b) => a + b, 0)} orders went live`} />
+        <CardHead title="Completions" sub={`Last 14 days · ${trend.completed.reduce((a, b) => a + b, 0)} orders went live`}
+          info="Orders that finished execution successfully, per day, over the last 14 days for the current selection. Hover the chart for exact daily numbers." />
         {/* TrendChart's own root is `h-full`, which needs a definite ancestor
            height to resolve against — the paired charts above get that for
            free from their grid row's tallest sibling, but this card is alone
@@ -295,9 +302,10 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
  * vendor" reuse the same layout and drill-down wiring. Bounded to a small,
  * naturally-fixed set of keys (categories) — for vendors, which can keep
  * growing, see VendorBreakdown instead. */
-function RankedBreakdown({ title, sub, groups, noun, segmentsFor, renderLabel, labelFor, patchFor, onDrill }: {
+function RankedBreakdown({ title, sub, info, groups, noun, segmentsFor, renderLabel, labelFor, patchFor, onDrill }: {
   title: string
   sub: string
+  info?: ReactNode
   groups: [string, Order[]][]
   noun: string
   segmentsFor: (list: Order[]) => { label: string; value: number; fill: 'good' | 'brand' | 'none' | 'crit'; states: string }[]
@@ -311,7 +319,7 @@ function RankedBreakdown({ title, sub, groups, noun, segmentsFor, renderLabel, l
 }) {
   return (
     <Card>
-      <CardHead title={title} sub={sub} />
+      <CardHead title={title} sub={sub} info={info} />
       <CardBody className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
         {groups.map(([key, list]) => (
           <div key={key}>
