@@ -53,13 +53,18 @@ export function bindEndpoints(
   params: OrderParamValue[], bandwidth: number,
 ): Endpoint[] {
   const active = workflows.filter((w) => w.state === 'Active')
+  /* Vendor is not negotiable: a template is a set of commands in one vendor's
+     CLI, so binding an endpoint to another vendor's template would produce a
+     run that could never succeed on that device. Where the estate has no
+     active template for this vendor and category — a real coverage gap, and
+     what the Workflows gap count exists to surface — the endpoint is left
+     unbound rather than quietly mis-bound. */
   const find = (e: Endpoint) => {
     const role = endpointRole(e)
     const exact = active.filter((w) => w.category === category && w.vendor === e.vendor && (w.endpointRole === role || !w.endpointRole))
     return exact.find((w) => w.type === type && w.subtype === subtype)
       ?? exact.find((w) => w.type === type)
       ?? exact[0]
-      ?? active.find((w) => w.category === category)
   }
   const val = (name: string) => params.find((p) => p.name === name)?.value
 

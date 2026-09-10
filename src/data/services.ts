@@ -1,5 +1,5 @@
 import type {
-  Category, ChangeRecord, Conformance, Endpoint, HeldResource, OperState,
+  Category, ChangeRecord, Conformance, Endpoint, HeldResource, OperState, Order,
   Service, ServiceAttribute, ServiceState,
 } from '@/types'
 import { ACCOUNTS, SITES, between, intentById, modelsForCategory, pad, pick, rnd } from './catalog'
@@ -103,34 +103,10 @@ function attributes(intentId: string, conformance: Conformance, bandwidth: numbe
   return base
 }
 
-function resources(intentId: string, vlan: number, eps: Endpoint[], state: ServiceState): HeldResource[] {
-  const st: HeldResource['state'] = state === 'Ceased' ? 'Quarantined' : 'Allocated'
-  const out: HeldResource[] = eps.map((e) => ({
-    kind: 'Sub-interface', value: e.subInterface ?? e.port, pool: `${e.siteCode} · ${e.port}`, state: st,
-  }))
-  if (intentId.startsWith('INT-L2')) {
-    eps.forEach((e) => out.push({ kind: 'VLAN', value: String(vlan), pool: `${e.siteCode} · ${e.port}`, state: st }))
-    out.push({ kind: 'Pseudowire ID', value: String(4000 + vlan), pool: 'global L2VPN pw-id', state: st })
-  } else if (intentId.startsWith('INT-L3')) {
-    out.push({ kind: 'RD/RT', value: `65001:${vlan}`, pool: 'global route target', state: st })
-    out.push({ kind: 'IP block', value: `10.244.${between(1, 250)}.0/28`, pool: 'WAN transit', state: st })
-  } else if (intentId.startsWith('INT-ACCESS')) {
-    out.push({ kind: 'VLAN', value: String(vlan), pool: 'Access WAN VLAN', state: st })
-    out.push({ kind: 'CPE Serial', value: `SN-${between(100000, 999999)}`, pool: 'CPE stock', state: st })
-  } else if (intentId.startsWith('INT-RADIO')) {
-    out.push({ kind: 'Frequency Channel', value: `FC-${1000 + vlan}`, pool: 'licensed microwave band', state: st })
-  } else if (intentId.startsWith('INT-FIBER')) {
-    out.push({ kind: 'Wavelength', value: `${1529 + (vlan % 40)}.${10 + (vlan % 90)}nm`, pool: 'ITU-T 100GHz grid', state: st })
-  } else if (intentId === 'INT-RAN-CU') {
-    out.push({ kind: 'IP block', value: `10.244.${between(1, 250)}.0/30`, pool: 'RAN NG-C/F1 transit', state: st })
-  } else if (intentId === 'INT-RAN-DU') {
-    out.push({ kind: 'PCI', value: String(vlan % 504), pool: '3GPP PCI plan', state: st })
-  } else {
-    out.push({ kind: 'IP block', value: `10.244.${between(1, 250)}.${between(0, 60) * 4}/30`, pool: 'WAN transit', state: st })
-    out.push({ kind: 'ASN slot', value: String(64500 + between(1, 900)), pool: 'private ASN', state: st })
-  }
-  return out
-}
+/* A service's held resources are no longer invented here. buildPools() hands
+   each one out from a real pool entry and writes the value onto the service,
+   so the two records are the same allocation seen from both ends. Services
+   are therefore built with an empty `resources` list and filled in there. */
 
 function history(id: string, liveSince: Date, conformance: Conformance): ChangeRecord[] {
   const out: ChangeRecord[] = [{
@@ -240,7 +216,7 @@ export function buildServices(): Service[] {
       state, operState: OPER_FOR[state], conformance,
       endpoints: eps,
       attributes: attributes(intentId, conformance, bandwidth, vlan),
-      resources: resources(intentId, vlan, eps, state),
+      resources: [],
       history: history(`s${i}`, liveSince, conformance),
       bandwidthMbps: bandwidth,
       monthlyValueInr: bandwidth * between(900, 1800),
@@ -274,7 +250,7 @@ export function buildServices(): Service[] {
       { id: 'EP-Z', role: 'Z', siteCode: 'DL-BLR-0977', deviceName: 'MX204', vendor: 'JUNIPER', mgmtIp: '172.31.33.100', port: 'xe-1/1/0', subInterface: 'xe-1/1/0.104' },
     ]
     featured.attributes = attributes('INT-L2-P2P', 'Drifted', 100, 104)
-    featured.resources = resources('INT-L2-P2P', 104, featured.endpoints, 'Live')
+
     featured.lastProvenAt = new Date(now - 4 * 3600000).toISOString()
     featured.acceptanceEvidence = [
       { criterion: 'Both sub-interfaces admin-up and oper-up', layer: 'device', expected: 'admin=up, link=up ×2', actual: 'up/up · up/up', passed: true },
@@ -317,7 +293,7 @@ export function buildServices(): Service[] {
       state, operState: OPER_FOR[state], conformance,
       endpoints: eps,
       attributes: attributes(intentId, conformance, bandwidth, vlan),
-      resources: resources(intentId, vlan, eps, state),
+      resources: [],
       history: history(`a${i}`, liveSince, conformance),
       bandwidthMbps: bandwidth,
       monthlyValueInr: between(499, 2999),
@@ -366,7 +342,7 @@ export function buildServices(): Service[] {
       state, operState: OPER_FOR[state], conformance,
       endpoints: eps,
       attributes: attributes(intentId, conformance, bandwidth, vlan),
-      resources: resources(intentId, vlan, eps, state),
+      resources: [],
       history: history(`r${i}`, liveSince, conformance),
       bandwidthMbps: bandwidth,
       monthlyValueInr: between(20000, 80000),
@@ -415,7 +391,7 @@ export function buildServices(): Service[] {
       state, operState: OPER_FOR[state], conformance,
       endpoints: eps,
       attributes: attributes(intentId, conformance, bandwidth, vlan),
-      resources: resources(intentId, vlan, eps, state),
+      resources: [],
       history: history(`f${i}`, liveSince, conformance),
       bandwidthMbps: bandwidth,
       monthlyValueInr: between(50000, 300000),
@@ -466,7 +442,7 @@ export function buildServices(): Service[] {
       state, operState: OPER_FOR[state], conformance,
       endpoints: eps,
       attributes: attributes(intentId, conformance, bandwidth, vlan),
-      resources: resources(intentId, vlan, eps, state),
+      resources: [],
       history: history(`v${i}`, liveSince, conformance),
       bandwidthMbps: bandwidth,
       monthlyValueInr: between(40000, 150000),
@@ -485,4 +461,63 @@ export function buildServices(): Service[] {
   }
 
   return out
+}
+
+/**
+ * The service a completed Create request leaves behind.
+ *
+ * This is the step the platform's whole story builds towards: the request
+ * carried the design, a workflow configured each endpoint, the pools handed
+ * over the values, and the run proved traffic actually moved — so the estate
+ * has one more service in it, traceable back to all four. It is born Live and
+ * Conformant with the run's acceptance criteria as its first proof, which is
+ * the only moment in a service's life when those things are true by
+ * construction rather than by re-checking.
+ */
+export function serviceFromOrder(order: Order, held: HeldResource[], seq: number): Service {
+  const intent = intentById(order.intentId)
+  const now = new Date()
+  const num = (name: string, fallback: number) =>
+    Number(order.params.find((p) => p.name === name)?.value ?? fallback) || fallback
+  const bandwidth = num('bandwidth_mbps', num('capacity_mbps', 100))
+  const vlan = num('vlan', 100)
+  const prefix = order.category === 'IBW' ? 'IBW'
+    : order.category === 'L2VPN' ? 'L2'
+      : order.category === 'L3VPN' ? 'L3' : 'NS'
+
+  return {
+    id: `SVC-${prefix}-${pad(900000 + seq, 6)}`,
+    name: order.name,
+    category: order.category,
+    type: order.type,
+    intentId: order.intentId,
+    accountId: order.accountId,
+    accountName: order.accountName,
+    state: 'Live',
+    operState: 'Up',
+    conformance: 'Conformant',
+    endpoints: order.endpoints,
+    attributes: attributes(order.intentId, 'Conformant', bandwidth, vlan),
+    resources: held,
+    history: [{
+      at: now.toISOString(),
+      orderId: order.id,
+      change: 'Created · service went Live',
+      by: order.owner ?? 'Orchestrator',
+      outOfBand: false,
+    }],
+    bandwidthMbps: bandwidth,
+    monthlyValueInr: bandwidth * between(900, 1800),
+    liveSince: now.toISOString(),
+    lastProvenAt: now.toISOString(),
+    ageLabel: '0 m',
+    driftCount: 0,
+    acceptanceEvidence: intent.acceptance.map((a) => ({
+      criterion: a.claim,
+      layer: a.layer,
+      expected: a.expected,
+      actual: a.layer === 'service' ? `${bandwidth.toFixed(1)} Mbps · 0/20 loss` : 'up / Established',
+      passed: true,
+    })),
+  }
 }

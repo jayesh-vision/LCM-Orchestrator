@@ -5,10 +5,10 @@ import type {
 } from '@/types'
 import { INTENTS, PROFILE_TYPES, intentById, pad } from '@/data/catalog'
 import { buildWorkflows } from '@/data/workflows'
-import { buildServices } from '@/data/services'
+import { buildServices, serviceFromOrder } from '@/data/services'
 import { bindEndpoints, buildOrders, buildRuns, claimFor, orderedTasks, WAITING } from '@/data/orders'
 import { renderCommand } from '@/data/templates'
-import { REPORTS, buildNotifications, buildPools } from '@/data/misc'
+import { REPORTS, allocateForService, buildNotifications, buildPools, releaseForService } from '@/data/misc'
 
 /* Seed once, at module load, so the dataset is stable across navigation. */
 const workflows = buildWorkflows()
@@ -89,6 +89,76 @@ interface State {
 
 let toastSeq = 0
 let runTimer: ReturnType<typeof setInterval> | null = null
+let svcSeq = 0
+
+/**
+ * Land a successfully executed order on the estate.
+ *
+ * This is the arrow that closes the lifecycle: until a request reaches here it
+ * is only a statement of intent, and Service Inventory has no idea it happened.
+ * Create brings a service into existence with the resources it drew and the
+ * run's criteria as its first proof; every other intent moves a service that
+ * already exists, which is why they carry a serviceId and Create does not.
+ */
+function applyToInventory(services: Service[], pools: ResourcePool[], order: Order):
+{ services: Service[]; pools: ResourcePool[]; serviceId?: string } | null {
+  const stamp = (sv: Service, change: string): Service => ({
+    ...sv,
+    history: [{ at: new Date().toISOString(), orderId: order.id, change, by: order.owner ?? 'Orchestrator', outOfBand: false }, ...sv.history],
+  })
+
+  if (order.intent === 'Create') {
+    if (order.serviceId) return null                       // already landed
+    svcSeq += 1
+    const id = `SVC-${order.category === 'IBW' ? 'IBW' : order.category === 'L2VPN' ? 'L2' : order.category === 'L3VPN' ? 'L3' : 'NS'}-${900000 + svcSeq}`
+    const { pools: nextPools, held } = allocateForService(pools, order.intentId, id, order.endpoints.length, svcSeq)
+    const svc = { ...serviceFromOrder(order, held, svcSeq), id }
+    return { services: [svc, ...services], pools: nextPools, serviceId: id }
+  }
+
+  const target = services.find((sv) => sv.id === order.serviceId)
+  if (!target) return null
+
+  if (order.intent === 'Cease') {
+    return {
+      services: services.map((sv) => (sv.id !== target.id ? sv : stamp({
+        ...sv,
+        state: 'Ceased', operState: 'Down', conformance: 'Not checked',
+        resources: sv.resources.map((r) => ({ ...r, state: 'Quarantined' as const })),
+      }, 'Ceased · resources returned to quarantine'))),
+      pools: releaseForService(pools, target.id),
+    }
+  }
+
+  if (order.intent === 'Suspend' || order.intent === 'Resume') {
+    const resumed = order.intent === 'Resume'
+    return {
+      services: services.map((sv) => (sv.id !== target.id ? sv : stamp({
+        ...sv,
+        state: resumed ? 'Live' : 'Suspended',
+        operState: resumed ? 'Up' : 'Down',
+      }, resumed ? 'Resumed · service returned to Live' : 'Suspended · configuration left in place'))),
+      pools,
+    }
+  }
+
+  if (order.intent === 'Modify' || order.intent === 'Re-prove') {
+    const bw = Number(order.params.find((p) => p.name === 'bandwidth_mbps')?.value ?? target.bandwidthMbps)
+    const proved = new Date().toISOString()
+    return {
+      services: services.map((sv) => (sv.id !== target.id ? sv : stamp({
+        ...sv,
+        /* Either way the service has just been re-verified end to end, so the
+           drift the platform was tracking is resolved as of now. */
+        bandwidthMbps: order.intent === 'Modify' ? bw : sv.bandwidthMbps,
+        conformance: 'Conformant', driftCount: 0, lastProvenAt: proved,
+      }, order.intent === 'Modify' ? `Modified · bandwidth now ${bw} Mbps` : 'Re-proven · acceptance criteria re-run'))),
+      pools,
+    }
+  }
+
+  return null
+}
 
 export const useStore = create<State>((set, get) => ({
   orders, services, workflows, runs, pools,
@@ -338,14 +408,31 @@ export const useStore = create<State>((set, get) => ({
       const after = get().runs.filter((r) => runIds.includes(r.id))
       if (after.every((r) => r.tasks.every((t) => t.state === 'Passed'))) {
         if (runTimer) clearInterval(runTimer)
-        set((s) => ({
-          runs: s.runs.map((r) => (runIds.includes(r.id)
-            ? { ...r, outcome: 'Accepted', endedAt: new Date().toISOString(), durationMs: Date.now() - new Date(r.startedAt).getTime() }
-            : r)),
-          orders: s.orders.map((o) => (o.id === orderId ? { ...o, state: 'Ready' as OrderState, waitingOn: undefined } : o)),
-          activeRunId: null,
-        }))
-        get().pushToast('good', `${orderId} ready. All acceptance criteria passed on every device.`)
+        set((s) => {
+          const order = s.orders.find((o) => o.id === orderId)
+          /* Execution succeeded, so the request now has to land on the estate.
+             What that means depends on what was asked for: a Create leaves a
+             new service behind, and every other intent moves one that already
+             exists. Without this the pipeline would end at Ready and the
+             inventory would never reflect the work that was just done. */
+          const effect = order ? applyToInventory(s.services, s.pools, order) : null
+          return {
+            runs: s.runs.map((r) => (runIds.includes(r.id)
+              ? { ...r, outcome: 'Accepted' as const, endedAt: new Date().toISOString(), durationMs: Date.now() - new Date(r.startedAt).getTime() }
+              : r)),
+            orders: s.orders.map((o) => (o.id === orderId
+              ? { ...o, state: 'Ready' as OrderState, waitingOn: undefined, serviceId: effect?.serviceId ?? o.serviceId }
+              : o)),
+            services: effect?.services ?? s.services,
+            pools: effect?.pools ?? s.pools,
+            activeRunId: null,
+          }
+        })
+        const landed = get().orders.find((o) => o.id === orderId)
+        const svc = landed?.serviceId
+        get().pushToast('good', svc && landed?.intent === 'Create'
+          ? `${orderId} ready. ${svc} is now live in Service Inventory.`
+          : `${orderId} ready. All acceptance criteria passed on every device.`)
       }
     }, 900)
 

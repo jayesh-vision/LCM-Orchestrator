@@ -1,82 +1,244 @@
-import type { Notification, PoolEntry, ReportDef, ResourcePool, Service } from '@/types'
+import type { HeldResource, Notification, PoolEntry, PoolKind, ReportDef, ResourcePool, Service } from '@/types'
 import { SITES, between, pad, pick, rnd } from './catalog'
 
-/* ---------- resource pools ---------- */
+/* ---------- resource pools ----------
 
-function entries(total: number, allocated: number, quarantined: number, label: (n: number) => string, services: Service[]): PoolEntry[] {
-  const out: PoolEntry[] = []
-  for (let i = 0; i < total; i += 1) {
-    const state: PoolEntry['state'] = i < allocated ? 'Allocated'
-      : i < allocated + quarantined ? 'Quarantined' : 'Free'
-    out.push({
-      value: label(i),
-      state,
-      serviceId: state === 'Allocated' ? services[(i * 7) % services.length]?.id : undefined,
-      quarantineUntil: state === 'Quarantined'
-        ? new Date(Date.now() + between(1, 30) * 86400000).toISOString() : undefined,
-    })
+   The pools are the single source of truth for who holds what. Services do
+   not invent the values they claim: this module hands each one out from a
+   real pool entry and writes the same value onto the service, so both sides
+   of the relationship are the same fact recorded twice, and a value can
+   never be held by two services or by a service the pool has never heard of.
+
+   Pool sizes are derived from what the estate actually consumes rather than
+   typed in, so the utilisation figures on screen are measured, not invented.
+   Where a namespace is genuinely finite (1023 private ASNs, 504 PCIs, 96
+   channels on the ITU grid) that ceiling is enforced and demand is limited
+   to fit — which is the real constraint those pools are under.        */
+
+/** A pool before any allocation: structure and free values only. */
+interface PoolSeed {
+  id: string
+  kind: PoolKind
+  scope: string
+  label: (n: number) => string
+  /** Fraction to leave free once every holder has been served. */
+  headroom: number
+  /** Hard ceiling where the namespace is finite. */
+  cap?: number
+}
+
+/**
+ * The pool kinds one service draws on. Mirrors the `pools` each intent
+ * declares in the catalog — per-endpoint kinds are repeated per endpoint,
+ * because a sub-interface and a VLAN are consumed at every end.
+ */
+function demandFor(intentId: string, endpointCount: number, seq: number): PoolKind[] {
+  const out: PoolKind[] = []
+  for (let e = 0; e < endpointCount; e += 1) out.push('Sub-interface')
+
+  if (intentId.startsWith('INT-L2')) {
+    for (let e = 0; e < endpointCount; e += 1) out.push('VLAN')
+    out.push('Pseudowire ID')
+  } else if (intentId.startsWith('INT-L3')) {
+    out.push('RD/RT', 'IP block')
+  } else if (intentId.startsWith('INT-ACCESS')) {
+    out.push('VLAN', 'CPE Serial')
+  } else if (intentId.startsWith('INT-RADIO')) {
+    out.push('Frequency Channel')
+  } else if (intentId.startsWith('INT-FIBER')) {
+    out.push('Wavelength')
+  } else if (intentId === 'INT-RAN-CU') {
+    out.push('IP block')
+  } else if (intentId === 'INT-RAN-DU') {
+    out.push('PCI')
+  } else {
+    /* IBW. Only part of the base sits on a private ASN — the range is 1023
+       wide and there are more internet-access services than that, so the
+       rest peer on a public ASN the platform doesn't allocate. */
+    out.push('IP block')
+    if (seq % 3 === 0) out.push('ASN slot')
   }
   return out
 }
 
+const SEEDS: PoolSeed[] = [
+  ...SITES.slice(0, 6).map((s, i): PoolSeed => ({
+    id: `POOL-VLAN-${pad(i + 1, 3)}`, kind: 'VLAN', scope: `${s.code} · xe-0/0/${i}`,
+    label: (n) => String(100 + n), headroom: 0.22 + i * 0.04,
+  })),
+  ...SITES.slice(0, 6).map((s, i): PoolSeed => ({
+    id: `POOL-SUBIF-${pad(i + 1, 3)}`, kind: 'Sub-interface', scope: `${s.code} · sub-interface index`,
+    label: (n) => `.${100 + n}`, headroom: 0.3 + i * 0.03,
+  })),
+  { id: 'POOL-PWID-001', kind: 'Pseudowire ID', scope: 'global L2VPN', label: (n) => String(4000 + n), headroom: 0.36 },
+  { id: 'POOL-RDRT-001', kind: 'RD/RT', scope: 'global route target · 65001:x', label: (n) => `65001:${1000 + n}`, headroom: 0.55 },
+  /* Deliberately the tightest pool in the estate — an exhausted transit range
+     blocks new internet access orders before anything else fails. */
+  { id: 'POOL-IP-001', kind: 'IP block', scope: 'WAN transit 10.244.0.0/16 · /30', label: (n) => `10.244.${Math.floor(n / 64)}.${(n % 64) * 4}/30`, headroom: 0.05 },
+  { id: 'POOL-ASN-001', kind: 'ASN slot', scope: 'private ASN 64512–65534', label: (n) => String(64512 + n), headroom: 0.4, cap: 1023 },
+  { id: 'POOL-CPESN-001', kind: 'CPE Serial', scope: 'pre-provisioned stock · Huawei/ZTE/Adtran', label: (n) => `SN-${100000 + n}`, headroom: 0.3 },
+  { id: 'POOL-FREQ-001', kind: 'Frequency Channel', scope: 'licensed bands · L6/U6/L7/L8/E-band', label: (n) => `FC-${1000 + n}`, headroom: 0.36 },
+  /* The C-band grid is 96 channels. It cannot be widened by ordering more. */
+  { id: 'POOL-WL-001', kind: 'Wavelength', scope: 'ITU-T 100GHz grid · C-band 1529–1569nm', label: (n) => `${1529 + Math.floor(n / 2)}.${(n % 2) * 50 + 12}nm`, headroom: 0.08, cap: 96 },
+  { id: 'POOL-PCI-001', kind: 'PCI', scope: '3GPP TS 38.211 · mod-3 / mod-30 collision-free plan', label: (n) => String(n), headroom: 0.6, cap: 504 },
+]
+
+/**
+ * Allocate every service's resources from real pool entries.
+ *
+ * Mutates `services`, replacing whatever `resources` they were built with by
+ * the values actually handed out — that is the point: one allocation, written
+ * to both sides, so Service Inventory and Resource Pools can never disagree.
+ */
 export function buildPools(services: Service[]): ResourcePool[] {
+  /* Pass 1 — how much of each kind the estate consumes, so pools can be
+     sized from real demand instead of a guess. A per-kind counter also lets
+     the finite namespaces cap demand rather than overflow. */
+  const demand = new Map<PoolKind, number>()
+  const perService = services.map((s, i) => {
+    const kinds = demandFor(s.intentId, s.endpoints.length, i)
+    kinds.forEach((k) => demand.set(k, (demand.get(k) ?? 0) + 1))
+    return kinds
+  })
+
+  /* Split per-kind demand across the pools that serve that kind. */
+  const seedsByKind = new Map<PoolKind, PoolSeed[]>()
+  SEEDS.forEach((sd) => {
+    if (!seedsByKind.has(sd.kind)) seedsByKind.set(sd.kind, [])
+    seedsByKind.get(sd.kind)!.push(sd)
+  })
+
   const pools: ResourcePool[] = []
-  // VLAN pools, one per edge port on a few key devices.
-  SITES.slice(0, 6).forEach((s, i) => {
-    const total = 400
-    const allocated = between(120, 380)
-    const quarantined = between(0, 20)
-    pools.push({
-      id: `POOL-VLAN-${pad(i + 1, 3)}`,
-      kind: 'VLAN',
-      scope: `${s.code} · xe-0/0/${i}`,
-      total, allocated, quarantined, reserved: between(0, 12),
-      entries: entries(total, allocated, quarantined, (n) => String(100 + n), services),
+  const cursor = new Map<string, number>()      // pool id → next free index
+  const byId = new Map<string, ResourcePool>()
+
+  SEEDS.forEach((sd) => {
+    const share = Math.ceil((demand.get(sd.kind) ?? 0) / seedsByKind.get(sd.kind)!.length)
+    const sized = Math.max(24, Math.ceil(share / Math.max(0.05, 1 - sd.headroom)))
+    /* A capped pool IS its namespace: the C-band grid has 96 channels and the
+       private ASN range 1023 slots whether the estate uses five or all of them.
+       Sizing those to demand would invent a ceiling that doesn't exist. */
+    const total = sd.cap ?? sized
+    const pool: ResourcePool = {
+      id: sd.id, kind: sd.kind, scope: sd.scope,
+      total, allocated: 0, quarantined: 0, reserved: 0,
+      entries: Array.from({ length: total }, (_, n) => ({ value: sd.label(n), state: 'Free' as const })),
+    }
+    pools.push(pool)
+    byId.set(sd.id, pool)
+    cursor.set(sd.id, 0)
+  })
+
+  /** Take the next free entry of `kind`, preferring the pool for this site. */
+  const take = (kind: PoolKind, siteIdx: number): { pool: ResourcePool; entry: PoolEntry } | undefined => {
+    const candidates = seedsByKind.get(kind)!.map((sd) => byId.get(sd.id)!)
+    const start = candidates.length > 1 ? siteIdx % candidates.length : 0
+    for (let hop = 0; hop < candidates.length; hop += 1) {
+      const pool = candidates[(start + hop) % candidates.length]
+      let n = cursor.get(pool.id)!
+      while (n < pool.entries.length && pool.entries[n].state !== 'Free') n += 1
+      cursor.set(pool.id, n)
+      if (n < pool.entries.length) return { pool, entry: pool.entries[n] }
+    }
+    return undefined      // genuinely exhausted; the service goes without
+  }
+
+  /* Pass 2 — hand values out, writing the same fact to both sides. */
+  services.forEach((s, i) => {
+    const held: HeldResource[] = []
+    const ceased = s.state === 'Ceased'
+    const siteIdx = SITES.findIndex((x) => x.code === s.endpoints[0]?.siteCode)
+
+    perService[i].forEach((kind) => {
+      const got = take(kind, siteIdx < 0 ? i : siteIdx)
+      if (!got) return
+      const { pool, entry } = got
+      entry.state = ceased ? 'Quarantined' : 'Allocated'
+      entry.serviceId = s.id
+      if (ceased) {
+        entry.releasedAt = new Date(Date.now() - between(1, 25) * 86400000).toISOString()
+        entry.quarantineUntil = new Date(Date.now() + between(1, 30) * 86400000).toISOString()
+      }
+      held.push({ kind, value: entry.value, pool: pool.scope, state: entry.state === 'Quarantined' ? 'Quarantined' : 'Allocated' })
     })
+
+    s.resources = held
   })
-  pools.push({
-    id: 'POOL-PWID-001', kind: 'Pseudowire ID', scope: 'global L2VPN',
-    total: 1000, allocated: 612, quarantined: 18, reserved: 9,
-    entries: entries(1000, 612, 18, (n) => String(4000 + n), services),
+
+  /* Pass 3 — a little of the remaining headroom is reserved (held for an
+     approved order that hasn't run) or in quarantine from an older cease
+     this dataset doesn't otherwise model, then recount from the entries so
+     the headline figures can't drift from what the table shows. */
+  pools.forEach((p) => {
+    const free = p.entries.filter((e) => e.state === 'Free')
+    const reserve = Math.min(free.length, between(0, Math.max(1, Math.floor(free.length * 0.04))))
+    for (let n = 0; n < reserve; n += 1) free[n].state = 'Reserved'
+    const stillFree = free.slice(reserve)
+    const quar = Math.min(stillFree.length, between(0, Math.max(1, Math.floor(stillFree.length * 0.05))))
+    for (let n = 0; n < quar; n += 1) {
+      stillFree[n].state = 'Quarantined'
+      stillFree[n].quarantineUntil = new Date(Date.now() + between(1, 30) * 86400000).toISOString()
+    }
+    p.allocated = p.entries.filter((e) => e.state === 'Allocated').length
+    p.quarantined = p.entries.filter((e) => e.state === 'Quarantined').length
+    p.reserved = p.entries.filter((e) => e.state === 'Reserved').length
   })
-  pools.push({
-    id: 'POOL-RDRT-001', kind: 'RD/RT', scope: 'global route target · 65001:x',
-    total: 500, allocated: 148, quarantined: 31, reserved: 4,
-    entries: entries(500, 148, 31, (n) => `65001:${1000 + n}`, services),
+
+  return pools
+}
+
+/**
+ * Hand one service its resources from the live pools, at runtime.
+ *
+ * The seed path above allocates for the whole estate at once; this is the same
+ * act for a single service coming into existence because a Create request
+ * completed. Returns new pool objects rather than mutating, so it can be used
+ * inside a store update.
+ */
+export function allocateForService(
+  pools: ResourcePool[], intentId: string, serviceId: string, endpointCount: number, seq: number,
+): { pools: ResourcePool[]; held: HeldResource[] } {
+  const next = pools.map((p) => ({ ...p, entries: p.entries.map((e) => ({ ...e })) }))
+  const held: HeldResource[] = []
+
+  demandFor(intentId, endpointCount, seq).forEach((kind) => {
+    const pool = next.find((p) => p.kind === kind && p.entries.some((e) => e.state === 'Free'))
+    if (!pool) return                          // pool exhausted — nothing to hand out
+    const entry = pool.entries.find((e) => e.state === 'Free')!
+    entry.state = 'Allocated'
+    entry.serviceId = serviceId
+    held.push({ kind, value: entry.value, pool: pool.scope, state: 'Allocated' })
   })
-  pools.push({
-    id: 'POOL-IP-001', kind: 'IP block', scope: 'WAN transit 10.244.0.0/16 · /30',
-    total: 900, allocated: 838, quarantined: 22, reserved: 6,
-    entries: entries(900, 838, 22, (n) => `10.244.${Math.floor(n / 64)}.${(n % 64) * 4}/30`, services),
-  })
-  pools.push({
-    id: 'POOL-ASN-001', kind: 'ASN slot', scope: 'private ASN 64512–65534',
-    total: 1023, allocated: 471, quarantined: 8, reserved: 2,
-    entries: entries(1023, 471, 8, (n) => String(64512 + n), services),
-  })
-  // Access domain — pre-provisioned CPE stock, bound to a serial on activation.
-  pools.push({
-    id: 'POOL-CPESN-001', kind: 'CPE Serial', scope: 'pre-provisioned stock · Huawei/ZTE/Adtran',
-    total: 400, allocated: 260, quarantined: 14, reserved: 6,
-    entries: entries(400, 260, 14, (n) => `SN-${100000 + n}`, services),
-  })
-  // Radio domain — licensed microwave frequency channels.
-  pools.push({
-    id: 'POOL-FREQ-001', kind: 'Frequency Channel', scope: 'licensed bands · L6/U6/L7/L8/E-band',
-    total: 200, allocated: 122, quarantined: 4, reserved: 3,
-    entries: entries(200, 122, 4, (n) => `FC-${1000 + n}`, services),
-  })
-  // Fiber domain — ITU-T 100GHz DWDM wavelength grid.
-  pools.push({
-    id: 'POOL-WL-001', kind: 'Wavelength', scope: 'ITU-T 100GHz grid · C-band 1529–1569nm',
-    total: 96, allocated: 84, quarantined: 3, reserved: 2,
-    entries: entries(96, 84, 3, (n) => `${1529 + Math.floor(n / 2)}.${(n % 2) * 50 + 12}nm`, services),
-  })
-  // Radio domain, RAN VNF category — 3GPP physical cell identity plan, per DU.
-  pools.push({
-    id: 'POOL-PCI-001', kind: 'PCI', scope: '3GPP TS 38.211 · mod-3 / mod-30 collision-free plan',
-    total: 504, allocated: 68, quarantined: 5, reserved: 3,
-    entries: entries(504, 68, 5, (n) => String(n), services),
+
+  return { pools: recount(next), held }
+}
+
+/**
+ * Give one service's holdings back on cease. They go to quarantine rather than
+ * straight to Free — reissuing a route target a peer still advertises would
+ * leak one customer's routes into another's VRF.
+ */
+export function releaseForService(pools: ResourcePool[], serviceId: string): ResourcePool[] {
+  const next = pools.map((p) => ({
+    ...p,
+    entries: p.entries.map((e) => (e.serviceId === serviceId && e.state === 'Allocated'
+      ? {
+        ...e,
+        state: 'Quarantined' as const,
+        releasedAt: new Date().toISOString(),
+        quarantineUntil: new Date(Date.now() + 30 * 86400000).toISOString(),
+      }
+      : e)),
+  }))
+  return recount(next)
+}
+
+/** Headline counters are always recomputed from the entries, never tracked. */
+function recount(pools: ResourcePool[]): ResourcePool[] {
+  pools.forEach((p) => {
+    p.allocated = p.entries.filter((e) => e.state === 'Allocated').length
+    p.quarantined = p.entries.filter((e) => e.state === 'Quarantined').length
+    p.reserved = p.entries.filter((e) => e.state === 'Reserved').length
   })
   return pools
 }
