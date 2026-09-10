@@ -416,10 +416,16 @@ export default function Dashboard() {
         </Card>
 
         {/* ---------------- by service type ---------------- */}
-        <Card className="h-full vw-flex vw-flex-col">
+        {/* `self-start` instead of `h-full`: this card sizes to its own
+           capped content instead of stretching to match "Requests by
+           stage" — with 7 categories today (and more to come), letting it
+           grow to match its sibling would drag that card's height up with
+           it, which is exactly the whitespace-above-the-chart bug this
+           fixes. The list scrolls internally past 4 rows instead. */}
+        <Card className="vw-flex vw-flex-col self-start">
           <CardHead title="By service type" sub="Ready · In progress · Waiting · Failed"
-            info="The same open requests split by service family across both domains — L2VPN, L3VPN and IBW (Transport), Broadband (Access). Each bar is segmented by how far along the requests are — click a segment to open exactly those requests." />
-          <CardBody className="vw-flex vw-flex-col vw-justify-evenly vw-gap-lg flex-1">
+            info="The same open requests split by service family across every domain. Each bar is segmented by how far along the requests are — click a segment to open exactly those requests. Scrolls if more service types are added." />
+          <CardBody className="vw-flex vw-flex-col vw-gap-lg flex-1 min-h-0 max-h-[360px] overflow-y-auto">
             {CATS.map((c) => {
               const list = orders.filter((o: Order) => o.category === c)
               const cnt = (...st: OrderState[]) => list.filter((o) => st.includes(o.state)).length
