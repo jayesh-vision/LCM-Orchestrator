@@ -51,7 +51,9 @@ export default function ProvisioningRequests() {
     setDomain(next)
     if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
   }
-  const resultsRef = useScrollToResultsOnDrillIn(domain !== 'All' || cat !== 'All' || state !== 'All' || vendor !== 'All')
+  const drill = [domain, cat, state, vendor, intent].every((v) => v === 'All')
+    ? '' : `d=${domain}|c=${cat}|s=${state}|v=${vendor}|i=${intent}`
+  const { ref: resultsRef } = useScrollToResultsOnDrillIn(drill)
   /* The Requests⟷Execution toggle is a real navigation — the two screens'
      state vocabularies differ (Requests has Draft/Planned/Validated/Invalid,
      Execution doesn't), so only domain/cat/q/view carry across. */

@@ -23,7 +23,7 @@ export default function Evidence() {
   const pushToast = useStore((st) => st.pushToast)
   const [open, setOpen] = useState<EvidenceRow | null>(null)
   const clear = useClearQuery(['q', 'verdict', 'stage'])
-  const resultsRef = useScrollToResultsOnDrillIn(verdict !== 'All')
+  const { ref: resultsRef } = useScrollToResultsOnDrillIn(verdict === 'All' ? '' : `v=${verdict}`)
 
   /* Every task evaluated across every run becomes an evidence record. */
   const rows: EvidenceRow[] = useMemo(

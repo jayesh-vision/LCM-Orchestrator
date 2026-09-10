@@ -76,7 +76,7 @@ export default function Workflows() {
   }
   const pickDomain = (d: Domain) => setDomainScoped(domain === d ? 'All' : d)
   const anyFilter = domain !== 'All' || cat !== 'All' || st !== 'All' || intentId !== 'All' || vendor !== 'All'
-  const resultsRef = useScrollToResultsOnDrillIn(anyFilter)
+  const { ref: resultsRef } = useScrollToResultsOnDrillIn(anyFilter ? `d=${domain}|c=${cat}|s=${st}|i=${intentId}|v=${vendor}` : '')
 
   const n = {
     state: (s: WorkflowState) => workflows.filter((w) => w.state === s).length,

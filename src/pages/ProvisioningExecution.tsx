@@ -49,7 +49,9 @@ export default function ProvisioningExecution() {
     setDomain(next)
     if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
   }
-  const resultsRef = useScrollToResultsOnDrillIn(domain !== 'All' || cat !== 'All' || state !== 'All' || vendor !== 'All')
+  const drill = [domain, cat, state, vendor, intent].every((v) => v === 'All')
+    ? '' : `d=${domain}|c=${cat}|s=${state}|v=${vendor}|i=${intent}`
+  const { ref: resultsRef } = useScrollToResultsOnDrillIn(drill)
   const [verify, setVerify] = useState<Order | null>(null)
   const [creds, setCreds] = useState<Order | null>(null)
   /* The Requests⟷Execution toggle is a real navigation — the two screens'

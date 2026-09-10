@@ -63,20 +63,32 @@ export function useClearQuery(keys: string[]) {
  * usually below the fold. Scroll it into view once, on arrival only — never
  * when the user changes a filter themselves.
  */
-export function useScrollToResultsOnDrillIn(active: boolean) {
+export function useScrollToResultsOnDrillIn(selection: string) {
   const ref = useRef<HTMLDivElement | null>(null)
-  const done = useRef(false)
-  useEffect(() => {
-    if (!active || done.current || !ref.current) return
-    done.current = true
+  const last = useRef<string>('')
+
+  const scrollToResults = useCallback(() => {
     const el = ref.current
-    const t = window.setTimeout(() => {
+    if (!el) return
+    /* A frame's grace so the rows have re-rendered and the list is its final
+       height before we measure where it starts. */
+    window.setTimeout(() => {
       const y = el.getBoundingClientRect().top + window.scrollY - 72
       window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' })
     }, 60)
-    return () => window.clearTimeout(t)
-  }, [active])
-  return ref
+  }, [])
+
+  useEffect(() => {
+    /* Keyed on the selection rather than a fired-once flag: drilling in from a
+       second summary card is a second drill-in and has to move the page again.
+       Re-renders that leave the selection unchanged are ignored, so scrolling
+       never fights the user. */
+    if (!selection || selection === last.current) { last.current = selection; return }
+    last.current = selection
+    scrollToResults()
+  }, [selection, scrollToResults])
+
+  return { ref, scrollToResults }
 }
 
 /** Multi-valued filter: `state=Failed,Rejected` matches any of them. */

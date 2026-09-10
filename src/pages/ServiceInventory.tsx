@@ -42,8 +42,10 @@ export default function ServiceInventory() {
     if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
   }
   const pickDomain = (d: Domain) => setDomainScoped(domain === d ? 'All' : d)
-  const anyFilter = state !== 'All' || conf !== 'All' || domain !== 'All' || cat !== 'All' || intent !== 'All'
-  const resultsRef = useScrollToResultsOnDrillIn(anyFilter)
+  const anyFilter = state !== 'All' || conf !== 'All' || domain !== 'All' || cat !== 'All' || intent !== 'All' || origin !== 'All'
+  const { ref: resultsRef, scrollToResults } = useScrollToResultsOnDrillIn(
+    anyFilter ? `s=${state}|cf=${conf}|d=${domain}|c=${cat}|i=${intent}|o=${origin}` : '',
+  )
   const intentName = intents.find((i) => i.id === intent)?.name ?? intent
 
   const n = {
@@ -224,7 +226,7 @@ export default function ServiceInventory() {
           progress={(n.state('Live') / services.length) * 100}
           note={`${n.state('Live').toLocaleString()} live · ${n.state('Degraded')} degraded · ${n.state('Suspended')} suspended`}
           info="Every service record in the inventory, in any state — live, activating, degraded, suspended or ceased. The bar shows how much of the base is live."
-          drillLabel="the unfiltered installed base" onClick={clear} />
+          drillLabel="the unfiltered installed base" onClick={() => { clear(); scrollToResults() }} />
         <Stat label="Conformant" icon={ShieldCheck} value={n.conf('Conformant').toLocaleString()} tone="good"
           delta={{ text: '▲ 34 this week', tone: 'good' }}
           progress={(n.conf('Conformant') / services.length) * 100}
