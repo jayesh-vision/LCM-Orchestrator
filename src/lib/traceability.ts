@@ -44,6 +44,25 @@ export function byTraceability<T>(rows: T[], score: (row: T) => number): T[] {
     .map((x) => x.row)
 }
 
+/**
+ * Queue order for a request list: most recently raised first, with
+ * traceability breaking ties.
+ *
+ * Ranking purely on traceability is right for an inventory, where every row is
+ * a settled fact and the question is how well each one holds up. It is wrong
+ * for a queue. A request raised a minute ago has no run behind it and nothing
+ * to follow yet — by definition it scores near the bottom — so the one thing
+ * someone has just done would sink beneath a page of finished work. Leading on
+ * when it was raised puts it where they will look for it, and the traceability
+ * score still orders everything raised in the same moment.
+ */
+export function byRaised<T>(rows: T[], raisedAt: (row: T) => string, score: (row: T) => number): T[] {
+  return rows
+    .map((row, i) => ({ row, i, t: Date.parse(raisedAt(row)), s: score(row) }))
+    .sort((a, b) => (b.t - a.t) || (b.s - a.s) || (a.i - b.i))
+    .map((x) => x.row)
+}
+
 /* ---------------------------------------------------------------- origin */
 
 /**

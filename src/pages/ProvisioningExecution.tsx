@@ -12,7 +12,7 @@ import {
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { VENDOR_LABEL } from '@/data/workflows'
 import { ageLabel, CATEGORY_TONE, clockTime, INTENT_TONE, ORDER_TONE, relTime } from '@/lib/format'
-import { byTraceability, orderTrace } from '@/lib/traceability'
+import { byRaised, orderTrace } from '@/lib/traceability'
 
 const EXEC_STATES: OrderState[] = [
   'Approved', 'Rejected', 'Queued', 'In progress', 'Ready', 'Failed', 'Reinstantiate',
@@ -96,10 +96,12 @@ export default function ProvisioningExecution() {
     return true
   }), [pool, domain, cat, state, vendor, intent, qname, qcode, qmodel, q]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* Fully-traceable orders first — see ProvisioningRequests for the reasoning. */
+  /* Newest first, most traceable within the same moment — the same queue seen
+     one stage later, so it is ordered the same way. See ProvisioningRequests
+     for the reasoning. */
   const ranked = useMemo(() => {
     const withRun = new Set(runs.map((r) => r.orderId))
-    return byTraceability(filtered, (o) => orderTrace(o, (id) => withRun.has(id)))
+    return byRaised(filtered, (o) => o.createdAt, (o) => orderTrace(o, (id) => withRun.has(id)))
   }, [filtered, runs])
 
   /* Same scope as `filtered` but ignoring the status filter itself — the

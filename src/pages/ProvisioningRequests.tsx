@@ -12,7 +12,7 @@ import {
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { VENDOR_LABEL } from '@/data/workflows'
 import { CATEGORY_TONE, INTENT_TONE, ORDER_TONE } from '@/lib/format'
-import { byTraceability, orderTrace } from '@/lib/traceability'
+import { byRaised, orderTrace } from '@/lib/traceability'
 
 const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
 
@@ -107,13 +107,14 @@ export default function ProvisioningRequests() {
     return true
   }), [orders, domain, cat, state, vendor, intent, customer, qname, qcode, qmodel, q]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* Requests that can actually be followed — through to the service they
-     produced, the run that executed them and the template on each endpoint —
-     lead the list, so the first page is the part of the estate that holds up
-     when someone opens it. Sorting a column still overrides this. */
+  /* Newest first — raise a change against a service and the request for it is
+     the top row here, which is where someone goes looking for it. Within the
+     same moment, requests that can actually be followed — through to the
+     service they produced, the run that executed them and the template on each
+     endpoint — lead. Sorting a column still overrides both. */
   const ranked = useMemo(() => {
     const withRun = new Set(runs.map((r) => r.orderId))
-    return byTraceability(filtered, (o) => orderTrace(o, (id) => withRun.has(id)))
+    return byRaised(filtered, (o) => o.createdAt, (o) => orderTrace(o, (id) => withRun.has(id)))
   }, [filtered, runs])
 
   /* Same scope as `filtered` but ignoring the status filter itself — the
