@@ -7,7 +7,7 @@ import {
 import { useStore } from '@/store/useStore'
 import type { Conformance, Domain, Order, OrderState } from '@/types'
 import { DOMAINS, domainOf } from '@/types'
-import { Badge, Button, Card, CardBody, CardHead, InfoTip, Mono, Progress, type StatTone } from '@/components/ui'
+import { Badge, Button, Card, CardBody, CardHead, InfoTip, Mono, Progress, StatRow, type StatTone } from '@/components/ui'
 import { Donut, ColumnChart, SOFT, StackedBar, StackedTrendChart, TrendChart } from '@/components/charts'
 import { CPE_VENDORS, OPTICAL_VENDORS, RADIO_VENDORS, ROUTER_VENDORS, SWITCH_VENDORS, VNF_VENDORS } from '@/data/catalog'
 import { CATEGORY_TONE, relTime } from '@/lib/format'
@@ -32,14 +32,6 @@ const DOMAIN_CHIP_CLS: Record<Domain, string> = {
   Radio: 'bg-[#a855f7]/10 text-[#a855f7]',
   Fiber: 'bg-[#06b6d4]/10 text-[#06b6d4]',
 }
-const QUEUE_ICON_TONE: Record<'brand' | StatTone, { bg: string; fg: string; ring: string }> = {
-  brand: { bg: 'bg-brand-50', fg: 'text-brand-600', ring: 'ring-brand-200/60' },
-  good: { bg: 'bg-good-50', fg: 'text-good-700', ring: 'ring-good-200/70' },
-  warn: { bg: 'bg-warn-50', fg: 'text-warn-700', ring: 'ring-warn-200/70' },
-  crit: { bg: 'bg-crit-50', fg: 'text-crit-500', ring: 'ring-crit-200/70' },
-  plum: { bg: 'bg-plum-50', fg: 'text-plum-700', ring: 'ring-plum-200/70' },
-}
-
 /* Service health — whether what's already provisioned still matches its
    intent. The other half of the LCM story the request funnel doesn't show:
    Requests raise the order, Workflows execute it, but only this closes the
@@ -235,28 +227,10 @@ export default function Dashboard() {
           <CardHead title="Action queue" sub="What's waiting on a decision or a device, right now"
             info="Requests that need a human or a device to act before they can move forward: waiting for a NOC lead's approval, approved and queued for the next execution window, or failed and rolled back. Click a row to open exactly those requests." />
           <CardBody className="vw-flex vw-flex-col vw-gap-sm flex-1">
-            {queueKpis.map((k) => {
-              const t = QUEUE_ICON_TONE[k.tone ?? 'brand']
-              return (
-                <button key={k.label} type="button" onClick={() => nav(k.go)}
-                  aria-label={`${k.value} ${k.label}. Open ${k.label.toLowerCase()}`}
-                  className="vw-card-child vw-card--clickable w-full text-left">
-                  <span className="vw-flex vw-items-center vw-gap-sm">
-                    <span className={`w-8 h-8 rounded-lg grid place-items-center shrink-0 ring-1 ring-inset ${t.bg} ${t.fg} ${t.ring}`} aria-hidden>
-                      <k.icon size={15} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="vw-flex vw-items-center vw-justify-between vw-gap-sm">
-                        <span className="vw-card-activity-label truncate">{k.label}</span>
-                        <span className="vw-card-metric-sm tnum shrink-0">{k.value}</span>
-                      </span>
-                      <Progress value={k.progress ?? 0} tone={k.tone ?? 'brand'} className="mt-1.5" />
-                      <span className="vw-card-activity-value block mt-1 truncate">{k.sub}</span>
-                    </span>
-                  </span>
-                </button>
-              )
-            })}
+            {queueKpis.map((k) => (
+              <StatRow key={k.label} label={k.label} icon={k.icon} value={k.value} tone={k.tone}
+                progress={k.progress ?? 0} note={k.sub} onClick={() => nav(k.go)} drillLabel={k.label.toLowerCase()} />
+            ))}
           </CardBody>
         </Card>
       </div>
@@ -267,28 +241,10 @@ export default function Dashboard() {
           <CardHead title="Templates & coverage" sub="Can we actually provision what's being asked for?"
             info="Workflow templates are the executable recipes — CLI or VNF-lifecycle commands — bound to one category, vendor and model. An order can only run once an Active template exists for its intent, on its vendor. Click a row to open Workflows filtered to it." />
           <CardBody className="vw-flex vw-flex-col vw-gap-sm flex-1">
-            {templateRows.map((k) => {
-              const t = QUEUE_ICON_TONE[k.tone ?? 'brand']
-              return (
-                <button key={k.label} type="button" onClick={() => nav(k.go)}
-                  aria-label={`${k.value} ${k.label}. Open Workflows`}
-                  className="vw-card-child vw-card--clickable w-full text-left">
-                  <span className="vw-flex vw-items-center vw-gap-sm">
-                    <span className={`w-8 h-8 rounded-lg grid place-items-center shrink-0 ring-1 ring-inset ${t.bg} ${t.fg} ${t.ring}`} aria-hidden>
-                      <k.icon size={15} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="vw-flex vw-items-center vw-justify-between vw-gap-sm">
-                        <span className="vw-card-activity-label truncate">{k.label}</span>
-                        <span className="vw-card-metric-sm tnum shrink-0">{k.value}</span>
-                      </span>
-                      <Progress value={k.progress} tone={k.tone ?? 'brand'} className="mt-1.5" />
-                      <span className="vw-card-activity-value block mt-1 truncate">{k.sub}</span>
-                    </span>
-                  </span>
-                </button>
-              )
-            })}
+            {templateRows.map((k) => (
+              <StatRow key={k.label} label={k.label} icon={k.icon} value={k.value} tone={k.tone}
+                progress={k.progress} note={k.sub} onClick={() => nav(k.go)} drillLabel={`${k.label}. Open Workflows`} />
+            ))}
           </CardBody>
         </Card>
 

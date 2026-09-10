@@ -2,8 +2,8 @@ import { useMemo, type ReactNode } from 'react'
 import { Boxes, CheckCircle2, ClipboardList, Gauge, Globe, PlayCircle, Server, Timer, XCircle } from 'lucide-react'
 import type { Category, Order, OrderState, Run, Vendor } from '@/types'
 import { domainOf } from '@/types'
-import { Badge, Card, CardBody, CardHead, Stat, type StatTone } from '@/components/ui'
-import { ColumnChart, SOFT, StackedBar, TrendChart } from '@/components/charts'
+import { Badge, Card, CardBody, CardHead, StatRow, type StatTone } from '@/components/ui'
+import { BarList, ColumnChart, SOFT, StackedBar, TrendChart } from '@/components/charts'
 import { VENDOR_LABEL } from '@/data/workflows'
 import { CATEGORY_TONE, dur } from '@/lib/format'
 
@@ -40,7 +40,10 @@ function worstBy(orders: Order[], keyOf: (o: Order) => string | undefined, failS
   })
   return worst
 }
-const spotlightTone = (rate: number): StatTone => (rate >= 0.25 ? 'crit' : rate >= 0.1 ? 'warn' : 'good')
+const riskTone = (rate: number): StatTone => (rate >= 0.25 ? 'crit' : rate >= 0.1 ? 'warn' : 'good')
+/** Raw hex counterpart of `riskTone`, for components that take a colour
+ * instead of a tone name (BarList). */
+const riskColor = (rate: number) => (rate >= 0.25 ? SOFT.crit : rate >= 0.1 ? SOFT.warn : SOFT.brand)
 
 type Patch = Record<string, string | null | undefined>
 
@@ -90,29 +93,6 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
   const worstVendor = useMemo(() => worstBy(orders, (o) => o.endpoints[0]?.vendor, failStates, 3), [orders, failStates])
   const worstModel = useMemo(() => worstBy(orders, (o) => o.endpoints[0]?.deviceName, failStates, 3), [orders, failStates])
 
-  const spotlight = (
-    <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
-      <Stat label="Riskiest domain" icon={Globe} value={worstDomain ? `${Math.round(worstDomain.rate * 100)}%` : '—'}
-        tone={worstDomain ? spotlightTone(worstDomain.rate) : undefined}
-        note={worstDomain ? `${worstDomain.key} — ${worstDomain.failed} of ${worstDomain.total} failed` : 'Not enough data in scope'}
-        drillLabel={worstDomain ? `failed ${worstDomain.key} ${noun}` : undefined}
-        onClick={worstDomain ? () => onDrill({ domain: worstDomain.key, state: failStates.join(',') }) : undefined}
-        info="The domain with the highest failure rate in the current scope." />
-      <Stat label="Riskiest vendor" icon={Boxes} value={worstVendor ? `${Math.round(worstVendor.rate * 100)}%` : '—'}
-        tone={worstVendor ? spotlightTone(worstVendor.rate) : undefined}
-        note={worstVendor ? `${VENDOR_LABEL[worstVendor.key as Vendor] ?? worstVendor.key} — ${worstVendor.failed} of ${worstVendor.total} failed` : 'Needs at least 3 orders on one vendor'}
-        drillLabel={worstVendor ? `failed orders on ${worstVendor.key}` : undefined}
-        onClick={worstVendor ? () => onDrill({ vendor: worstVendor.key, state: failStates.join(',') }) : undefined}
-        info="The vendor (by each order's primary endpoint) with the highest failure rate — needs at least 3 orders to qualify, so one bad order doesn't look like a trend." />
-      <Stat label="Riskiest model" icon={Server} value={worstModel ? `${Math.round(worstModel.rate * 100)}%` : '—'}
-        tone={worstModel ? spotlightTone(worstModel.rate) : undefined}
-        note={worstModel ? `${worstModel.key} — ${worstModel.failed} of ${worstModel.total} failed` : 'Needs at least 3 orders on one model'}
-        drillLabel={worstModel ? `failed orders on ${worstModel.key}` : undefined}
-        onClick={worstModel ? () => onDrill({ q: worstModel.key, state: failStates.join(',') }) : undefined}
-        info="The device model with the highest failure rate — needs at least 3 orders to qualify." />
-    </div>
-  )
-
   const DAYS = 14
   const trend = useMemo(() => {
     const labels = Array.from({ length: DAYS }, (_, i) => {
@@ -125,6 +105,52 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
       completed: perDay(orders.filter((o) => o.state === 'Ready').map((o) => o.updatedAt), DAYS),
     }
   }, [orders])
+
+  /* ---------------- execution-only health figures ---------------- */
+  const orderIds = new Set(orders.map((o) => o.id))
+  const scopedRuns = (runs ?? []).filter((r) => orderIds.has(r.orderId))
+  const firstAttempts = scopedRuns.filter((r) => r.attempt === 1 && r.outcome !== 'Running')
+  const firstPassRate = firstAttempts.length ? Math.round((firstAttempts.filter((r) => r.outcome === 'Accepted').length / firstAttempts.length) * 100) : undefined
+  const durations = scopedRuns.map((r) => r.durationMs).filter((d): d is number => d !== undefined)
+  const avgDuration = durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : undefined
+
+  /* One combined "Problem spotlight" card instead of 3–5 separate Stat
+     tiles — a row of near-identical tiles reads fine at 3–4, past that it's
+     just card sprawl. Execution mode folds first-pass rate and average run
+     duration in as two more rows, since they're the same "how healthy is
+     this scope" question as the risk rows above them. */
+  const spotlightCard = (
+    <Card className="self-start flex flex-col">
+      <CardHead title="Problem spotlight" sub="Where failures are concentrated in scope right now"
+        info="The domain, vendor and device model with the highest failure rate in the current scope (vendor and model need at least 3 orders to qualify, so one unlucky order doesn't look like a trend). Click a row to open those failures." />
+      <CardBody className="flex flex-col gap-2">
+        <StatRow label="Riskiest domain" icon={Globe} value={worstDomain ? `${Math.round(worstDomain.rate * 100)}%` : '—'}
+          tone={worstDomain ? riskTone(worstDomain.rate) : undefined}
+          note={worstDomain ? `${worstDomain.key} — ${worstDomain.failed} of ${worstDomain.total} failed` : 'Not enough data in scope'}
+          drillLabel={worstDomain ? `failed ${worstDomain.key} ${noun}` : undefined}
+          onClick={worstDomain ? () => onDrill({ domain: worstDomain.key, state: failStates.join(',') }) : undefined} />
+        <StatRow label="Riskiest vendor" icon={Boxes} value={worstVendor ? `${Math.round(worstVendor.rate * 100)}%` : '—'}
+          tone={worstVendor ? riskTone(worstVendor.rate) : undefined}
+          note={worstVendor ? `${VENDOR_LABEL[worstVendor.key as Vendor] ?? worstVendor.key} — ${worstVendor.failed} of ${worstVendor.total} failed` : 'Needs 3+ orders on one vendor'}
+          drillLabel={worstVendor ? `failed orders on ${worstVendor.key}` : undefined}
+          onClick={worstVendor ? () => onDrill({ vendor: worstVendor.key, state: failStates.join(',') }) : undefined} />
+        <StatRow label="Riskiest model" icon={Server} value={worstModel ? `${Math.round(worstModel.rate * 100)}%` : '—'}
+          tone={worstModel ? riskTone(worstModel.rate) : undefined}
+          note={worstModel ? `${worstModel.key} — ${worstModel.failed} of ${worstModel.total} failed` : 'Needs 3+ orders on one model'}
+          drillLabel={worstModel ? `failed orders on ${worstModel.key}` : undefined}
+          onClick={worstModel ? () => onDrill({ q: worstModel.key, state: failStates.join(',') }) : undefined} />
+        {mode === 'execution' && (
+          <>
+            <StatRow label="First-pass rate" icon={Gauge} value={firstPassRate !== undefined ? `${firstPassRate}%` : '—'}
+              tone={firstPassRate === undefined ? undefined : firstPassRate >= 90 ? 'good' : firstPassRate >= 70 ? 'plum' : 'crit'}
+              note="First attempts accepted without a retry" />
+            <StatRow label="Average run duration" icon={Timer} value={avgDuration !== undefined ? dur(avgDuration) : '—'}
+              note="Across every run in scope" />
+          </>
+        )}
+      </CardBody>
+    </Card>
+  )
 
   if (mode === 'requests') {
     const waiting = cnt('Validated')
@@ -143,25 +169,25 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
 
     return (
       <div className="flex flex-col gap-4">
-        <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
-          <Stat label="Total requests" icon={ClipboardList} value={total.toLocaleString()}
-            note={`${cnt('Draft')} still in draft`} drillLabel="every request in scope" onClick={() => onDrill({ state: null })}
-            info="Every request in the current domain/category/search selection, in any state." />
-          <Stat label="Waiting for approval" icon={CheckCircle2} value={waiting} tone="plum"
-            progress={(waiting / Math.max(1, total)) * 100} note="Pre-validated, ready for a decision"
-            drillLabel="requests waiting on approval" onClick={() => onDrill({ state: 'Validated' })}
-            info="Requests that passed validation and now need a NOC lead to approve or reject them." />
-          <Stat label="Ready to run" icon={PlayCircle} value={ready} tone="good"
-            progress={(ready / Math.max(1, total)) * 100} note="Approved, waiting for a change window"
-            drillLabel="requests ready to run" onClick={() => onDrill({ state: 'Approved,Queued' })}
-            info="Approved requests queued for execution." />
-          <Stat label="Failed" icon={XCircle} value={failed} tone={failed ? 'crit' : undefined}
-            progress={(failed / Math.max(1, total)) * 100} note="Rolled back, needs a retry"
-            drillLabel="failed requests" onClick={() => onDrill({ state: 'Failed,Rejected,Invalid,Reinstantiate' })}
-            info="Requests whose execution failed and was rolled back, or were rejected at approval." />
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card className="self-start flex flex-col">
+            <CardHead title="Requests" sub="At a glance, for the current selection" />
+            <CardBody className="flex flex-col gap-2">
+              <StatRow label="Total requests" icon={ClipboardList} value={total.toLocaleString()}
+                note={`${cnt('Draft')} still in draft`} drillLabel="every request in scope" onClick={() => onDrill({ state: null })} />
+              <StatRow label="Waiting for approval" icon={CheckCircle2} value={waiting} tone="plum"
+                progress={(waiting / Math.max(1, total)) * 100} note="Pre-validated, ready for a decision"
+                drillLabel="requests waiting on approval" onClick={() => onDrill({ state: 'Validated' })} />
+              <StatRow label="Ready to run" icon={PlayCircle} value={ready} tone="good"
+                progress={(ready / Math.max(1, total)) * 100} note="Approved, waiting for a change window"
+                drillLabel="requests ready to run" onClick={() => onDrill({ state: 'Approved,Queued' })} />
+              <StatRow label="Failed" icon={XCircle} value={failed} tone={failed ? 'crit' : undefined}
+                progress={(failed / Math.max(1, total)) * 100} note="Rolled back, needs a retry"
+                drillLabel="failed requests" onClick={() => onDrill({ state: 'Failed,Rejected,Invalid,Reinstantiate' })} />
+            </CardBody>
+          </Card>
+          {spotlightCard}
         </div>
-
-        {spotlight}
 
         <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
           <Card className="h-full flex flex-col">
@@ -195,20 +221,7 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
             ]
           }} />
 
-        <RankedBreakdown title="By vendor" sub="Every vendor in scope (by each order's primary endpoint), split by where it stands — click a name or a segment to open exactly those"
-          groups={byVendor} noun={noun} onDrill={onDrill}
-          renderLabel={(v) => <span className="text-[13px] font-semibold text-ink-1">{VENDOR_LABEL[v as Vendor] ?? v}</span>}
-          labelFor={(v) => VENDOR_LABEL[v as Vendor] ?? v}
-          patchFor={(v, states) => ({ vendor: v, state: states })}
-          segmentsFor={(list) => {
-            const c = (...st: OrderState[]) => list.filter((o) => st.includes(o.state)).length
-            return [
-              { label: 'Ready', value: c('Ready'), fill: 'good' as const, states: 'Ready' },
-              { label: 'In progress', value: c('In progress', 'Queued', 'Approved'), fill: 'brand' as const, states: 'In progress,Queued,Approved' },
-              { label: 'Waiting', value: c('Draft', 'Planned', 'Validated'), fill: 'none' as const, states: 'Draft,Planned,Validated' },
-              { label: 'Failed', value: c('Failed', 'Rejected', 'Invalid', 'Reinstantiate'), fill: 'crit' as const, states: 'Failed,Rejected,Invalid,Reinstantiate' },
-            ]
-          }} />
+        <VendorBreakdown byVendor={byVendor} noun={noun} failStates={failStates} onDrill={onDrill} />
       </div>
     )
   }
@@ -218,42 +231,26 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
   const inProgress = cnt('In progress', 'Queued', 'Approved')
   const failed = cnt('Failed', 'Rejected', 'Reinstantiate')
 
-  const orderIds = new Set(orders.map((o) => o.id))
-  const scopedRuns = (runs ?? []).filter((r) => orderIds.has(r.orderId))
-  const firstAttempts = scopedRuns.filter((r) => r.attempt === 1 && r.outcome !== 'Running')
-  const firstPassRate = firstAttempts.length ? Math.round((firstAttempts.filter((r) => r.outcome === 'Accepted').length / firstAttempts.length) * 100) : undefined
-  const durations = scopedRuns.map((r) => r.durationMs).filter((d): d is number => d !== undefined)
-  const avgDuration = durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : undefined
-
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
-        <Stat label="Total in execution" icon={PlayCircle} value={total.toLocaleString()}
-          note={`${inProgress} in progress`} drillLabel="everything in execution" onClick={() => onDrill({ state: null })}
-          info="Every order in the execution pool for the current domain/category/search selection." />
-        <Stat label="Ready" icon={CheckCircle2} value={ready} tone="good"
-          progress={(ready / Math.max(1, total)) * 100} note="Finished successfully"
-          drillLabel="orders that finished successfully" onClick={() => onDrill({ state: 'Ready' })}
-          info="Orders whose execution finished successfully." />
-        <Stat label="In progress" icon={PlayCircle} value={inProgress}
-          progress={(inProgress / Math.max(1, total)) * 100} note="Running or queued behind a change window"
-          drillLabel="orders in progress" onClick={() => onDrill({ state: 'In progress,Queued,Approved' })}
-          info="Approved, queued, or actively executing right now." />
-        <Stat label="Failed" icon={XCircle} value={failed} tone={failed ? 'crit' : undefined}
-          progress={(failed / Math.max(1, total)) * 100} note="Rolled back, can be retried"
-          drillLabel="failed orders" onClick={() => onDrill({ state: 'Failed,Rejected,Reinstantiate' })}
-          info="Orders whose execution failed and was rolled back." />
-      </div>
-
-      {spotlight}
-
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
-        <Stat label="First-pass rate" icon={Gauge} value={firstPassRate !== undefined ? `${firstPassRate}%` : '—'}
-          tone={firstPassRate === undefined ? undefined : firstPassRate >= 90 ? 'good' : firstPassRate >= 70 ? 'plum' : 'crit'}
-          note="First attempts accepted without a retry"
-          info="Of every order's first execution attempt in scope, the share accepted without needing a retry." />
-        <Stat label="Average run duration" icon={Timer} value={avgDuration !== undefined ? dur(avgDuration) : '—'}
-          note="Across every run in scope" info="Mean wall-clock duration of every run (any attempt) for orders in scope." />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="self-start flex flex-col">
+          <CardHead title="Execution" sub="At a glance, for the current selection" />
+          <CardBody className="flex flex-col gap-2">
+            <StatRow label="Total in execution" icon={PlayCircle} value={total.toLocaleString()}
+              note={`${inProgress} in progress`} drillLabel="everything in execution" onClick={() => onDrill({ state: null })} />
+            <StatRow label="Ready" icon={CheckCircle2} value={ready} tone="good"
+              progress={(ready / Math.max(1, total)) * 100} note="Finished successfully"
+              drillLabel="orders that finished successfully" onClick={() => onDrill({ state: 'Ready' })} />
+            <StatRow label="In progress" icon={PlayCircle} value={inProgress}
+              progress={(inProgress / Math.max(1, total)) * 100} note="Running or queued behind a change window"
+              drillLabel="orders in progress" onClick={() => onDrill({ state: 'In progress,Queued,Approved' })} />
+            <StatRow label="Failed" icon={XCircle} value={failed} tone={failed ? 'crit' : undefined}
+              progress={(failed / Math.max(1, total)) * 100} note="Rolled back, can be retried"
+              drillLabel="failed orders" onClick={() => onDrill({ state: 'Failed,Rejected,Reinstantiate' })} />
+          </CardBody>
+        </Card>
+        {spotlightCard}
       </div>
 
       <RankedBreakdown title="By category" sub="Every category in scope, split by where it stands — click a badge or a segment to open exactly those"
@@ -270,19 +267,7 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
           ]
         }} />
 
-      <RankedBreakdown title="By vendor" sub="Every vendor in scope (by each order's primary endpoint), split by where it stands — click a name or a segment to open exactly those"
-        groups={byVendor} noun={noun} onDrill={onDrill}
-        renderLabel={(v) => <span className="text-[13px] font-semibold text-ink-1">{VENDOR_LABEL[v as Vendor] ?? v}</span>}
-        labelFor={(v) => VENDOR_LABEL[v as Vendor] ?? v}
-        patchFor={(v, states) => ({ vendor: v, state: states })}
-        segmentsFor={(list) => {
-          const c = (...st: OrderState[]) => list.filter((o) => st.includes(o.state)).length
-          return [
-            { label: 'Ready', value: c('Ready'), fill: 'good' as const, states: 'Ready' },
-            { label: 'In progress', value: c('In progress', 'Queued', 'Approved'), fill: 'brand' as const, states: 'In progress,Queued,Approved' },
-            { label: 'Failed', value: c('Failed', 'Rejected', 'Reinstantiate'), fill: 'crit' as const, states: 'Failed,Rejected,Reinstantiate' },
-          ]
-        }} />
+      <VendorBreakdown byVendor={byVendor} noun={noun} failStates={failStates} onDrill={onDrill} />
 
       <Card>
         <CardHead title="Completions" sub={`Last 14 days · ${trend.completed.reduce((a, b) => a + b, 0)} orders went live`} />
@@ -301,7 +286,9 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
 
 /** Ranked, biggest-first breakdown — one StackedBar row each. Generic over
  * the grouping key (category, vendor, ...) so both "By category" and "By
- * vendor" reuse the same layout and drill-down wiring. */
+ * vendor" reuse the same layout and drill-down wiring. Bounded to a small,
+ * naturally-fixed set of keys (categories) — for vendors, which can keep
+ * growing, see VendorBreakdown instead. */
 function RankedBreakdown({ title, sub, groups, noun, segmentsFor, renderLabel, labelFor, patchFor, onDrill }: {
   title: string
   sub: string
@@ -336,6 +323,45 @@ function RankedBreakdown({ title, sub, groups, noun, segmentsFor, renderLabel, l
             />
           </div>
         ))}
+      </CardBody>
+    </Card>
+  )
+}
+
+/**
+ * A vendor list has no natural ceiling — the platform already carries 20,
+ * and every new domain brings more. A "By category" style stacked-bar row
+ * per vendor would either grow the card forever or need constant re-fixing
+ * (which is exactly what kept happening). Instead: one compact bar per
+ * vendor — rank + volume + a failure-rate colour, nothing else — inside a
+ * card that's capped and scrolls, so the layout never depends on how many
+ * vendors exist.
+ */
+function VendorBreakdown({ byVendor, noun, failStates, onDrill }: {
+  byVendor: [Vendor, Order[]][]
+  noun: string
+  failStates: OrderState[]
+  onDrill: (patch: Patch) => void
+}) {
+  const items = byVendor.map(([v, list]) => {
+    const failed = list.filter((o) => failStates.includes(o.state)).length
+    const rate = failed / list.length
+    const label = VENDOR_LABEL[v] ?? v
+    return {
+      label,
+      value: list.length,
+      color: riskColor(rate),
+      valueLabel: `${list.length} · ${Math.round(rate * 100)}%`,
+      drillLabel: `${list.length} ${label} ${noun}, ${Math.round(rate * 100)}% failed. Open them`,
+      onClick: () => onDrill({ vendor: v, state: null }),
+    }
+  })
+  return (
+    <Card>
+      <CardHead title="By vendor" sub="Ranked by volume — the colour is that vendor's failure rate, not its size"
+        info="Every vendor in scope, by each order's primary endpoint, ranked by volume. Bar colour reflects failure rate: grey under 10%, amber at 10%+, red at 25%+. Scrolls past the top vendors instead of growing the page, since the vendor list has no fixed size — click a bar to open that vendor's requests." />
+      <CardBody className="max-h-[360px] overflow-y-auto">
+        <BarList items={items} labelWidth={112} valueWidth={72} />
       </CardBody>
     </Card>
   )

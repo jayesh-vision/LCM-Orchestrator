@@ -271,6 +271,54 @@ export function Stat({ label, value, note, tone, delta, onClick, drillLabel, ico
   )
 }
 
+/* --------------------------------------------------------------- statrow
+   A compact row version of Stat — icon chip, label, value, an optional
+   share-of-total bar, and a note line — for grouping several related
+   numbers into one card (e.g. "Action queue", "Problem spotlight") instead
+   of a full-width Stat tile per number. A row of identical Stat tiles reads
+   fine at 3–4; past that it reads as repetitive card sprawl, which is
+   exactly what this exists to replace. */
+export function StatRow({ label, value, note, tone, onClick, drillLabel, icon: Icon, progress, info }:
+{
+  label: string; value: ReactNode; note?: ReactNode; tone?: StatTone
+  onClick?: () => void
+  drillLabel?: string
+  icon?: ComponentType<{ size?: number; className?: string }>
+  /** 0–100. Renders a thin share-of-total bar under the row in the row's tone. */
+  progress?: number
+  info?: ReactNode
+}) {
+  const c = STAT_TONE[tone ?? 'brand']
+  const inner = (
+    <span className="vw-flex vw-items-center vw-gap-sm">
+      {Icon && (
+        <span className={`w-8 h-8 rounded-lg grid place-items-center shrink-0 ring-1 ring-inset ${c.iconBg} ${c.iconFg} ${c.ring}`} aria-hidden>
+          <Icon size={15} />
+        </span>
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="vw-flex vw-items-center vw-justify-between vw-gap-sm">
+          <span className="vw-card-activity-label truncate vw-flex vw-items-center vw-gap-xxs">
+            {label}
+            {info && <InfoTip>{info}</InfoTip>}
+          </span>
+          <span className="vw-card-metric-sm tnum shrink-0">{value}</span>
+        </span>
+        {progress !== undefined && <Progress value={progress} tone={tone ?? 'brand'} className="mt-1.5" />}
+        {note && <span className="vw-card-activity-value block mt-1 truncate">{note}</span>}
+      </span>
+    </span>
+  )
+  if (!onClick) return <div className="vw-card-child">{inner}</div>
+  return (
+    <button type="button" onClick={onClick}
+      aria-label={drillLabel ? `${label}. Open ${drillLabel}` : `${label}. Open the detail`}
+      className="vw-card-child vw-card--clickable w-full text-left">
+      {inner}
+    </button>
+  )
+}
+
 /* --------------------------------------------------- active filter banner */
 export interface ActiveFilter { key: string; label: string; value: string; onRemove: () => void }
 
