@@ -6,6 +6,7 @@ import {
   Badge, Button, Card, CardBody, CardHead, KV, Mono, Note, Tabs,
 } from '@/components/ui'
 import { CATEGORY_TONE, CONFORMANCE_TONE, inr, relTime, SERVICE_TONE, shortDate } from '@/lib/format'
+import { ORIGIN_BLURB, ORIGIN_LABEL, serviceOrigins } from '@/lib/traceability'
 
 type Tab = 'overview' | 'realised' | 'evidence' | 'history' | 'resources'
 
@@ -18,6 +19,7 @@ export default function ServiceDetail() {
   const reprove = useStore((s) => s.reproveService)
   const [tab, setTab] = useState<Tab>('overview')
   const orders = useMemo(() => allOrders.filter((o) => o.serviceId === id), [allOrders, id])
+  const origin = useMemo(() => serviceOrigins(allOrders).get(id ?? '') ?? 'inherited', [allOrders, id])
 
   if (!svc) {
     return (
@@ -45,6 +47,15 @@ export default function ServiceDetail() {
                 <Badge tone={SERVICE_TONE[svc.state]} dot>{svc.state}</Badge>
                 <Badge tone={CATEGORY_TONE[svc.category]}>{svc.category} · {svc.type}</Badge>
                 <Badge tone={CONFORMANCE_TONE[svc.conformance]}>{svc.conformance}</Badge>
+                {/* Whether this service came from a request in this system or
+                    was already on the network when the platform arrived. Most
+                    of the base is the latter, and saying so stops a service
+                    with no order behind it from looking like missing data. */}
+                <span title={ORIGIN_BLURB[origin]}>
+                  <Badge tone={origin === 'provisioned' ? 'good' : origin === 'managed' ? 'info' : 'none'}>
+                    {ORIGIN_LABEL[origin]}
+                  </Badge>
+                </span>
               </div>
               <p className="text-[13px] text-ink-2 m-0">
                 <Mono className="font-semibold">{svc.id}</Mono> · {svc.accountName} <Mono className="text-ink-3">{svc.accountId}</Mono> ·

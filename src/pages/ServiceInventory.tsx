@@ -12,7 +12,7 @@ import {
 import { BarList, CHART, Donut, FILL, type FillKey } from '@/components/charts'
 import { CATEGORY_TONE, CONFORMANCE_TONE, DOMAIN_TONE, inr, relTime, SERVICE_TONE } from '@/lib/format'
 import { CONFORMANCE_ORDER, conformanceBreakdown } from '@/lib/conformance'
-import { byTraceability, serviceTrace } from '@/lib/traceability'
+import { byTraceability, serviceTrace, serviceOrigins, ORIGIN_LABEL, ORIGIN_BLURB, type ServiceOrigin } from '@/lib/traceability'
 
 const STATES: ServiceState[] = ['Live', 'Activating', 'Degraded', 'Suspended', 'Ceased']
 const CONFS: Conformance[] = ['Conformant', 'Drifted', 'Never proven', 'Ghost', 'Not checked']
@@ -33,8 +33,9 @@ export default function ServiceInventory() {
   const [domain, setDomain] = useQueryState<Domain | 'All'>('domain', 'All')
   const [cat, setCat] = useQueryState<Category | 'All'>('cat', 'All')
   const [intent, setIntent] = useQueryState('intent', 'All')
+  const [origin, setOrigin] = useQueryState<ServiceOrigin | 'All'>('origin', 'All')
   const patch = useQueryPatch()
-  const clear = useClearQuery(['q', 'state', 'conf', 'domain', 'cat', 'intent'])
+  const clear = useClearQuery(['q', 'state', 'conf', 'domain', 'cat', 'intent', 'origin'])
   const domainCats = domain === 'All' ? CATS : CATEGORIES_BY_DOMAIN[domain]
   const setDomainScoped = (next: Domain | 'All') => {
     setDomain(next)
@@ -77,12 +78,19 @@ export default function ServiceInventory() {
       label: c, value: health.counts[c], fill: CONF_FILL[c], note: CONF_NOTE[c], onClick: () => setConf(c),
     }))
 
+  /* Where each service came from. Most of this base predates the platform,
+     so saying so on the row stops a service with no request behind it from
+     reading as missing data. */
+  const originOf = useMemo(() => serviceOrigins(orders), [orders])
+  const origins = (id: string): ServiceOrigin => originOf.get(id) ?? 'inherited'
+
   const filtered = useMemo(() => services.filter((s) => {
     if (state !== 'All' && s.state !== state) return false
     if (conf !== 'All' && s.conformance !== conf) return false
     if (domain !== 'All' && domainOf(s.category) !== domain) return false
     if (cat !== 'All' && s.category !== cat) return false
     if (intent !== 'All' && s.intentId !== intent) return false
+    if (origin !== 'All' && origins(s.id) !== origin) return false
     if (q) {
       const t = q.toLowerCase()
       if (!(s.id.toLowerCase().includes(t) || s.name.toLowerCase().includes(t)
@@ -90,7 +98,8 @@ export default function ServiceInventory() {
         || s.endpoints.some((e) => e.siteCode.toLowerCase().includes(t)))) return false
     }
     return true
-  }), [services, state, conf, cat, intent, q])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [services, state, conf, cat, intent, origin, q, originOf])
 
   /* Services the platform can account for — provisioned through a request in
      the system, holding pool resources, with the evidence that proved them —
@@ -127,7 +136,13 @@ export default function ServiceInventory() {
       sortValue: (r) => orderForService.get(r.id)?.id ?? '',
       render: (r) => {
         const o = orderForService.get(r.id)
-        if (!o) return <span className="text-ink-3">—</span>
+        if (!o) {
+          return (
+            <span title={ORIGIN_BLURB.inherited}>
+              <Badge tone="none">{ORIGIN_LABEL.inherited}</Badge>
+            </span>
+          )
+        }
         return (
           <>
             <CellMain>
@@ -199,6 +214,7 @@ export default function ServiceInventory() {
           ...(state !== 'All' ? [{ key: 'state', label: 'State', value: state, onRemove: () => setState('All') }] : []),
           ...(conf !== 'All' ? [{ key: 'conf', label: 'Conformance', value: conf, onRemove: () => setConf('All') }] : []),
           ...(intent !== 'All' ? [{ key: 'intent', label: 'Intent', value: intentName, onRemove: () => setIntent('All') }] : []),
+          ...(origin !== 'All' ? [{ key: 'origin', label: 'Origin', value: ORIGIN_LABEL[origin], onRemove: () => setOrigin('All') }] : []),
           ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
         ]}
       />
@@ -341,6 +357,9 @@ export default function ServiceInventory() {
           filters: [
             { key: 'state', label: 'State', value: state, onChange: (v) => setState(v as ServiceState | 'All'),
               options: STATES.map((st) => ({ value: st, label: st, count: n.state(st) })) },
+            { key: 'origin', label: 'Origin', value: origin, onChange: (v) => setOrigin(v as ServiceOrigin | 'All'),
+              options: (['provisioned', 'managed', 'inherited'] as ServiceOrigin[])
+                .map((o) => ({ value: o, label: ORIGIN_LABEL[o], count: services.filter((x) => origins(x.id) === o).length })) },
             { key: 'conf', label: 'Conformance', value: conf, onChange: (v) => setConf(v as Conformance | 'All'),
               options: CONFS.filter((c) => n.conf(c) > 0).map((c) => ({ value: c, label: c, count: n.conf(c) })) },
             { key: 'domain', label: 'Domain', value: domain, onChange: (v) => setDomainScoped(v as Domain | 'All'),

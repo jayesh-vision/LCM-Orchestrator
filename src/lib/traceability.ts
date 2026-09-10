@@ -43,3 +43,47 @@ export function byTraceability<T>(rows: T[], score: (row: T) => number): T[] {
     .sort((a, b) => (b.s - a.s) || (a.i - b.i))
     .map((x) => x.row)
 }
+
+/* ---------------------------------------------------------------- origin */
+
+/**
+ * Where a service came from, which is not the same question as how well it can
+ * be followed.
+ *
+ * A service is only ever created by a create request that executed
+ * successfully — that rule holds for everything done in the platform. It does
+ * not describe the estate that was already there when the platform arrived,
+ * and most of this base is exactly that. Stating it on the row turns a service
+ * with no request behind it from something that looks broken into something
+ * that is labelled.
+ */
+export type ServiceOrigin = 'provisioned' | 'managed' | 'inherited'
+
+export const ORIGIN_LABEL: Record<ServiceOrigin, string> = {
+  provisioned: 'Provisioned here',
+  managed: 'Managed here',
+  inherited: 'Inherited',
+}
+
+export const ORIGIN_BLURB: Record<ServiceOrigin, string> = {
+  provisioned: 'A create request in this system executed successfully and produced this service.',
+  managed: 'Older than the platform, but requests raised here have since changed it.',
+  inherited: 'Part of the baseline estate. No request on record, so its details can only be taken at face value.',
+}
+
+/**
+ * Origin per service id, built once from the order list. Anything absent is
+ * inherited — the common case, and the reason this returns a lookup rather
+ * than a field on the service.
+ */
+export function serviceOrigins(orders: Order[]): Map<string, ServiceOrigin> {
+  const m = new Map<string, ServiceOrigin>()
+  orders.forEach((o) => {
+    if (!o.serviceId) return
+    /* Only a completed create explains why a service exists; a create still in
+       flight has not produced anything yet. */
+    if (o.intent === 'Create' && o.state === 'Ready') { m.set(o.serviceId, 'provisioned'); return }
+    if (!m.has(o.serviceId)) m.set(o.serviceId, 'managed')
+  })
+  return m
+}
