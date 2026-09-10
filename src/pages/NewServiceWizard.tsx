@@ -690,47 +690,47 @@ export default function NewServiceWizard() {
           {/* ---- 4 preview ---- */}
           {step === 3 && (
             <div className="flex flex-col gap-5">
-              <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">Service</div>
-                  <KV items={[
+              {/* One full-width strip rather than a half-width block with an
+                 empty column beside it — the service identity is four short
+                 facts, not a column's worth of content. */}
+              <div className="border border-line rounded-lg bg-plane/40 px-4 py-3.5">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  {([
                     ['Name', name || intent.name],
                     ['Category / type', `${category} · ${intent.type} · ${subtype}`],
                     ['Customer', ACCOUNTS.find((a) => a.id === accountId)?.name ?? '—'],
                     ['Endpoints', single ? '1 device' : `1 source · ${endpointCount - 1} destination(s)`],
-                  ]} />
-                </div>
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">
-                    Service settings
-                  </div>
-                  <table className="w-full text-[12.5px] border border-line rounded-lg overflow-hidden">
-                    <tbody>
-                      {svcParams.map((p) => (
-                        <tr key={p.name} className="border-b border-line-soft last:border-0">
-                          <td className="px-3.5 py-2 font-mono text-ink-2">{p.name}</td>
-                          <td className="px-3.5 py-2 font-mono font-medium">{p.value || <span className="text-crit-700">missing</span>}</td>
-                          <td className="px-3.5 py-2 text-right"><Badge tone={p.source === 'pool' ? 'info' : 'none'}>{p.source}</Badge></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  ] as [string, string][]).map(([k, v]) => (
+                    <div key={k} className="min-w-0">
+                      <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-1">{k}</div>
+                      <div className="text-[13px] font-medium text-ink-1 truncate" title={v}>{v}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">
-                  What each endpoint's workflow receives
+                <div className="flex items-baseline justify-between gap-3 mb-2.5">
+                  <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3">
+                    What each endpoint's workflow receives
+                  </div>
+                  <div className="text-[11px] text-ink-3">Click a card to go back and edit that endpoint</div>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                   {activeEps.map((e, i) => {
                     const wf = workflows.find((w) => w.id === wfByEp[i])
+                    const list = epParams[i] ?? []
+                    const changed = Object.keys(valsByEp[i] ?? {}).length
                     return (
-                      <div key={i} className="border border-line rounded-lg overflow-hidden">
+                      /* h-full + flex, with the footer pushed down by mt-auto:
+                         templates render different numbers of parameters, and
+                         these cards sit side by side, so they have to end level
+                         rather than each stopping at its own last row. */
+                      <div key={i} className="border border-line rounded-lg overflow-hidden flex flex-col h-full">
                         <button
                           type="button" onClick={() => setStep(1)}
                           title="Edit this endpoint or its workflow"
-                          className="w-full text-left px-3.5 py-2.5 border-b border-line-soft bg-plane/50
+                          className="w-full text-left px-3.5 py-2.5 border-b border-line-soft bg-plane/50 shrink-0
                             hover:bg-plane transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
                         >
                           <div className="flex items-center gap-2 flex-wrap">
@@ -743,16 +743,20 @@ export default function NewServiceWizard() {
                         </button>
                         <table className="w-full text-[11.5px] table-fixed">
                           <tbody>
-                            {(epParams[i] ?? []).map((p) => (
+                            {list.map((p) => (
                               <tr key={p.name} className="border-b border-line-soft last:border-0">
-                                <td className="w-[45%] px-3 py-1 font-mono text-ink-3 truncate" title={p.name}>{p.name}</td>
-                                <td className="w-[55%] px-3 py-1 font-mono font-medium text-right truncate" title={p.value}>
+                                <td className="w-[44%] px-3 py-1.5 font-mono text-ink-3 truncate" title={p.name}>{p.name}</td>
+                                <td className="w-[56%] px-3 py-1.5 font-mono font-medium text-right truncate" title={p.value}>
                                   {p.value || <span className="text-crit-700">missing</span>}
                                 </td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
+                        <div className="mt-auto px-3 py-1.5 border-t border-line-soft bg-plane/30 text-[11px] text-ink-3">
+                          {list.length} parameter{list.length === 1 ? '' : 's'}
+                          {changed > 0 ? ` · ${changed} changed from the default` : ''}
+                        </div>
                       </div>
                     )
                   })}
