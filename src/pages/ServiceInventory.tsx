@@ -266,10 +266,9 @@ export default function ServiceInventory() {
         onRowClick={(r) => nav(`/inventory/${r.id}`)}
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Service, Customer, Site' },
-          chips: [
-            ...DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
-            ...domainCats.map((c) => <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>),
-          ],
+          /* Domain is the one quick-chip facet kept inline; category and
+             everything else lives in the filter popover so this stays one line. */
+          chips: DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
           filters: [
             { key: 'state', label: 'State', value: state, onChange: (v) => setState(v as ServiceState | 'All'),
               options: STATES.map((st) => ({ value: st, label: st, count: n.state(st) })) },

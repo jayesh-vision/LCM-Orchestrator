@@ -180,12 +180,9 @@ export default function ProvisioningExecution() {
             onRowClick={(r) => nav(`/execution/${r.id}?tab=lifecycle`)}
             toolbar={{
               search: { value: q, onChange: setQ, placeholder: 'Name, Code, Model' },
-              chips: [
-                ...DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
-                ...domainCats.map((c) => (
-                  <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>
-                )),
-              ],
+              /* Domain already has its own quick-chip row above the table; every
+                 other facet (including category) lives in the filter popover so
+                 this toolbar stays one line regardless of how many exist. */
               filters: [
                 { key: 'domain', label: 'Domain', value: domain, onChange: (v) => setDomainScoped(v as Domain | 'All'),
                   options: DOMAINS.map((d) => ({ value: d, label: d, count: pool.filter((o) => domainOf(o.category) === d).length })) },

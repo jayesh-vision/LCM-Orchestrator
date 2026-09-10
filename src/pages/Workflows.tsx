@@ -275,10 +275,9 @@ export default function Workflows() {
         minWidth={1180}
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Name, Code, Vendor' },
-          chips: [
-            ...DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
-            ...domainCats.map((c) => <Chip key={c} tone={CATEGORY_TONE[c]} active={cat === c} onClick={() => setCat(cat === c ? 'All' : c)}>{c}</Chip>),
-          ],
+          /* Domain is the one quick-chip facet kept inline; category and
+             everything else lives in the filter popover so this stays one line. */
+          chips: DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
           filters: [
             { key: 'domain', label: 'Domain', value: domain, onChange: (v) => setDomainScoped(v as Domain | 'All'),
               options: DOMAINS.map((d) => ({ value: d, label: d, count: workflows.filter((w) => domainOf(w.category) === d).length })) },
