@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
 import { BarChart3, CheckCircle2, Download, Eye, ListChecks, Plus, SlidersHorizontal, Workflow, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
-import type { Category, Domain, Order, OrderState } from '@/types'
+import type { Category, Domain, Order, OrderState, Vendor } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Button, CellMain, CellSub, Chip, DataTable, Field,
   FilterBanner, Kebab, Modal, Mono, Progress, SegmentedToggle, type Column,
 } from '@/components/ui'
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
+import { VENDOR_LABEL } from '@/data/workflows'
 import { CATEGORY_TONE, DOMAIN_TONE, ORDER_TONE } from '@/lib/format'
 
 const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
@@ -32,18 +33,19 @@ export default function ProvisioningRequests() {
   const stateList = state === 'All' ? [] : state.split(',')
   const [intent, setIntent] = useQueryState('intent', 'All')
   const [owner, setOwner] = useQueryState('owner', 'All')
+  const [vendor, setVendor] = useQueryState<Vendor | 'All'>('vendor', 'All')
   const [customer, setCustomer] = useQueryState('customer', '')
   const [view, setView] = useQueryState<'listing' | 'insights'>('view', 'insights')
   const pushToast = useStore((st) => st.pushToast)
   const patch = useQueryPatch()
-  const clear = useClearQuery(['q', 'domain', 'cat', 'state', 'intent', 'owner', 'customer'])
+  const clear = useClearQuery(['q', 'domain', 'cat', 'state', 'intent', 'owner', 'vendor', 'customer'])
   const domainCats = domain === 'All' ? CATEGORIES : CATEGORIES_BY_DOMAIN[domain]
   const setDomainScoped = (next: Domain | 'All') => {
     setDomain(next)
     if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
   }
   const pickDomain = (d: Domain) => setDomainScoped(domain === d ? 'All' : d)
-  const resultsRef = useScrollToResultsOnDrillIn(domain !== 'All' || cat !== 'All' || state !== 'All' || intent !== 'All' || owner !== 'All')
+  const resultsRef = useScrollToResultsOnDrillIn(domain !== 'All' || cat !== 'All' || state !== 'All' || intent !== 'All' || owner !== 'All' || vendor !== 'All')
   /* The Requests⟷Execution toggle is a real navigation — the two screens'
      state vocabularies differ (Requests has Draft/Planned/Validated/Invalid,
      Execution doesn't), so only domain/cat/q/view carry across. */
@@ -74,14 +76,16 @@ export default function ProvisioningRequests() {
     if (stateList.length && !stateList.includes(o.state)) return false
     if (intent !== 'All' && o.intent !== intent) return false
     if (owner !== 'All' && o.owner !== owner) return false
+    if (vendor !== 'All' && o.endpoints[0]?.vendor !== vendor) return false
     if (customer && !o.accountName.toLowerCase().includes(customer.toLowerCase())) return false
     if (q) {
       const t = q.toLowerCase()
       if (!(o.id.toLowerCase().includes(t) || o.code.toLowerCase().includes(t)
-        || o.name.toLowerCase().includes(t) || o.accountName.toLowerCase().includes(t))) return false
+        || o.name.toLowerCase().includes(t) || o.accountName.toLowerCase().includes(t)
+        || o.endpoints.some((e) => e.deviceName.toLowerCase().includes(t)))) return false
     }
     return true
-  }), [orders, domain, cat, state, intent, owner, customer, q]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [orders, domain, cat, state, intent, owner, vendor, customer, q]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Same scope as `filtered` but ignoring the status filter itself — the
      Insights view breaks requests down BY status, so it needs the full
@@ -92,14 +96,16 @@ export default function ProvisioningRequests() {
     if (cat !== 'All' && o.category !== cat) return false
     if (intent !== 'All' && o.intent !== intent) return false
     if (owner !== 'All' && o.owner !== owner) return false
+    if (vendor !== 'All' && o.endpoints[0]?.vendor !== vendor) return false
     if (customer && !o.accountName.toLowerCase().includes(customer.toLowerCase())) return false
     if (q) {
       const t = q.toLowerCase()
       if (!(o.id.toLowerCase().includes(t) || o.code.toLowerCase().includes(t)
-        || o.name.toLowerCase().includes(t) || o.accountName.toLowerCase().includes(t))) return false
+        || o.name.toLowerCase().includes(t) || o.accountName.toLowerCase().includes(t)
+        || o.endpoints.some((e) => e.deviceName.toLowerCase().includes(t)))) return false
     }
     return true
-  }), [orders, domain, cat, intent, owner, customer, q]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [orders, domain, cat, intent, owner, vendor, customer, q]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
   const columns: Column<Order>[] = [
@@ -182,6 +188,7 @@ export default function ProvisioningRequests() {
           ...(state !== 'All' ? [{ key: 'state', label: 'Status', value: stateList.join(' or '), onRemove: () => setState('All') }] : []),
           ...(intent !== 'All' ? [{ key: 'intent', label: 'Intent', value: intent, onRemove: () => setIntent('All') }] : []),
           ...(owner !== 'All' ? [{ key: 'owner', label: 'Owner', value: owner, onRemove: () => setOwner('All') }] : []),
+          ...(vendor !== 'All' ? [{ key: 'vendor', label: 'Vendor', value: VENDOR_LABEL[vendor], onRemove: () => setVendor('All') }] : []),
           ...(customer ? [{ key: 'customer', label: 'Customer', value: customer, onRemove: () => setCustomer('') }] : []),
           ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
         ]}
@@ -205,7 +212,7 @@ export default function ProvisioningRequests() {
             pageSize={12}
             onRowClick={(r) => nav(`/requests/${r.id}`)}
             toolbar={{
-              search: { value: q, onChange: setQ, placeholder: 'Name, Code' },
+              search: { value: q, onChange: setQ, placeholder: 'Name, Code, Model' },
               /* Quick chips are domain + category — every other filter lives in the popover. */
               chips: [
                 ...DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
@@ -235,8 +242,11 @@ export default function ProvisioningRequests() {
                 { key: 'owner', label: 'Owner', value: owner, onChange: setOwner,
                   options: [...new Set(orders.map((o) => o.owner).filter(Boolean))].sort()
                     .map((o) => ({ value: o as string, label: o as string, count: orders.filter((x) => x.owner === o).length })) },
+                { key: 'vendor', label: 'Vendor', value: vendor, onChange: (v) => setVendor(v as Vendor | 'All'),
+                  options: [...new Set(orders.map((o) => o.endpoints[0]?.vendor).filter((v): v is Vendor => v !== undefined))].sort()
+                    .map((v) => ({ value: v, label: VENDOR_LABEL[v], count: orders.filter((o) => o.endpoints[0]?.vendor === v).length })) },
                 { key: 'customer', label: 'Customer Name', type: 'text', value: customer, onChange: setCustomer },
-                { key: 'q', label: 'Name / Code', type: 'text', value: q, onChange: setQ },
+                { key: 'q', label: 'Name / Code / Model', type: 'text', value: q, onChange: setQ },
               ],
               onResetFilters: clear,
               onRefresh: () => pushToast('info', 'Request list refreshed.'),

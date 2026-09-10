@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
 import { BarChart3, Download, Eye, ListChecks, PlayCircle, Plus, ShieldCheck, Workflow } from 'lucide-react'
 import { useStore } from '@/store/useStore'
-import type { Category, Domain, Order, OrderState } from '@/types'
+import type { Category, Domain, Order, OrderState, Vendor } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Button, CellMain, CellSub, Chip, DataTable, Drawer,
   FilterBanner, KV, Kebab, Modal, Mono, Note, Progress, SegmentedToggle, type Column,
 } from '@/components/ui'
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
+import { VENDOR_LABEL } from '@/data/workflows'
 import { ageLabel, CATEGORY_TONE, clockTime, DOMAIN_TONE, ORDER_TONE, relTime } from '@/lib/format'
 
 const EXEC_STATES: OrderState[] = [
@@ -31,16 +32,17 @@ export default function ProvisioningExecution() {
   const [cat, setCat] = useQueryState<Category | 'All'>('cat', 'All')
   const [state, setState] = useQueryState<OrderState | 'All' | string>('state', 'All')
   const stateList = state === 'All' ? [] : state.split(',')
+  const [vendor, setVendor] = useQueryState<Vendor | 'All'>('vendor', 'All')
   const [view, setView] = useQueryState<'listing' | 'insights'>('view', 'listing')
   const patch = useQueryPatch()
-  const clear = useClearQuery(['q', 'domain', 'cat', 'state'])
+  const clear = useClearQuery(['q', 'domain', 'cat', 'state', 'vendor'])
   const domainCats = domain === 'All' ? CATEGORIES : CATEGORIES_BY_DOMAIN[domain]
   const setDomainScoped = (next: Domain | 'All') => {
     setDomain(next)
     if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
   }
   const pickDomain = (d: Domain) => setDomainScoped(domain === d ? 'All' : d)
-  const resultsRef = useScrollToResultsOnDrillIn(domain !== 'All' || cat !== 'All' || state !== 'All')
+  const resultsRef = useScrollToResultsOnDrillIn(domain !== 'All' || cat !== 'All' || state !== 'All' || vendor !== 'All')
   const [verify, setVerify] = useState<Order | null>(null)
   const [creds, setCreds] = useState<Order | null>(null)
   /* The Requests⟷Execution toggle is a real navigation — the two screens'
@@ -64,12 +66,14 @@ export default function ProvisioningExecution() {
     if (domain !== 'All' && domainOf(o.category) !== domain) return false
     if (cat !== 'All' && o.category !== cat) return false
     if (stateList.length && !stateList.includes(o.state)) return false
+    if (vendor !== 'All' && o.endpoints[0]?.vendor !== vendor) return false
     if (q) {
       const t = q.toLowerCase()
-      if (!(o.id.toLowerCase().includes(t) || o.name.toLowerCase().includes(t) || o.accountName.toLowerCase().includes(t))) return false
+      if (!(o.id.toLowerCase().includes(t) || o.name.toLowerCase().includes(t) || o.accountName.toLowerCase().includes(t)
+        || o.endpoints.some((e) => e.deviceName.toLowerCase().includes(t)))) return false
     }
     return true
-  }), [pool, domain, cat, state, q]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [pool, domain, cat, state, vendor, q]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Same scope as `filtered` but ignoring the status filter itself — the
      Insights view breaks orders down BY status, so it needs the full
@@ -78,12 +82,14 @@ export default function ProvisioningExecution() {
   const scoped = useMemo(() => pool.filter((o) => {
     if (domain !== 'All' && domainOf(o.category) !== domain) return false
     if (cat !== 'All' && o.category !== cat) return false
+    if (vendor !== 'All' && o.endpoints[0]?.vendor !== vendor) return false
     if (q) {
       const t = q.toLowerCase()
-      if (!(o.id.toLowerCase().includes(t) || o.name.toLowerCase().includes(t) || o.accountName.toLowerCase().includes(t))) return false
+      if (!(o.id.toLowerCase().includes(t) || o.name.toLowerCase().includes(t) || o.accountName.toLowerCase().includes(t)
+        || o.endpoints.some((e) => e.deviceName.toLowerCase().includes(t)))) return false
     }
     return true
-  }), [pool, domain, cat, q]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [pool, domain, cat, vendor, q]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const n = (s: OrderState) => pool.filter((o) => o.state === s).length
 
@@ -153,6 +159,7 @@ export default function ProvisioningExecution() {
           ...(domain !== 'All' ? [{ key: 'domain', label: 'Domain', value: domain, onRemove: () => setDomain('All') }] : []),
           ...(cat !== 'All' ? [{ key: 'cat', label: 'Category', value: cat, onRemove: () => setCat('All') }] : []),
           ...(state !== 'All' ? [{ key: 'state', label: 'Status', value: stateList.join(' or '), onRemove: () => setState('All') }] : []),
+          ...(vendor !== 'All' ? [{ key: 'vendor', label: 'Vendor', value: VENDOR_LABEL[vendor], onRemove: () => setVendor('All') }] : []),
           ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
         ]}
       />
@@ -172,7 +179,7 @@ export default function ProvisioningExecution() {
             rows={filtered} total={pool.length} columns={columns} pageSize={12}
             onRowClick={(r) => nav(`/execution/${r.id}?tab=lifecycle`)}
             toolbar={{
-              search: { value: q, onChange: setQ, placeholder: 'Name, Code' },
+              search: { value: q, onChange: setQ, placeholder: 'Name, Code, Model' },
               chips: [
                 ...DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
                 ...domainCats.map((c) => (
@@ -189,7 +196,10 @@ export default function ProvisioningExecution() {
                   ] },
                 { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
                   options: domainCats.map((c) => ({ value: c, label: c, count: pool.filter((o) => o.category === c).length })) },
-                { key: 'q', label: 'Name / Code', type: 'text', value: q, onChange: setQ },
+                { key: 'vendor', label: 'Vendor', value: vendor, onChange: (v) => setVendor(v as Vendor | 'All'),
+                  options: [...new Set(pool.map((o) => o.endpoints[0]?.vendor).filter((v): v is Vendor => v !== undefined))].sort()
+                    .map((v) => ({ value: v, label: VENDOR_LABEL[v], count: pool.filter((o) => o.endpoints[0]?.vendor === v).length })) },
+                { key: 'q', label: 'Name / Code / Model', type: 'text', value: q, onChange: setQ },
               ],
               onResetFilters: clear,
               onRefresh: () => pushToast('info', 'Execution queue refreshed.'),

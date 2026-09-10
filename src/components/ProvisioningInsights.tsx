@@ -1,8 +1,10 @@
-import { useMemo } from 'react'
-import { CheckCircle2, ClipboardList, Gauge, PlayCircle, Timer, XCircle } from 'lucide-react'
-import type { Category, Order, OrderState, Run } from '@/types'
-import { Badge, Card, CardBody, CardHead, Stat } from '@/components/ui'
-import { ColumnChart, FILL, StackedBar, TrendChart } from '@/components/charts'
+import { useMemo, type ReactNode } from 'react'
+import { Boxes, CheckCircle2, ClipboardList, Gauge, Globe, PlayCircle, Server, Timer, XCircle } from 'lucide-react'
+import type { Category, Order, OrderState, Run, Vendor } from '@/types'
+import { domainOf } from '@/types'
+import { Badge, Card, CardBody, CardHead, Stat, type StatTone } from '@/components/ui'
+import { ColumnChart, SOFT, StackedBar, TrendChart } from '@/components/charts'
+import { VENDOR_LABEL } from '@/data/workflows'
 import { CATEGORY_TONE, dur } from '@/lib/format'
 
 const DAY = 86400000
@@ -17,6 +19,28 @@ function perDay(dates: string[], days: number) {
   })
   return out
 }
+
+/** Highest failure rate among keys with at least `minSample` orders, so one
+ * unlucky order out of one doesn't read as a 100% trend. */
+function worstBy(orders: Order[], keyOf: (o: Order) => string | undefined, failStates: OrderState[], minSample: number) {
+  const m = new Map<string, { total: number; failed: number }>()
+  orders.forEach((o) => {
+    const k = keyOf(o)
+    if (k === undefined) return
+    const e = m.get(k) ?? { total: 0, failed: 0 }
+    e.total += 1
+    if (failStates.includes(o.state)) e.failed += 1
+    m.set(k, e)
+  })
+  let worst: { key: string; total: number; failed: number; rate: number } | undefined
+  m.forEach((v, k) => {
+    if (v.total < minSample) return
+    const rate = v.failed / v.total
+    if (!worst || rate > worst.rate || (rate === worst.rate && v.failed > worst.failed)) worst = { key: k, total: v.total, failed: v.failed, rate }
+  })
+  return worst
+}
+const spotlightTone = (rate: number): StatTone => (rate >= 0.25 ? 'crit' : rate >= 0.1 ? 'warn' : 'good')
 
 type Patch = Record<string, string | null | undefined>
 
@@ -36,12 +60,58 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
 }) {
   const cnt = (...st: OrderState[]) => orders.filter((o) => st.includes(o.state)).length
   const total = orders.length
+  const noun = mode === 'requests' ? 'requests' : 'in execution'
+  const failStates: OrderState[] = mode === 'requests'
+    ? ['Failed', 'Rejected', 'Invalid', 'Reinstantiate']
+    : ['Failed', 'Rejected', 'Reinstantiate']
 
   const byCategory = useMemo(() => {
     const m = new Map<Category, Order[]>()
     orders.forEach((o) => { if (!m.has(o.category)) m.set(o.category, []); m.get(o.category)!.push(o) })
     return [...m.entries()].sort((a, b) => b[1].length - a[1].length)
   }, [orders])
+
+  /* Grouped by each order's first (primary/Source) endpoint — a two-ended
+     order can technically span two vendors, so this is a KPI-level signal
+     about where the load and the failures concentrate, not a full
+     multi-vendor audit of every endpoint. */
+  const byVendor = useMemo(() => {
+    const m = new Map<Vendor, Order[]>()
+    orders.forEach((o) => {
+      const v = o.endpoints[0]?.vendor
+      if (!v) return
+      if (!m.has(v)) m.set(v, [])
+      m.get(v)!.push(o)
+    })
+    return [...m.entries()].sort((a, b) => b[1].length - a[1].length)
+  }, [orders])
+
+  const worstDomain = useMemo(() => worstBy(orders, (o) => domainOf(o.category), failStates, 1), [orders, failStates])
+  const worstVendor = useMemo(() => worstBy(orders, (o) => o.endpoints[0]?.vendor, failStates, 3), [orders, failStates])
+  const worstModel = useMemo(() => worstBy(orders, (o) => o.endpoints[0]?.deviceName, failStates, 3), [orders, failStates])
+
+  const spotlight = (
+    <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
+      <Stat label="Riskiest domain" icon={Globe} value={worstDomain ? `${Math.round(worstDomain.rate * 100)}%` : '—'}
+        tone={worstDomain ? spotlightTone(worstDomain.rate) : undefined}
+        note={worstDomain ? `${worstDomain.key} — ${worstDomain.failed} of ${worstDomain.total} failed` : 'Not enough data in scope'}
+        drillLabel={worstDomain ? `failed ${worstDomain.key} ${noun}` : undefined}
+        onClick={worstDomain ? () => onDrill({ domain: worstDomain.key, state: failStates.join(',') }) : undefined}
+        info="The domain with the highest failure rate in the current scope." />
+      <Stat label="Riskiest vendor" icon={Boxes} value={worstVendor ? `${Math.round(worstVendor.rate * 100)}%` : '—'}
+        tone={worstVendor ? spotlightTone(worstVendor.rate) : undefined}
+        note={worstVendor ? `${VENDOR_LABEL[worstVendor.key as Vendor] ?? worstVendor.key} — ${worstVendor.failed} of ${worstVendor.total} failed` : 'Needs at least 3 orders on one vendor'}
+        drillLabel={worstVendor ? `failed orders on ${worstVendor.key}` : undefined}
+        onClick={worstVendor ? () => onDrill({ vendor: worstVendor.key, state: failStates.join(',') }) : undefined}
+        info="The vendor (by each order's primary endpoint) with the highest failure rate — needs at least 3 orders to qualify, so one bad order doesn't look like a trend." />
+      <Stat label="Riskiest model" icon={Server} value={worstModel ? `${Math.round(worstModel.rate * 100)}%` : '—'}
+        tone={worstModel ? spotlightTone(worstModel.rate) : undefined}
+        note={worstModel ? `${worstModel.key} — ${worstModel.failed} of ${worstModel.total} failed` : 'Needs at least 3 orders on one model'}
+        drillLabel={worstModel ? `failed orders on ${worstModel.key}` : undefined}
+        onClick={worstModel ? () => onDrill({ q: worstModel.key, state: failStates.join(',') }) : undefined}
+        info="The device model with the highest failure rate — needs at least 3 orders to qualify." />
+    </div>
+  )
 
   const DAYS = 14
   const trend = useMemo(() => {
@@ -62,13 +132,13 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
     const failed = cnt('Failed', 'Rejected', 'Invalid', 'Reinstantiate')
 
     const stages: { label: string; states: OrderState[]; color: string }[] = [
-      { label: 'Draft', states: ['Draft'], color: FILL.none },
-      { label: 'Planned', states: ['Planned'], color: FILL.none },
-      { label: 'Validated', states: ['Validated'], color: FILL.none },
-      { label: 'Approved', states: ['Approved', 'Queued'], color: FILL.brand },
-      { label: 'In progress', states: ['In progress'], color: FILL.brand },
-      { label: 'Ready', states: ['Ready'], color: FILL.good },
-      { label: 'Failed', states: ['Failed'], color: FILL.crit },
+      { label: 'Draft', states: ['Draft'], color: SOFT.none },
+      { label: 'Planned', states: ['Planned'], color: SOFT.none },
+      { label: 'Validated', states: ['Validated'], color: SOFT.none },
+      { label: 'Approved', states: ['Approved', 'Queued'], color: SOFT.brand },
+      { label: 'In progress', states: ['In progress'], color: SOFT.brand },
+      { label: 'Ready', states: ['Ready'], color: SOFT.good },
+      { label: 'Failed', states: ['Failed'], color: SOFT.crit },
     ]
 
     return (
@@ -91,6 +161,8 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
             info="Requests whose execution failed and was rolled back, or were rejected at approval." />
         </div>
 
+        {spotlight}
+
         <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
           <Card className="h-full flex flex-col">
             <CardHead title="Requests by stage" sub="Where every request in scope is right now — click a bar to open that list" />
@@ -103,12 +175,31 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
             <CardHead title="Raised vs completed" sub={`Last 14 days · ${trend.raised.reduce((a, b) => a + b, 0)} raised, ${trend.completed.reduce((a, b) => a + b, 0)} went live`} />
             <CardBody className="flex-1 min-h-0 flex flex-col">
               <TrendChart height={280} ariaLabel="Requests raised and completed per day, last 14 days" labels={trend.labels}
-                series={[{ name: 'Raised', values: trend.raised, fill: 'brand' }, { name: 'Completed', values: trend.completed, fill: 'good' }]} />
+                series={[{ name: 'Raised', values: trend.raised, fill: 'brand', color: SOFT.brand }, { name: 'Completed', values: trend.completed, fill: 'good', color: SOFT.good }]} />
             </CardBody>
           </Card>
         </div>
 
-        <CategoryBreakdown byCategory={byCategory} noun="requests" onDrill={onDrill}
+        <RankedBreakdown title="By category" sub="Every category in scope, split by where it stands — click a badge or a segment to open exactly those"
+          groups={byCategory} noun={noun} onDrill={onDrill}
+          renderLabel={(c) => <Badge tone={CATEGORY_TONE[c]}>{c}</Badge>}
+          labelFor={(c) => c}
+          patchFor={(c, states) => ({ cat: c, state: states })}
+          segmentsFor={(list) => {
+            const c = (...st: OrderState[]) => list.filter((o) => st.includes(o.state)).length
+            return [
+              { label: 'Ready', value: c('Ready'), fill: 'good' as const, states: 'Ready' },
+              { label: 'In progress', value: c('In progress', 'Queued', 'Approved'), fill: 'brand' as const, states: 'In progress,Queued,Approved' },
+              { label: 'Waiting', value: c('Draft', 'Planned', 'Validated'), fill: 'none' as const, states: 'Draft,Planned,Validated' },
+              { label: 'Failed', value: c('Failed', 'Rejected', 'Invalid', 'Reinstantiate'), fill: 'crit' as const, states: 'Failed,Rejected,Invalid,Reinstantiate' },
+            ]
+          }} />
+
+        <RankedBreakdown title="By vendor" sub="Every vendor in scope (by each order's primary endpoint), split by where it stands — click a name or a segment to open exactly those"
+          groups={byVendor} noun={noun} onDrill={onDrill}
+          renderLabel={(v) => <span className="text-[13px] font-semibold text-ink-1">{VENDOR_LABEL[v as Vendor] ?? v}</span>}
+          labelFor={(v) => VENDOR_LABEL[v as Vendor] ?? v}
+          patchFor={(v, states) => ({ vendor: v, state: states })}
           segmentsFor={(list) => {
             const c = (...st: OrderState[]) => list.filter((o) => st.includes(o.state)).length
             return [
@@ -154,6 +245,8 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
           info="Orders whose execution failed and was rolled back." />
       </div>
 
+      {spotlight}
+
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
         <Stat label="First-pass rate" icon={Gauge} value={firstPassRate !== undefined ? `${firstPassRate}%` : '—'}
           tone={firstPassRate === undefined ? undefined : firstPassRate >= 90 ? 'good' : firstPassRate >= 70 ? 'plum' : 'crit'}
@@ -163,7 +256,25 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
           note="Across every run in scope" info="Mean wall-clock duration of every run (any attempt) for orders in scope." />
       </div>
 
-      <CategoryBreakdown byCategory={byCategory} noun="in execution" onDrill={onDrill}
+      <RankedBreakdown title="By category" sub="Every category in scope, split by where it stands — click a badge or a segment to open exactly those"
+        groups={byCategory} noun={noun} onDrill={onDrill}
+        renderLabel={(c) => <Badge tone={CATEGORY_TONE[c]}>{c}</Badge>}
+        labelFor={(c) => c}
+        patchFor={(c, states) => ({ cat: c, state: states })}
+        segmentsFor={(list) => {
+          const c = (...st: OrderState[]) => list.filter((o) => st.includes(o.state)).length
+          return [
+            { label: 'Ready', value: c('Ready'), fill: 'good' as const, states: 'Ready' },
+            { label: 'In progress', value: c('In progress', 'Queued', 'Approved'), fill: 'brand' as const, states: 'In progress,Queued,Approved' },
+            { label: 'Failed', value: c('Failed', 'Rejected', 'Reinstantiate'), fill: 'crit' as const, states: 'Failed,Rejected,Reinstantiate' },
+          ]
+        }} />
+
+      <RankedBreakdown title="By vendor" sub="Every vendor in scope (by each order's primary endpoint), split by where it stands — click a name or a segment to open exactly those"
+        groups={byVendor} noun={noun} onDrill={onDrill}
+        renderLabel={(v) => <span className="text-[13px] font-semibold text-ink-1">{VENDOR_LABEL[v as Vendor] ?? v}</span>}
+        labelFor={(v) => VENDOR_LABEL[v as Vendor] ?? v}
+        patchFor={(v, states) => ({ vendor: v, state: states })}
         segmentsFor={(list) => {
           const c = (...st: OrderState[]) => list.filter((o) => st.includes(o.state)).length
           return [
@@ -181,37 +292,47 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
            with no sibling to borrow a height from, so it gets one explicitly. */}
         <CardBody className="h-[240px]">
           <TrendChart height={220} ariaLabel="Orders completed per day, last 14 days" labels={trend.labels}
-            series={[{ name: 'Completed', values: trend.completed, fill: 'good' }]} />
+            series={[{ name: 'Completed', values: trend.completed, fill: 'good', color: SOFT.good }]} />
         </CardBody>
       </Card>
     </div>
   )
 }
 
-/** Ranked, biggest-first category breakdown — one StackedBar row each. */
-function CategoryBreakdown({ byCategory, noun, segmentsFor, onDrill }: {
-  byCategory: [Category, Order[]][]
+/** Ranked, biggest-first breakdown — one StackedBar row each. Generic over
+ * the grouping key (category, vendor, ...) so both "By category" and "By
+ * vendor" reuse the same layout and drill-down wiring. */
+function RankedBreakdown({ title, sub, groups, noun, segmentsFor, renderLabel, labelFor, patchFor, onDrill }: {
+  title: string
+  sub: string
+  groups: [string, Order[]][]
   noun: string
   segmentsFor: (list: Order[]) => { label: string; value: number; fill: 'good' | 'brand' | 'none' | 'crit'; states: string }[]
+  renderLabel: (key: string) => ReactNode
+  /** Plain-text version of `renderLabel`, for aria-labels — a raw vendor
+   * key (e.g. "NOKIA") differs from what's actually shown on screen
+   * (VENDOR_LABEL's "Nokia"), so the two can't share one string. */
+  labelFor: (key: string) => string
+  patchFor: (key: string, states: string | null) => Patch
   onDrill: (patch: Patch) => void
 }) {
   return (
     <Card>
-      <CardHead title="By category" sub="Every category in scope, split by where it stands — click a badge or a segment to open exactly those" />
+      <CardHead title={title} sub={sub} />
       <CardBody className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
-        {byCategory.map(([c, list]) => (
-          <div key={c}>
+        {groups.map(([key, list]) => (
+          <div key={key}>
             <div className="flex items-center justify-between mb-2">
               <span className="flex items-center gap-2">
-                <Badge tone={CATEGORY_TONE[c]}>{c}</Badge>
-                <button onClick={() => onDrill({ cat: c, state: null })} className="text-[13px] font-medium tnum hover:text-brand-600"
-                  aria-label={`${list.length} ${c} ${noun}. Open them`}>{list.length} {noun}</button>
+                {renderLabel(key)}
+                <button onClick={() => onDrill(patchFor(key, null))} className="text-[13px] font-medium tnum hover:text-brand-600"
+                  aria-label={`${list.length} ${labelFor(key)} ${noun}. Open them`}>{list.length} {noun}</button>
               </span>
             </div>
             <StackedBar
-              ariaLabel={`${c} ${noun} by status`}
+              ariaLabel={`${key} ${noun} by status`}
               compact
-              segments={segmentsFor(list).map((s) => ({ label: s.label, value: s.value, fill: s.fill, onClick: () => onDrill({ cat: c, state: s.states }) }))}
+              segments={segmentsFor(list).map((s) => ({ label: s.label, value: s.value, fill: s.fill, color: SOFT[s.fill], onClick: () => onDrill(patchFor(key, s.states)) }))}
             />
           </div>
         ))}

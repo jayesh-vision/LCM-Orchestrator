@@ -42,6 +42,23 @@ export const CHART = {
   red500:  '#ef4444', /* --vw-color-red-500  */
 } as const
 
+/* A soft, light palette for large chart fills — donut rings, stacked
+   bars/columns, trend lines. FILL/badge tones above (500–600 weight) are
+   tuned for small chips and thin bars; the same saturation across a whole
+   donut ring or a full-height stacked bar reads far more intense, so pages
+   that want a calmer, "soothing" look (Dashboard, Provisioning Insights)
+   use these lighter 300-weight tints instead via an explicit `color`
+   override alongside the usual `fill` tone. */
+export const SOFT = {
+  brand: '#93c5fd', // blue-300
+  good: '#6ee7b7',  // emerald-300
+  warn: '#fcd34d',  // amber-300
+  crit: '#fca5a5',  // red-300
+  none: '#d1d5db',  // gray-300
+  purple: '#d8b4fe', // purple-300
+  cyan: '#67e8f9',   // cyan-300
+} as const
+
 /** Measures its own box so a chart can stretch to fill the card it lives in,
  * instead of centering at a fixed aspect ratio and leaving dead space below
  * it when the card is taller than the chart's natural height (e.g. the

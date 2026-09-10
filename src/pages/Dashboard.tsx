@@ -8,7 +8,7 @@ import { useStore } from '@/store/useStore'
 import type { Conformance, Domain, Order, OrderState } from '@/types'
 import { DOMAINS, domainOf } from '@/types'
 import { Badge, Button, Card, CardBody, CardHead, InfoTip, Mono, Progress, type StatTone } from '@/components/ui'
-import { Donut, ColumnChart, StackedBar, StackedTrendChart, TrendChart } from '@/components/charts'
+import { Donut, ColumnChart, SOFT, StackedBar, StackedTrendChart, TrendChart } from '@/components/charts'
 import { CPE_VENDORS, OPTICAL_VENDORS, RADIO_VENDORS, ROUTER_VENDORS, SWITCH_VENDORS, VNF_VENDORS } from '@/data/catalog'
 import { CATEGORY_TONE, relTime } from '@/lib/format'
 
@@ -21,23 +21,6 @@ const DOMAIN_BLURB: Record<Domain, string> = {
   Radio: 'Microwave point-to-point backhaul links and RAN CU/DU VNF instances.',
   Fiber: 'DWDM wavelength circuits over optical transport — Ciena, Infinera, ECI.',
 }
-/* A soft, light palette for this page's large chart fills — donut rings,
-   stacked bars/columns, trend lines. The shared FILL/badge tones (500–600
-   weight) are tuned for small chips and thin bars; the same saturation
-   across a whole donut ring or a full-height stacked bar reads far more
-   intense, so this dashboard uses lighter 300-weight tints instead. Kept
-   local to this file rather than changed in FILL itself, since FILL is
-   shared by every other screen's charts. */
-const SOFT = {
-  brand: '#93c5fd', // blue-300
-  good: '#6ee7b7',  // emerald-300
-  warn: '#fcd34d',  // amber-300
-  crit: '#fca5a5',  // red-300
-  none: '#d1d5db',  // gray-300
-  purple: '#d8b4fe', // purple-300
-  cyan: '#67e8f9',   // cyan-300
-}
-
 /* A distinct hue per domain, independent of the badge/stat tone palettes —
    the donut and its legend need four colours that read apart from each
    other side by side, which good/warn/crit/plum (4 slots, 2 already
