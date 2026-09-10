@@ -8,7 +8,7 @@ import { useStore } from '@/store/useStore'
 import type { Conformance, Domain, Order, OrderState } from '@/types'
 import { DOMAINS, domainOf } from '@/types'
 import { Badge, Button, Card, CardBody, CardHead, InfoTip, Mono, Progress, type StatTone } from '@/components/ui'
-import { Donut, FILL, ColumnChart, StackedBar, StackedTrendChart, TrendChart } from '@/components/charts'
+import { Donut, ColumnChart, StackedBar, StackedTrendChart, TrendChart } from '@/components/charts'
 import { CPE_VENDORS, OPTICAL_VENDORS, RADIO_VENDORS, ROUTER_VENDORS, SWITCH_VENDORS, VNF_VENDORS } from '@/data/catalog'
 import { CATEGORY_TONE, relTime } from '@/lib/format'
 
@@ -21,11 +21,28 @@ const DOMAIN_BLURB: Record<Domain, string> = {
   Radio: 'Microwave point-to-point backhaul links and RAN CU/DU VNF instances.',
   Fiber: 'DWDM wavelength circuits over optical transport — Ciena, Infinera, ECI.',
 }
+/* A soft, light palette for this page's large chart fills — donut rings,
+   stacked bars/columns, trend lines. The shared FILL/badge tones (500–600
+   weight) are tuned for small chips and thin bars; the same saturation
+   across a whole donut ring or a full-height stacked bar reads far more
+   intense, so this dashboard uses lighter 300-weight tints instead. Kept
+   local to this file rather than changed in FILL itself, since FILL is
+   shared by every other screen's charts. */
+const SOFT = {
+  brand: '#93c5fd', // blue-300
+  good: '#6ee7b7',  // emerald-300
+  warn: '#fcd34d',  // amber-300
+  crit: '#fca5a5',  // red-300
+  none: '#d1d5db',  // gray-300
+  purple: '#d8b4fe', // purple-300
+  cyan: '#67e8f9',   // cyan-300
+}
+
 /* A distinct hue per domain, independent of the badge/stat tone palettes —
    the donut and its legend need four colours that read apart from each
    other side by side, which good/warn/crit/plum (4 slots, 2 already
    reserved for real status meaning) doesn't comfortably give. */
-const DOMAIN_COLOR: Record<Domain, string> = { Transport: FILL.brand, Access: FILL.warn, Radio: '#a855f7', Fiber: '#06b6d4' }
+const DOMAIN_COLOR: Record<Domain, string> = { Transport: SOFT.brand, Access: SOFT.warn, Radio: SOFT.purple, Fiber: SOFT.cyan }
 const DOMAIN_CHIP_CLS: Record<Domain, string> = {
   Transport: 'bg-[#1c81ef]/10 text-[#1c81ef]',
   Access: 'bg-[#f59e0b]/10 text-[#f59e0b]',
@@ -46,7 +63,7 @@ const QUEUE_ICON_TONE: Record<'brand' | StatTone, { bg: string; fg: string; ring
    loop on whether the result still holds. */
 const CONF_ORDER: Conformance[] = ['Conformant', 'Drifted', 'Never proven', 'Ghost']
 const CONF_ICON: Record<string, typeof CheckCircle2> = { Conformant: CheckCircle2, Drifted: AlertTriangle, 'Never proven': HelpCircle, Ghost: XCircle }
-const CONF_COLOR: Record<string, string> = { Conformant: FILL.good, Drifted: FILL.warn, 'Never proven': '#9ca3af', Ghost: FILL.crit }
+const CONF_COLOR: Record<string, string> = { Conformant: SOFT.good, Drifted: SOFT.warn, 'Never proven': SOFT.none, Ghost: SOFT.crit }
 const CONF_CHIP_CLS: Record<string, string> = {
   Conformant: 'bg-[#10b981]/10 text-[#10b981]',
   Drifted: 'bg-[#f59e0b]/10 text-[#f59e0b]',
@@ -148,13 +165,13 @@ export default function Dashboard() {
   /* ---- pipeline stages, in order ---- */
   /* Brand-blue ramp: the further along, the deeper the blue. Red only for failed. */
   const stages: { label: string; states: OrderState[]; color: string; go: string }[] = [
-    { label: 'Draft', states: ['Draft'], color: FILL.none, go: toRequests('Draft') },
-    { label: 'Planned', states: ['Planned'], color: FILL.none, go: toRequests('Planned') },
-    { label: 'Validated', states: ['Validated'], color: FILL.none, go: toRequests('Validated') },
-    { label: 'Approved', states: ['Approved', 'Queued'], color: FILL.brand, go: '/execution?state=Approved,Queued' },
-    { label: 'In progress', states: ['In progress'], color: FILL.brand, go: '/execution?state=In progress' },
-    { label: 'Ready', states: ['Ready'], color: FILL.good, go: toRequests('Ready') },
-    { label: 'Failed', states: ['Failed'], color: FILL.crit, go: '/execution?state=Failed' },
+    { label: 'Draft', states: ['Draft'], color: SOFT.none, go: toRequests('Draft') },
+    { label: 'Planned', states: ['Planned'], color: SOFT.none, go: toRequests('Planned') },
+    { label: 'Validated', states: ['Validated'], color: SOFT.none, go: toRequests('Validated') },
+    { label: 'Approved', states: ['Approved', 'Queued'], color: SOFT.brand, go: '/execution?state=Approved,Queued' },
+    { label: 'In progress', states: ['In progress'], color: SOFT.brand, go: '/execution?state=In progress' },
+    { label: 'Ready', states: ['Ready'], color: SOFT.good, go: toRequests('Ready') },
+    { label: 'Failed', states: ['Failed'], color: SOFT.crit, go: '/execution?state=Failed' },
   ]
 
   const kpis: { label: string; value: number; sub: string; icon: typeof ClipboardList; go: string; info: string; tone?: StatTone; progress?: number }[] = [
@@ -407,7 +424,7 @@ export default function Dashboard() {
               const list = orders.filter((o: Order) => o.category === c)
               const cnt = (...st: OrderState[]) => list.filter((o) => st.includes(o.state)).length
               const seg = (label: string, value: number, fill: 'good' | 'brand' | 'none' | 'crit', states: string) =>
-                ({ label, value, fill, onClick: () => nav(toRequests(states, c)) })
+                ({ label, value, fill, color: SOFT[fill], onClick: () => nav(toRequests(states, c)) })
               return (
                 <div key={c}>
                   <div className="vw-flex vw-items-center vw-justify-between mb-2">
@@ -445,7 +462,7 @@ export default function Dashboard() {
               ariaLabel="Requests raised per day by domain, versus completed, last 14 days"
               labels={trend.labels}
               series={DOMAINS.map((d) => ({ name: d, values: trend.raisedByDomain[d], color: DOMAIN_COLOR[d] }))}
-              overlay={{ name: 'Completed', values: trend.completed, color: '#111827' }}
+              overlay={{ name: 'Completed', values: trend.completed, color: '#4b5563' }}
             />
           </CardBody>
         </Card>
