@@ -6,7 +6,7 @@ import { useStore } from '@/store/useStore'
 import type { Category, Domain, Order, OrderIntent, OrderState, Vendor } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
-  Badge, Button, CellMain, CellSub, DataTable, Drawer,
+  Badge, Button, CellMain, CellSub, Chip, DataTable, Drawer,
   FieldDropdown, FilterBanner, KV, Kebab, Modal, Mono, Note, Progress, SegmentedToggle, type Column,
 } from '@/components/ui'
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
@@ -20,7 +20,7 @@ const EXEC_STATES: OrderState[] = [
 const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
 
 export default function ProvisioningExecution() {
-  const orders = useStore((s) => s.orders).filter((o) => !o.archived)
+  const allOrders = useStore((s) => s.orders)
   const runs = useStore((s) => s.runs)
   const runsForOrder = useStore((s) => s.runsForOrder)
   const startRun = useStore((s) => s.startRun)
@@ -35,6 +35,9 @@ export default function ProvisioningExecution() {
   const stateList = state === 'All' ? [] : state.split(',')
   const [vendor, setVendor] = useQueryState<Vendor | 'All'>('vendor', 'All')
   const [intent, setIntent] = useQueryState<OrderIntent | 'All'>('intent', 'All')
+  /* Same scope control as Provisioning Requests: the queue is work in flight,
+     the archive is every create this platform completed. */
+  const [history, setHistory] = useQueryState('history', 'off')
   /* Independent name/code/model filters for the popover — separate from
      the toolbar's broad `q` search box, which still matches across all
      three at once for a quick look-up. */
@@ -43,7 +46,7 @@ export default function ProvisioningExecution() {
   const [qmodel, setQmodel] = useQueryState('model', '')
   const [view, setView] = useQueryState<'listing' | 'insights'>('view', 'listing')
   const patch = useQueryPatch()
-  const clear = useClearQuery(['q', 'domain', 'cat', 'state', 'vendor', 'intent', 'name', 'code', 'model'])
+  const clear = useClearQuery(['q', 'domain', 'cat', 'state', 'vendor', 'intent', 'name', 'code', 'model', 'history'])
   const domainCats = domain === 'All' ? CATEGORIES : CATEGORIES_BY_DOMAIN[domain]
   const setDomainScoped = (next: Domain | 'All') => {
     setDomain(next)
@@ -69,6 +72,11 @@ export default function ProvisioningExecution() {
   /* Execution is the post-decision queue: drafts and anything still mid
      pre-validation (Planned) or awaiting a decision (Validated, Invalid)
      are worked from Provisioning Requests, not here. */
+  const orders = useMemo(
+    () => (history === 'on' ? allOrders : allOrders.filter((o) => !o.archived)),
+    [allOrders, history],
+  )
+  const archivedCount = useMemo(() => allOrders.filter((o) => o.archived).length, [allOrders])
   const pool = useMemo(() => orders.filter((o) => !['Draft', 'Planned', 'Validated', 'Invalid'].includes(o.state)), [orders])
 
   const filtered = useMemo(() => pool.filter((o) => {
@@ -214,6 +222,7 @@ export default function ProvisioningExecution() {
         count={filtered.length} noun="requests" onClear={clear}
         filters={[
           ...(state !== 'All' ? [{ key: 'state', label: 'Status', value: stateList.join(' or '), onRemove: () => setState('All') }] : []),
+          ...(history === 'on' ? [{ key: 'history', label: 'Scope', value: 'Including completed history', onRemove: () => setHistory('off') }] : []),
           ...(intent !== 'All' ? [{ key: 'intent', label: 'Request type', value: intent, onRemove: () => setIntent('All') }] : []),
           ...(qname ? [{ key: 'name', label: 'Name', value: qname, onRemove: () => setQname('') }] : []),
           ...(qcode ? [{ key: 'code', label: 'Code', value: qcode, onRemove: () => setQcode('') }] : []),
@@ -244,6 +253,10 @@ export default function ProvisioningExecution() {
                     .map((v) => ({ value: v, label: VENDOR_LABEL[v], count: pool.filter((o) => o.endpoints[0]?.vendor === v).length }))} />,
                 <FieldDropdown key="cat" label="Category" value={cat} onChange={(v) => setCat(v as Category | 'All')}
                   options={domainCats.map((c) => ({ value: c, label: c, count: pool.filter((o) => o.category === c).length }))} />,
+                <Chip key="history" active={history === 'on'} onClick={() => setHistory(history === 'on' ? 'off' : 'on')}>
+                  Include history
+                  <span className="tnum opacity-70">{archivedCount.toLocaleString()}</span>
+                </Chip>,
               ],
               filters: [
                 { key: 'state', label: 'Status', value: state, onChange: (v) => setState(v),

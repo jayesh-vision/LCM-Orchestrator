@@ -8,7 +8,7 @@ import {
   Badge, Button, Card, CardBody, CardHead, CellSub, CodeBlock, Drawer, KV,
   Mono, Note, Progress, Tabs, type Tone,
 } from '@/components/ui'
-import { CATEGORY_TONE, clockTime, dur, ORDER_TONE, relTime, RUN_TONE, TASK_TONE } from '@/lib/format'
+import { CATEGORY_TONE, clockTime, dur, ORDER_TONE, relTime, RUN_TONE, TASK_TONE, shortDate } from '@/lib/format'
 
 /* Stage kind → chip tone, as the platform colours its stage nodes. */
 const STAGE_KIND_TONE: Record<StageKind, Tone> = { 'Pre validation': 'teal', Configuration: 'info', 'Post validation': 'warn' }
@@ -387,11 +387,23 @@ export default function OrderDetail() {
           </>
         ) : (
           <Card><CardBody className="py-14 text-center">
-            <div className="text-[15px] font-semibold mb-1">No runs yet</div>
-            <p className="text-ink-3 text-[13px] mb-4">
-              {canExecute ? 'This request is approved and ready to execute.' : 'Runs appear once the request is approved and executed.'}
+            {/* An archived request did run — it produced the service it points
+                at. What is missing is the task-by-task device log, which ages
+                out while the order itself is kept. Saying that is the
+                difference between a record and a gap. */}
+            <div className="text-[15px] font-semibold mb-1">
+              {order.archived ? 'Execution log not retained' : 'No runs yet'}
+            </div>
+            <p className="text-ink-3 text-[13px] mb-4 max-w-[440px] mx-auto leading-relaxed">
+              {order.archived
+                ? <>This request completed on {shortDate(order.updatedAt)} and produced{' '}
+                  {order.serviceId
+                    ? <Link className="text-brand-600" to={`/inventory/${order.serviceId}`}><Mono>{order.serviceId}</Mono></Link>
+                    : 'a service'}. Per-task device logs are kept for 90 days; the request and what it
+                  configured are kept for the life of the service.</>
+                : canExecute ? 'This request is approved and ready to execute.' : 'Runs appear once the request is approved and executed.'}
             </p>
-            {canExecute && <Button variant="primary" onClick={() => startRun(order.id)}><PlayCircle size={15} />Execute workflow</Button>}
+            {canExecute && !order.archived && <Button variant="primary" onClick={() => startRun(order.id)}><PlayCircle size={15} />Execute workflow</Button>}
           </CardBody></Card>
         )
       )}

@@ -865,10 +865,10 @@ export const PLATFORM_LIVE_DAYS = 365
  * this platform. Archived: they are the provenance record, not open work, so
  * the request queue does not carry them by default.
  *
- * No runs are attached. The order is retained indefinitely because it is what
- * the service points back to; the per-task device logs behind it are not, and
- * pretending otherwise would mean holding a few thousand synthetic task lists
- * to say nothing the order does not already say.
+ * No runs are attached, which mirrors how retention actually works: the order
+ * is kept indefinitely because it is what the service points back to, while
+ * the per-task device logs behind it age out. Order detail says so rather than
+ * showing an empty lifecycle.
  */
 export function buildHistoricalOrders(services: Service[], workflows: Workflow[]): Order[] {
   const now = Date.now()
@@ -881,6 +881,23 @@ export function buildHistoricalOrders(services: Service[], workflows: Workflow[]
     n += 1
     const intent = intentById(svc.intentId)
     const created = new Date(svc.liveSince)
+    const subtype = pick(['Tagged', 'Untagged', 'Other', 'BGP', 'Static'])
+
+    /* Built exactly like a live order: the values it was raised with, and each
+       endpoint bound to the template that ran on that device. An archived
+       request is still a request, and opening one has to show what was asked
+       for — a record with no parameters and unbound endpoints would look like
+       a stub rather than the thing a service points back to. */
+    const params: OrderParamValue[] = intent.params.map((p) => ({
+      name: p.name,
+      value: p.name === 'bandwidth_mbps' ? String(svc.bandwidthMbps)
+        : p.fromPool ? `${p.fromPool === 'VLAN' ? between(100, 900) : p.fromPool === 'Pseudowire ID' ? between(4100, 4900) : p.fromPool === 'RD/RT' ? `65001:${between(100, 900)}` : `10.244.${between(1, 250)}.0/30`}`
+          : p.default !== undefined ? String(p.default)
+            : p.type === 'integer' ? String(between(64500, 65400)) : 'tagged',
+      source: p.fromPool ? 'pool' : p.default !== undefined ? 'template' : 'user',
+    }))
+    const boundEps = bindEndpoints(svc.endpoints, svc.category, svc.type, subtype, workflows, params, svc.bandwidthMbps)
+
     out.push({
       id: `ORD-2025-${pad(100000 + n * 3, 6)}`,
       code: `NS-${pad(700000 + n, 6)}`,
@@ -889,14 +906,14 @@ export function buildHistoricalOrders(services: Service[], workflows: Workflow[]
       intentId: svc.intentId,
       category: svc.category,
       type: svc.type,
-      subtype: '—',
+      subtype,
       accountId: svc.accountId,
       accountName: svc.accountName,
       state: 'Ready',
       serviceId: svc.id,
-      workflowId: workflows.find((w) => w.category === svc.category && w.state === 'Active')?.id,
-      endpoints: svc.endpoints,
-      params: [],
+      workflowId: boundEps[0]?.workflowId,
+      endpoints: boundEps,
+      params,
       createdAt: created.toISOString(),
       updatedAt: created.toISOString(),
       ageDays,
