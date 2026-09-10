@@ -164,7 +164,7 @@ export default function Workflows() {
     { key: 'type', header: 'Type', width: '140px', sortValue: (r) => r.type, render: (r) => r.type },
     { key: 'sub', header: 'Subtype', width: '110px', sortValue: (r) => r.subtype, render: (r) => r.subtype },
     { key: 'vendor', header: 'Vendor', width: '110px', sortValue: (r) => r.vendor, render: (r) => VENDOR_LABEL[r.vendor] },
-    { key: 'version', header: 'Version', align: 'right', width: '84px', sortValue: (r) => r.version, render: (r) => r.version },
+    { key: 'version', header: 'Version', align: 'center', width: '84px', sortValue: (r) => r.version, render: (r) => r.version },
     {
       key: 'act', header: '', width: '48px',
       render: (r) => (

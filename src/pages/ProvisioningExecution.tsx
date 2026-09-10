@@ -124,7 +124,7 @@ export default function ProvisioningExecution() {
       key: 'workflow', header: 'Workflow', width: '150px',
       render: (r) => (r.workflowId ? <Mono className="text-ink-2">{r.workflowId}</Mono> : <span className="text-ink-3">not bound</span>),
     },
-    { key: 'runs', header: 'Runs', align: 'right', width: '70px', sortValue: (r) => new Set(runsForOrder(r.id).map((x) => x.attempt)).size, render: (r) => new Set(runsForOrder(r.id).map((x) => x.attempt)).size },
+    { key: 'runs', header: 'Runs', align: 'center', width: '70px', sortValue: (r) => new Set(runsForOrder(r.id).map((x) => x.attempt)).size, render: (r) => new Set(runsForOrder(r.id).map((x) => x.attempt)).size },
     { key: 'age', header: 'Age', align: 'right', width: '74px', sortValue: (r) => r.ageDays, render: (r) => ageLabel(r.ageDays) },
     {
       key: 'act', header: '', width: '48px',

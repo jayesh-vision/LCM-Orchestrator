@@ -115,7 +115,6 @@ export default function ProvisioningRequests() {
         <>
           <Badge tone={ORDER_TONE[r.state]} dot>{r.state}</Badge>
           {r.state === 'In progress' && <Progress value={45} className="mt-2 w-24" />}
-          {r.slaBreached && <CellSub><span className="text-crit-700">SLA breached</span></CellSub>}
         </>
       ),
     },

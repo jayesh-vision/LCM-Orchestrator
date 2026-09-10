@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, CircleAlert, Eye, FolderTree, Layers, Pencil, Plus, Shapes } from 'lucide-react'
+import { ChevronRight, CircleAlert, Eye, FolderTree, Layers, Pencil, Plus, Shapes, Workflow as WorkflowIcon } from 'lucide-react'
 import { useQueryState } from '@/lib/useQueryState'
 import { useStore } from '@/store/useStore'
 import type { Category, Domain, ProfileType } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
-  Badge, Button, Card, CardBody, CardHead, CellMain, Chip, DataTable, Drawer,
-  Field, Kebab, KV, Modal, Note, Select, Stat, TextInput, type Column,
+  Badge, Button, CellMain, Chip, DataTable, Drawer,
+  Field, Kebab, Modal, Note, Select, Stat, TextInput, type Column,
 } from '@/components/ui'
 import { CATEGORY_TONE, DOMAIN_TONE, shortDate } from '@/lib/format'
 
@@ -75,7 +75,7 @@ export default function ProfileTypes() {
     { key: 'desc', header: 'Description', render: (r) => <span className="block truncate max-w-[560px]" title={r.description}>{r.description}</span> },
     { key: 'creator', header: 'Creator', width: '110px', sortValue: (r) => r.creator, render: (r) => r.creator },
     {
-      key: 'used', header: 'Workflows', align: 'right', width: '100px',
+      key: 'used', header: 'Workflows', align: 'center', width: '100px',
       sortValue: (r) => usage.get(`${r.category}|${r.type}|${r.subtype}`) ?? 0,
       render: (r) => {
         const n = usage.get(`${r.category}|${r.type}|${r.subtype}`) ?? 0
@@ -111,43 +111,6 @@ export default function ProfileTypes() {
           info="Profile types no workflow references yet. An order that selects one of these cannot be fulfilled until a workflow is mapped to it — either build the workflow or retire the profile."
           drillLabel="the workflow coverage matrix" onClick={() => nav('/workflows')} />
       </div>
-
-      <Card>
-        <CardHead title="How the hierarchy is used" sub="Profile Type is admin configuration; workflows and provisioning consume it"
-          info="Profile types are created once by an admin and then consumed twice: a workflow is scoped to one hierarchy (plus vendor and model), and a provisioning request picks a category and type to be offered the matching workflows. Each step card below ends with a worked example." />
-        <CardBody>
-          <div className="flex flex-col gap-3 md:grid md:grid-cols-[1fr_28px_1fr_28px_1fr] md:items-stretch md:gap-0">
-            {[
-              { n: '1', title: 'Create the hierarchy', desc: 'Category → Type → Subtype, as an admin action.', ex: ['L3VPN', 'Fully-Mesh', 'BGP'] },
-              { n: '2', title: 'Create the workflow', desc: 'The hierarchy scopes the workflow along with vendor and model.', ex: ['IBW', 'VRF', 'Static'] },
-              { n: '3', title: 'Provision a service', desc: 'The request picks a category and type; matching workflows are offered.', ex: ['L2VPN', 'Railwire', 'Tagged'] },
-            ].map((step, i) => (
-              <div key={step.n} className="contents">
-                {i > 0 && (
-                  <div className="hidden md:grid place-items-center" aria-hidden>
-                    <ChevronRight size={18} className="text-ink-3" />
-                  </div>
-                )}
-                <div className="flex flex-col border border-line rounded-lg px-4 py-4">
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-7 h-7 rounded-full bg-brand-500 text-white grid place-items-center text-[12px] font-semibold shrink-0">{step.n}</span>
-                    <span className="text-[13px] font-semibold text-ink-1">{step.title}</span>
-                  </div>
-                  <p className="text-[12px] text-ink-3 mt-2 mb-0 leading-snug flex-1">{step.desc}</p>
-                  <div className="flex items-center flex-wrap gap-x-2 gap-y-1 text-[12px] font-mono mt-3 pt-3 border-t border-line-soft">
-                    <Badge tone={CATEGORY_TONE[step.ex[0]]}>{step.ex[0]}</Badge><span className="text-ink-3">→</span>
-                    <span>{step.ex[1]}</span><span className="text-ink-3">→</span><span className="font-semibold">{step.ex[2]}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <Note className="mt-4">
-            Keep Type and Subtype naming consistent, and reuse an existing profile before creating another —
-            a token that appears at two levels of the hierarchy makes workflow mapping ambiguous.
-          </Note>
-        </CardBody>
-      </Card>
 
       <DataTable
         rows={filtered} total={profileTypes.length} columns={columns} pageSize={12} minWidth={900}
@@ -224,19 +187,65 @@ export default function ProfileTypes() {
           </Button>
         )}
       >
-        {view && (
-          <div className="flex flex-col gap-5">
-            <KV items={[
-              ['Category', <Badge key="c" tone={CATEGORY_TONE[view.category]}>{view.category}</Badge>],
-              ['Type', view.type],
-              ['Subtype', view.subtype],
-              ['Description', view.description],
-              ['Creator', view.creator],
-              ['Created', shortDate(view.createdAt)],
-              ['Workflows using this', usage.get(`${view.category}|${view.type}|${view.subtype}`) ?? 0],
-            ]} />
-          </div>
-        )}
+        {view && (() => {
+          const count = usage.get(`${view.category}|${view.type}|${view.subtype}`) ?? 0
+          return (
+            <div className="flex flex-col gap-5">
+              <div className="border border-line rounded-lg px-4 py-4 bg-plane/50">
+                <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-3">Hierarchy</div>
+                <div className="flex items-center flex-wrap gap-x-2.5 gap-y-2">
+                  <Badge tone={CATEGORY_TONE[view.category]}>{view.category}</Badge>
+                  <ChevronRight size={15} className="text-ink-3 shrink-0" aria-hidden />
+                  <span className="text-[14px] font-medium text-ink-1">{view.type}</span>
+                  <ChevronRight size={15} className="text-ink-3 shrink-0" aria-hidden />
+                  <span className="text-[14px] font-semibold text-ink-1">{view.subtype}</span>
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2">Description</div>
+                <p className="text-[13px] text-ink-2 leading-relaxed m-0">{view.description}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="vw-label mb-1">Creator</div>
+                  <div className="vw-value font-medium">{view.creator}</div>
+                </div>
+                <div>
+                  <div className="vw-label mb-1">Created</div>
+                  <div className="vw-value font-medium">{shortDate(view.createdAt)}</div>
+                </div>
+              </div>
+
+              {count > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => { setView(null); nav(`/workflows?cat=${encodeURIComponent(view.category)}&q=${encodeURIComponent(view.type)}`) }}
+                  className="vw-card-child vw-card--clickable w-full text-left"
+                  aria-label={`${count} workflows use this profile. Open them in Workflows`}
+                >
+                  <span className="vw-flex vw-items-center vw-justify-between vw-gap-sm">
+                    <span className="vw-flex vw-items-center vw-gap-sm">
+                      <span className="w-9 h-9 rounded-lg grid place-items-center shrink-0 ring-1 ring-inset bg-brand-50 text-brand-600 ring-brand-200/60" aria-hidden>
+                        <WorkflowIcon size={16} />
+                      </span>
+                      <span>
+                        <span className="vw-card-activity-label block">Workflows using this</span>
+                        <span className="vw-card-activity-value block mt-0.5">Click to open them in Workflows</span>
+                      </span>
+                    </span>
+                    <span className="vw-card-metric-sm tnum">{count}</span>
+                  </span>
+                </button>
+              ) : (
+                <Note tone="warn">
+                  No workflow references this profile yet — an order that selects it can't be fulfilled until one is mapped.
+                </Note>
+              )}
+            </div>
+          )
+        })()}
       </Drawer>
 
       {/* -------- edit -------- */}

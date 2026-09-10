@@ -624,12 +624,9 @@ export function FilterPopover({ fields, onReset, onClose }:
             )}
           </div>
         </div>
-        <div className="vw-flex vw-items-center vw-justify-between px-3 py-2 border-t border-line-soft">
-          <button className="nst-btn nst-btn--xs px-2" type="button" title="Coming soon: combine conditions">Advance</button>
-          <span className="vw-flex vw-items-center vw-gap-xs">
-            <button className="nst-btn nst-btn--xs nst-btn--ghost px-2" onClick={reset} disabled={dirtyCount === 0}>Reset to default</button>
-            <button className="nst-btn nst-btn--xs nst-btn--filled px-2.5" onClick={apply}>Apply filters</button>
-          </span>
+        <div className="vw-flex vw-items-center vw-justify-end vw-gap-xs px-3 py-2 border-t border-line-soft">
+          <button className="nst-btn nst-btn--xs nst-btn--ghost px-2" onClick={reset} disabled={dirtyCount === 0}>Reset to default</button>
+          <button className="nst-btn nst-btn--xs nst-btn--filled px-2.5" onClick={apply}>Apply filters</button>
         </div>
       </div>
     </>
@@ -701,7 +698,7 @@ export interface Column<T> {
   key: string
   header: string
   width?: string
-  align?: 'left' | 'right'
+  align?: 'left' | 'right' | 'center'
   sortValue?: (row: T) => string | number
   render: (row: T) => ReactNode
 }
@@ -770,7 +767,7 @@ export function DataTable<T extends { id: string }>({
                   key={c.key}
                   scope="col"
                   onClick={() => c.sortValue && setSort((s) => (s?.key === c.key ? { key: c.key, dir: s.dir === 1 ? -1 : 1 } : { key: c.key, dir: 1 }))}
-                  className={`${c.align === 'right' ? 'text-right' : 'text-left'} ${c.sortValue ? 'cursor-pointer select-none hover:text-ink-1' : ''}`}
+                  className={`${c.align === 'right' ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left'} ${c.sortValue ? 'cursor-pointer select-none hover:text-ink-1' : ''}`}
                   style={{ width: c.width }}
                 >
                   {c.header}
@@ -788,7 +785,7 @@ export function DataTable<T extends { id: string }>({
               return (
                 <tr key={row.id} onClick={() => onRowClick?.(row)} className={onRowClick ? 'is-clickable' : ''}>
                   {columns.map((c) => (
-                    <td key={c.key} className={`nst-table-td--primary ${c.align === 'right' ? 'text-right tnum' : ''}`}>
+                    <td key={c.key} className={`nst-table-td--primary ${c.align === 'right' ? 'text-right tnum' : c.align === 'center' ? 'text-center tnum' : ''}`}>
                       {c.render(row)}
                     </td>
                   ))}

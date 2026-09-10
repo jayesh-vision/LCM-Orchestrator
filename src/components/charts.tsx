@@ -330,7 +330,11 @@ export function CoverageMatrix({ rows, cols, cell, onCellClick, onTrailingClick,
     <div className="overflow-x-auto">
       <div role="table" aria-label="Workflow coverage by intent and vendor" style={{ minWidth: 340 + cols.length * 128 }}>
         <div role="row" className="grid gap-2.5 px-3.5 pb-2" style={{ gridTemplateColumns: gridCols }}>
-          <div role="columnheader" className="text-[11px] font-semibold uppercase tracking-[.07em] text-ink-3">Intent</div>
+          {/* Sticky so the Intent label stays put while the vendor columns
+             scroll underneath it — without this, a domain with enough
+             vendors to overflow the card loses the one column that says
+             which row you're looking at. */}
+          <div role="columnheader" className="sticky left-0 z-10 bg-white pr-2 text-[11px] font-semibold uppercase tracking-[.07em] text-ink-3">Intent</div>
           {cols.map((c) => (
             <div key={c.key} role="columnheader" className="flex flex-col items-center gap-0.5 text-center">
               {c.icon && <c.icon size={13} className="text-ink-3" />}
@@ -347,7 +351,7 @@ export function CoverageMatrix({ rows, cols, cell, onCellClick, onTrailingClick,
               <div key={r.key} role="row"
                 className="grid gap-2.5 items-center border border-line rounded-lg px-3.5 py-2.5 transition-colors hover:border-brand-200 hover:bg-plane"
                 style={{ gridTemplateColumns: gridCols }}>
-                <div role="rowheader" className="min-w-0">
+                <div role="rowheader" className="sticky left-0 z-10 self-stretch flex flex-col justify-center bg-white min-w-0 pr-2 -my-2.5 py-2.5 pl-3.5 -ml-3.5">
                   <div className="text-[13px] font-semibold text-ink-1 truncate" title={r.label}>{r.label}</div>
                   {r.sub && <div className="text-[11px] text-ink-3 mt-0.5 truncate">{r.sub}</div>}
                 </div>
