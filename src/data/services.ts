@@ -109,19 +109,22 @@ function attributes(intentId: string, conformance: Conformance, bandwidth: numbe
    are therefore built with an empty `resources` list and filled in there. */
 
 function history(id: string, liveSince: Date, conformance: Conformance): ChangeRecord[] {
+  /* Days of runway between activation and now — every change below is
+     placed inside it, so nothing is stamped in the future. */
+  const sinceDays = Math.max(1, Math.floor((Date.now() - liveSince.getTime()) / 86400000))
   const out: ChangeRecord[] = [{
     at: liveSince.toISOString(), orderId: `ORD-2026-${pad(between(1000, 4400), 6)}`,
     change: 'Created · service went Live', by: pick(['Priya S.', 'Ravi K.', 'Anil M.']), outOfBand: false,
   }]
   if (conformance === 'Drifted') {
     out.unshift({
-      at: new Date(liveSince.getTime() + 86400000 * between(20, 200)).toISOString(),
+      at: new Date(liveSince.getTime() + 86400000 * between(1, Math.min(200, sinceDays))).toISOString(),
       change: 'Bandwidth changed on the device', by: 'ops-nikhil', outOfBand: true,
     })
   }
   if (rnd() > 0.6) {
     out.unshift({
-      at: new Date(liveSince.getTime() + 86400000 * between(5, 160)).toISOString(),
+      at: new Date(liveSince.getTime() + 86400000 * between(1, Math.min(160, sinceDays))).toISOString(),
       orderId: `ORD-2026-${pad(between(1000, 4400), 6)}`,
       change: pick(['MTU 1400 → 1500', 'Bandwidth 100 → 200 Mbps', 'Prefix limit 300 → 500', 'Added spoke site']),
       by: pick(['Priya S.', 'Ravi K.']), outOfBand: false,
@@ -201,6 +204,8 @@ export function buildServices(): Service[] {
     const bandwidth = pick([10, 20, 50, 100, 200, 500, 1000])
     const ageDays = between(3, 1400)
     const liveSince = new Date(now - ageDays * 86400000)
+    liveSince.setHours(between(0, 23), between(0, 59), 0, 0)
+    if (liveSince.getTime() > now) liveSince.setTime(now - between(5, 180) * 60000)
     const proven = conformance === 'Never proven' || conformance === 'Ghost'
       ? undefined
       : new Date(now - between(1, 40) * 3600000).toISOString()
@@ -279,6 +284,8 @@ export function buildServices(): Service[] {
     const bandwidth = pick([50, 100, 200, 300, 500])
     const ageDays = between(3, 900)
     const liveSince = new Date(now - ageDays * 86400000)
+    liveSince.setHours(between(0, 23), between(0, 59), 0, 0)
+    if (liveSince.getTime() > now) liveSince.setTime(now - between(5, 180) * 60000)
     const proven = conformance === 'Never proven' || conformance === 'Ghost'
       ? undefined
       : new Date(now - between(1, 40) * 3600000).toISOString()
@@ -328,6 +335,8 @@ export function buildServices(): Service[] {
     const bandwidth = pick([50, 100, 200, 500, 1000])
     const ageDays = between(3, 1200)
     const liveSince = new Date(now - ageDays * 86400000)
+    liveSince.setHours(between(0, 23), between(0, 59), 0, 0)
+    if (liveSince.getTime() > now) liveSince.setTime(now - between(5, 180) * 60000)
     const proven = conformance === 'Never proven' || conformance === 'Ghost'
       ? undefined
       : new Date(now - between(1, 40) * 3600000).toISOString()
@@ -377,6 +386,8 @@ export function buildServices(): Service[] {
     const bandwidth = pick([10, 100, 200, 400])
     const ageDays = between(3, 1200)
     const liveSince = new Date(now - ageDays * 86400000)
+    liveSince.setHours(between(0, 23), between(0, 59), 0, 0)
+    if (liveSince.getTime() > now) liveSince.setTime(now - between(5, 180) * 60000)
     const proven = conformance === 'Never proven' || conformance === 'Ghost'
       ? undefined
       : new Date(now - between(1, 40) * 3600000).toISOString()
@@ -428,6 +439,8 @@ export function buildServices(): Service[] {
     const bandwidth = pick([500, 1000, 2000, 5000])
     const ageDays = between(3, 700)
     const liveSince = new Date(now - ageDays * 86400000)
+    liveSince.setHours(between(0, 23), between(0, 59), 0, 0)
+    if (liveSince.getTime() > now) liveSince.setTime(now - between(5, 180) * 60000)
     const proven = conformance === 'Never proven' || conformance === 'Ghost'
       ? undefined
       : new Date(now - between(1, 40) * 3600000).toISOString()

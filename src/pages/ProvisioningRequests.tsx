@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
 import { BarChart3, CheckCircle2, Eye, ListChecks, Plus, Workflow, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
@@ -7,7 +7,7 @@ import type { Category, Domain, Order, OrderIntent, OrderState, Vendor } from '@
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Button, CellMain, CellSub, Chip, DataTable, Field,
-  FieldDropdown, FilterBanner, Kebab, Modal, Mono, Progress, SegmentedToggle, type Column,
+  FieldDropdown, FilterBanner, Kebab, Modal, Mono, Progress, SegmentedToggle, stampColumn, type Column,
 } from '@/components/ui'
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { VENDOR_LABEL } from '@/data/workflows'
@@ -27,6 +27,7 @@ export default function ProvisioningRequests() {
   const approveOrder = useStore((s) => s.approveOrder)
   const rejectOrder = useStore((s) => s.rejectOrder)
   const nav = useNavigate()
+  const loc = useLocation()
   const [q, setQ] = useQueryState('q', '')
   const [domain, setDomain] = useQueryState<Domain | 'All'>('domain', 'All')
   const [cat, setCat] = useQueryState<Category | 'All'>('cat', 'All')
@@ -70,6 +71,16 @@ export default function ProvisioningRequests() {
     p.set('view', view)
     nav(`/execution${p.toString() ? `?${p}` : ''}`)
   }
+  /* Carried into every row detail this grid opens, so its Back button returns
+     to this grid with the same filters still applied and on the Listing tab
+     it was clicked from — rather than to a bare path that reopens the
+     default view and drops the selection. */
+  const fromList = useMemo(() => {
+    const p = new URLSearchParams(loc.search)
+    p.set('view', 'listing')
+    return { state: { fromList: `?${p}` } }
+  }, [loc.search])
+
   const [reject, setReject] = useState<Order | null>(null)
   const [rejectNote, setRejectNote] = useState('')
 
@@ -197,13 +208,14 @@ export default function ProvisioningRequests() {
         : (<><CellMain><Mono className="whitespace-nowrap">{r.endpoints.map((e) => e.siteCode).slice(0, 2).join(' ↔ ')}</Mono></CellMain>
           <CellSub>{r.endpoints.length > 2 ? `+${r.endpoints.length - 2} more sites` : r.endpoints.map((e) => e.port).join(' · ')}</CellSub></>)),
     },
+    stampColumn<Order>((r) => r.createdAt, (r) => r.updatedAt),
     {
       key: 'act', header: '', width: '48px',
       render: (r) => (
         <Kebab items={[
-          { label: 'View details', icon: Eye, onClick: () => nav(`/requests/${r.id}`) },
-          { label: 'Life cycle operation', icon: Workflow, onClick: () => nav(`/requests/${r.id}?tab=lifecycle`) },
-          { label: 'View jobs', icon: ListChecks, onClick: () => nav(`/requests/${r.id}?tab=runs`) },
+          { label: 'View details', icon: Eye, onClick: () => nav(`/requests/${r.id}`, fromList) },
+          { label: 'Life cycle operation', icon: Workflow, onClick: () => nav(`/requests/${r.id}?tab=lifecycle`, fromList) },
+          { label: 'View jobs', icon: ListChecks, onClick: () => nav(`/requests/${r.id}?tab=runs`, fromList) },
           ...(r.state === 'Validated'
             ? [{ label: 'Approve', icon: CheckCircle2, onClick: () => doApprove(r) },
               { label: 'Reject', icon: XCircle, onClick: () => { setReject(r); setRejectNote('') }, danger: true }]
@@ -252,7 +264,7 @@ export default function ProvisioningRequests() {
             total={orders.length}
             columns={columns}
             pageSize={12}
-            onRowClick={(r) => nav(`/requests/${r.id}`)}
+            onRowClick={(r) => nav(`/requests/${r.id}`, fromList)}
             toolbar={{
               search: { value: q, onChange: setQ, placeholder: 'Name, Code, Model' },
               /* Domain, Vendor and Category are common enough to earn their own

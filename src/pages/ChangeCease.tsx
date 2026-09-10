@@ -6,7 +6,7 @@ import { useStore } from '@/store/useStore'
 import type { Order, OrderIntent, Service } from '@/types'
 import {
   Badge, Button, Card, CardBody, CardHead, CellMain, CellSub, Chip, DataTable,
-  Field, Kebab, Modal, Mono, Note, Select, Stat, type Column,
+  Field, Kebab, Modal, Mono, Note, Select, Stat, stampColumn, type Column,
 } from '@/components/ui'
 import { INTENT_TONE, ORDER_TONE, relTime } from '@/lib/format'
 import { CeaseServiceModal, ModifyServiceDrawer } from '@/components/ServiceChangeDialogs'
@@ -87,6 +87,7 @@ export default function ChangeCease() {
       },
     },
     { key: 'state', header: 'Status', width: '160px', sortValue: (r) => r.state, render: (r) => <Badge tone={ORDER_TONE[r.state]} dot>{r.state}</Badge> },
+    stampColumn<Order>((r) => r.createdAt, (r) => r.updatedAt),
     {
       key: 'act', header: '', width: '48px',
       render: (r) => (

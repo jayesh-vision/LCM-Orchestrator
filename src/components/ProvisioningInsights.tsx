@@ -1,11 +1,14 @@
-import { useMemo, type ReactNode } from 'react'
-import { AlertTriangle, Boxes, CheckCircle2, ClipboardList, Gauge, Globe, PlayCircle, Server, Timer, XCircle } from 'lucide-react'
+import { useMemo, type ComponentType, type ReactNode } from 'react'
+import {
+  AlertTriangle, Boxes, CheckCircle2, CircleOff, ClipboardList, Gauge, Globe, PauseCircle,
+  Pencil, PlayCircle, Plus, Server, ShieldCheck, Timer, XCircle,
+} from 'lucide-react'
 import type { Category, Order, OrderIntent, OrderState, Run, Vendor } from '@/types'
 import { domainOf } from '@/types'
 import { Badge, Card, CardBody, CardHead, StatRow, type StatTone } from '@/components/ui'
 import { BarList, ColumnChart, SOFT, StackedBar, TrendChart } from '@/components/charts'
 import { VENDOR_LABEL } from '@/data/workflows'
-import { CATEGORY_TONE, dur, INTENT_TONE } from '@/lib/format'
+import { CATEGORY_TONE, dur } from '@/lib/format'
 
 const DAY = 86400000
 
@@ -48,6 +51,32 @@ const riskColor = (rate: number) => (rate >= 0.25 ? SOFT.crit : rate >= 0.1 ? SO
 type Patch = Record<string, string | null | undefined>
 
 /**
+ * The six things a request can be, in lifecycle order rather than ranked by
+ * volume — a KPI card people read repeatedly should hold still while they
+ * change the filters, so each type keeps its own line. Create is the only one
+ * that builds something new; every other type acts on a service that is
+ * already carrying traffic, which is the split the card exists to show.
+ *
+ * Tones follow INTENT_TONE where StatRow has a matching one. It has four
+ * (good/warn/crit/plum) against that palette's seven, so Create and Re-prove
+ * both fall back to the default brand — they are the two that never damage
+ * anything, and the icon and label carry the difference.
+ */
+const INTENT_ROWS: {
+  intent: OrderIntent
+  icon: ComponentType<{ size?: number; className?: string }>
+  tone?: StatTone
+  note: string
+}[] = [
+  { intent: 'Create', icon: Plus, note: 'New build — lands a service in inventory' },
+  { intent: 'Modify', icon: Pencil, tone: 'plum', note: 'Changes an attribute of a live service' },
+  { intent: 'Suspend', icon: PauseCircle, tone: 'warn', note: 'Billing stop — configuration retained' },
+  { intent: 'Resume', icon: PlayCircle, tone: 'good', note: 'Restores the revision captured at suspend' },
+  { intent: 'Cease', icon: CircleOff, tone: 'crit', note: 'Permanent — resources go to quarantine' },
+  { intent: 'Re-prove', icon: ShieldCheck, note: 'Read-only re-check, nothing written' },
+]
+
+/**
  * The analytics home for Provisioning Requests/Execution — everything that
  * used to compete with the grid for vertical space now lives here, one
  * toggle away. Scoped to whatever the caller's domain/category/search
@@ -74,13 +103,10 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
     return [...m.entries()].sort((a, b) => b[1].length - a[1].length)
   }, [orders])
 
-  /* Why the work exists, biggest first. Create is new build; everything else
-     is a change to a service already carrying traffic, and the split between
-     the two says whether this queue is growing the estate or maintaining it. */
   const byIntent = useMemo(() => {
-    const m = new Map<OrderIntent, Order[]>()
-    orders.forEach((o) => { if (!m.has(o.intent)) m.set(o.intent, []); m.get(o.intent)!.push(o) })
-    return [...m.entries()].sort((a, b) => b[1].length - a[1].length)
+    const m = new Map<OrderIntent, number>()
+    orders.forEach((o) => m.set(o.intent, (m.get(o.intent) ?? 0) + 1))
+    return m
   }, [orders])
 
   /* Grouped by each order's first (primary/Source) endpoint — a two-ended
@@ -123,6 +149,29 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
   const firstPassRate = firstAttempts.length ? Math.round((firstAttempts.filter((r) => r.outcome === 'Accepted').length / firstAttempts.length) * 100) : undefined
   const durations = scopedRuns.map((r) => r.durationMs).filter((d): d is number => d !== undefined)
   const avgDuration = durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : undefined
+
+  /* What the work is, rather than how much of it there is. Whether this queue
+     is mostly Create or mostly Modify is the difference between an estate
+     still being built and one being maintained, and nothing else on this
+     screen answers that. Same StatRow layout as the two cards beside it, so
+     the three read as one row of the same kind of thing. */
+  const intentCard = (
+    <Card className="h-full flex flex-col">
+      <CardHead title="By request type" sub="Why each one was raised, for the current selection"
+        info="Every request in the current selection counted by why it was raised. Create is the only type that builds something new — Modify, Suspend, Resume, Cease and Re-prove all act on a service that is already live, so the balance between Create and the rest says whether this queue is growing the estate or maintaining it. The bar is that type's share of the selection. Click a row to open just those." />
+      <CardBody className="flex flex-col gap-2 flex-1 justify-between">
+        {INTENT_ROWS.map(({ intent, icon, tone, note }) => {
+          const n = byIntent.get(intent) ?? 0
+          return (
+            <StatRow key={intent} label={intent} icon={icon} value={n.toLocaleString()}
+              tone={n ? tone : undefined} progress={(n / Math.max(1, total)) * 100} note={note}
+              drillLabel={n ? `${intent} ${noun}` : undefined}
+              onClick={n ? () => onDrill({ intent, state: null }) : undefined} />
+          )
+        })}
+      </CardBody>
+    </Card>
+  )
 
   /* One combined "Problem spotlight" card instead of 3–5 separate Stat
      tiles — a row of near-identical tiles reads fine at 3–4, past that it's
@@ -184,7 +233,7 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
 
     return (
       <div className="flex flex-col gap-4">
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <Card className="h-full flex flex-col">
             <CardHead title="Requests" sub="At a glance, for the current selection"
               info="A quick read of every request in the current selection, broken down by where it sits between draft and execution. Click a row to open exactly those requests." />
@@ -202,6 +251,7 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
                 drillLabel="failed requests" onClick={() => onDrill({ state: 'Failed,Rejected,Invalid,Reinstantiate' })} />
             </CardBody>
           </Card>
+          {intentCard}
           {spotlightCard}
         </div>
 
@@ -224,21 +274,6 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
           </Card>
         </div>
 
-        <RankedBreakdown title="By request type" sub="What the queue is made of — new builds against changes to services already live"
-          info="Every request in scope grouped by why it was raised, biggest first, split by where each one stands. Create is new build; Modify, Suspend, Resume, Cease and Re-prove all act on a service that already exists. Click a badge to open that type, or a segment of its bar to open just that slice of it."
-          groups={byIntent} noun={noun} onDrill={onDrill}
-          renderLabel={(i) => <Badge tone={INTENT_TONE[i as OrderIntent]}>{i}</Badge>}
-          labelFor={(i) => i}
-          patchFor={(i, states) => ({ intent: i, state: states })}
-          segmentsFor={(list) => {
-            const c = (...st: OrderState[]) => list.filter((o) => st.includes(o.state)).length
-            return [
-              { label: 'Ready', value: c('Ready'), fill: 'good' as const, states: 'Ready' },
-              { label: 'In progress', value: c('In progress', 'Queued', 'Approved'), fill: 'brand' as const, states: 'In progress,Queued,Approved' },
-              { label: 'Waiting', value: c('Draft', 'Planned', 'Validated'), fill: 'none' as const, states: 'Draft,Planned,Validated' },
-              { label: 'Failed', value: c('Failed', 'Rejected', 'Invalid', 'Reinstantiate'), fill: 'crit' as const, states: 'Failed,Rejected,Invalid,Reinstantiate' },
-            ]
-          }} />
 
         <RankedBreakdown title="By category" sub="Every category in scope, split by where it stands — click a badge or a segment to open exactly those"
           info="Every service category in the current selection, biggest first, split into Ready, In progress, Waiting and Failed. Click the count to open the whole category, or a segment of its bar to open just that slice."
@@ -268,7 +303,7 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Card className="h-full flex flex-col">
           <CardHead title="Execution" sub="At a glance, for the current selection"
             info="A quick read of everything in the current selection that has moved into execution — what's finished, what's running, and what failed. Click a row to open exactly those orders." />
@@ -286,23 +321,10 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
               drillLabel="failed orders" onClick={() => onDrill({ state: 'Failed,Rejected,Reinstantiate' })} />
           </CardBody>
         </Card>
+        {intentCard}
         {spotlightCard}
       </div>
 
-      <RankedBreakdown title="By request type" sub="What execution is working on — new builds against changes to services already live"
-        info="Everything in execution grouped by why it was raised, biggest first, split by where each one stands. Create is new build; Modify, Suspend, Resume, Cease and Re-prove all act on a service that already exists. Click a badge to open that type, or a segment of its bar to open just that slice of it."
-        groups={byIntent} noun={noun} onDrill={onDrill}
-        renderLabel={(i) => <Badge tone={INTENT_TONE[i as OrderIntent]}>{i}</Badge>}
-        labelFor={(i) => i}
-        patchFor={(i, states) => ({ intent: i, state: states })}
-        segmentsFor={(list) => {
-          const c = (...st: OrderState[]) => list.filter((o) => st.includes(o.state)).length
-          return [
-            { label: 'Ready', value: c('Ready'), fill: 'good' as const, states: 'Ready' },
-            { label: 'In progress', value: c('In progress', 'Queued', 'Approved'), fill: 'brand' as const, states: 'In progress,Queued,Approved' },
-            { label: 'Failed', value: c('Failed', 'Rejected', 'Reinstantiate'), fill: 'crit' as const, states: 'Failed,Rejected,Reinstantiate' },
-          ]
-        }} />
 
       <RankedBreakdown title="By category" sub="Every category in scope, split by where it stands — click a badge or a segment to open exactly those"
         info="Every service category in the current selection, biggest first, split into Ready, In progress and Failed. Click the count to open the whole category, or a segment of its bar to open just that slice."

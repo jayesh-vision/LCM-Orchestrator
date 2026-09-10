@@ -234,7 +234,13 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     const boundEps = bindEndpoints(eps, intent.category, intent.type, subtype, workflows, params, bandwidth)
 
     const ageDays = between(0, 42)
+    /* A real queue is not raised at the same minute every day. Give each
+       request a working-hours time of day, clamped to the past, so the
+       Created / Modified column reads as a record of when work arrived
+       rather than as the moment this fixture was generated. */
     const created = new Date(now - ageDays * 86400000)
+    created.setHours(between(8, 20), between(0, 59), 0, 0)
+    if (created.getTime() > now) created.setTime(now - between(5, 180) * 60000)
 
     out.push({
       id: `ORD-2026-${pad(4417 - i * 2, 6)}`,
@@ -254,7 +260,15 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
       endpoints: boundEps,
       params,
       createdAt: created.toISOString(),
-      updatedAt: new Date(now - between(0, ageDays) * 86400000).toISOString(),
+      /* A Draft has not been acted on by definition — nothing has run
+         against it and no decision has been taken — so its last-modified
+         time is when it was raised. Everything past Draft has at least
+         cleared pre-validation, so it really was touched after creation. */
+      /* Derived from `created`, never independently of it — a record
+         cannot have been modified before it existed, and the column
+         above compares the two to decide whether to say so. */
+      updatedAt: state === 'Draft' ? created.toISOString()
+        : new Date(Math.min(now, created.getTime() + between(1, Math.max(1, ageDays * 24)) * 3600000)).toISOString(),
       ageDays,
       owner: pick(OWNERS),
       waitingOn: WAITING[state],
@@ -369,7 +383,13 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     const boundEps = bindEndpoints(eps, intent.category, intent.type, '', workflows, params, bandwidth)
 
     const ageDays = between(0, 30)
+    /* A real queue is not raised at the same minute every day. Give each
+       request a working-hours time of day, clamped to the past, so the
+       Created / Modified column reads as a record of when work arrived
+       rather than as the moment this fixture was generated. */
     const created = new Date(now - ageDays * 86400000)
+    created.setHours(between(8, 20), between(0, 59), 0, 0)
+    if (created.getTime() > now) created.setTime(now - between(5, 180) * 60000)
 
     out.push({
       id: `ORD-2026-${pad(6000 - i * 2, 6)}`,
@@ -389,7 +409,15 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
       endpoints: boundEps,
       params,
       createdAt: created.toISOString(),
-      updatedAt: new Date(now - between(0, ageDays) * 86400000).toISOString(),
+      /* A Draft has not been acted on by definition — nothing has run
+         against it and no decision has been taken — so its last-modified
+         time is when it was raised. Everything past Draft has at least
+         cleared pre-validation, so it really was touched after creation. */
+      /* Derived from `created`, never independently of it — a record
+         cannot have been modified before it existed, and the column
+         above compares the two to decide whether to say so. */
+      updatedAt: state === 'Draft' ? created.toISOString()
+        : new Date(Math.min(now, created.getTime() + between(1, Math.max(1, ageDays * 24)) * 3600000)).toISOString(),
       ageDays,
       owner: pick(OWNERS),
       waitingOn: WAITING[state],
@@ -437,7 +465,13 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     const boundEps = bindEndpoints(eps, intent.category, intent.type, '', workflows, params, bandwidth)
 
     const ageDays = between(0, 30)
+    /* A real queue is not raised at the same minute every day. Give each
+       request a working-hours time of day, clamped to the past, so the
+       Created / Modified column reads as a record of when work arrived
+       rather than as the moment this fixture was generated. */
     const created = new Date(now - ageDays * 86400000)
+    created.setHours(between(8, 20), between(0, 59), 0, 0)
+    if (created.getTime() > now) created.setTime(now - between(5, 180) * 60000)
 
     out.push({
       id: `ORD-2026-${pad(7000 - i * 2, 6)}`,
@@ -457,7 +491,15 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
       endpoints: boundEps,
       params,
       createdAt: created.toISOString(),
-      updatedAt: new Date(now - between(0, ageDays) * 86400000).toISOString(),
+      /* A Draft has not been acted on by definition — nothing has run
+         against it and no decision has been taken — so its last-modified
+         time is when it was raised. Everything past Draft has at least
+         cleared pre-validation, so it really was touched after creation. */
+      /* Derived from `created`, never independently of it — a record
+         cannot have been modified before it existed, and the column
+         above compares the two to decide whether to say so. */
+      updatedAt: state === 'Draft' ? created.toISOString()
+        : new Date(Math.min(now, created.getTime() + between(1, Math.max(1, ageDays * 24)) * 3600000)).toISOString(),
       ageDays,
       owner: pick(OWNERS),
       waitingOn: WAITING[state],
@@ -505,7 +547,13 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     const boundEps = bindEndpoints(eps, intent.category, intent.type, '', workflows, params, bandwidth)
 
     const ageDays = between(0, 30)
+    /* A real queue is not raised at the same minute every day. Give each
+       request a working-hours time of day, clamped to the past, so the
+       Created / Modified column reads as a record of when work arrived
+       rather than as the moment this fixture was generated. */
     const created = new Date(now - ageDays * 86400000)
+    created.setHours(between(8, 20), between(0, 59), 0, 0)
+    if (created.getTime() > now) created.setTime(now - between(5, 180) * 60000)
 
     out.push({
       id: `ORD-2026-${pad(8000 - i * 2, 6)}`,
@@ -525,7 +573,15 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
       endpoints: boundEps,
       params,
       createdAt: created.toISOString(),
-      updatedAt: new Date(now - between(0, ageDays) * 86400000).toISOString(),
+      /* A Draft has not been acted on by definition — nothing has run
+         against it and no decision has been taken — so its last-modified
+         time is when it was raised. Everything past Draft has at least
+         cleared pre-validation, so it really was touched after creation. */
+      /* Derived from `created`, never independently of it — a record
+         cannot have been modified before it existed, and the column
+         above compares the two to decide whether to say so. */
+      updatedAt: state === 'Draft' ? created.toISOString()
+        : new Date(Math.min(now, created.getTime() + between(1, Math.max(1, ageDays * 24)) * 3600000)).toISOString(),
       ageDays,
       owner: pick(OWNERS),
       waitingOn: WAITING[state],
@@ -579,7 +635,13 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     const boundEps = bindEndpoints(eps, intent.category, intent.type, '', workflows, params, bandwidth)
 
     const ageDays = between(0, 30)
+    /* A real queue is not raised at the same minute every day. Give each
+       request a working-hours time of day, clamped to the past, so the
+       Created / Modified column reads as a record of when work arrived
+       rather than as the moment this fixture was generated. */
     const created = new Date(now - ageDays * 86400000)
+    created.setHours(between(8, 20), between(0, 59), 0, 0)
+    if (created.getTime() > now) created.setTime(now - between(5, 180) * 60000)
 
     out.push({
       id: `ORD-2026-${pad(9000 - i * 2, 6)}`,
@@ -599,7 +661,15 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
       endpoints: boundEps,
       params,
       createdAt: created.toISOString(),
-      updatedAt: new Date(now - between(0, ageDays) * 86400000).toISOString(),
+      /* A Draft has not been acted on by definition — nothing has run
+         against it and no decision has been taken — so its last-modified
+         time is when it was raised. Everything past Draft has at least
+         cleared pre-validation, so it really was touched after creation. */
+      /* Derived from `created`, never independently of it — a record
+         cannot have been modified before it existed, and the column
+         above compares the two to decide whether to say so. */
+      updatedAt: state === 'Draft' ? created.toISOString()
+        : new Date(Math.min(now, created.getTime() + between(1, Math.max(1, ageDays * 24)) * 3600000)).toISOString(),
       ageDays,
       owner: pick(OWNERS),
       waitingOn: WAITING[state],

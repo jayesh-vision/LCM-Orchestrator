@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
 import { BarChart3, Eye, ListChecks, PlayCircle, ShieldCheck, Workflow } from 'lucide-react'
 import { useStore } from '@/store/useStore'
@@ -7,7 +7,7 @@ import type { Category, Domain, Order, OrderIntent, OrderState, Vendor } from '@
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Button, CellMain, CellSub, Chip, DataTable, Drawer,
-  FieldDropdown, FilterBanner, KV, Kebab, Modal, Mono, Note, Progress, SegmentedToggle, type Column,
+  FieldDropdown, FilterBanner, KV, Kebab, Modal, Mono, Note, Progress, SegmentedToggle, stampColumn, type Column,
 } from '@/components/ui'
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { VENDOR_LABEL } from '@/data/workflows'
@@ -27,6 +27,7 @@ export default function ProvisioningExecution() {
   const retryOrder = useStore((s) => s.retryOrder)
   const pushToast = useStore((s) => s.pushToast)
   const nav = useNavigate()
+  const loc = useLocation()
 
   const [q, setQ] = useQueryState('q', '')
   const [domain, setDomain] = useQueryState<Domain | 'All'>('domain', 'All')
@@ -126,7 +127,17 @@ export default function ProvisioningExecution() {
 
   const n = (s: OrderState) => pool.filter((o) => o.state === s).length
 
-  const runCredentialsThenExecute = (o: Order) => { setCreds(null); startRun(o.id); nav(`/execution/${o.id}?tab=lifecycle`) }
+  /* Carried into every row detail this grid opens, so its Back button returns
+     to this grid with the same filters still applied and on the Listing tab
+     it was clicked from — rather than to a bare path that reopens the
+     default view and drops the selection. */
+  const fromList = useMemo(() => {
+    const p = new URLSearchParams(loc.search)
+    p.set('view', 'listing')
+    return { state: { fromList: `?${p}` } }
+  }, [loc.search])
+
+  const runCredentialsThenExecute = (o: Order) => { setCreds(null); startRun(o.id); nav(`/execution/${o.id}?tab=lifecycle`, fromList) }
 
   const columns: Column<Order>[] = [
     {
@@ -191,13 +202,14 @@ export default function ProvisioningExecution() {
     },
     { key: 'runs', header: 'Runs', align: 'center', width: '70px', sortValue: (r) => new Set(runsForOrder(r.id).map((x) => x.attempt)).size, render: (r) => new Set(runsForOrder(r.id).map((x) => x.attempt)).size },
     { key: 'age', header: 'Age', align: 'right', width: '74px', sortValue: (r) => r.ageDays, render: (r) => ageLabel(r.ageDays) },
+    stampColumn<Order>((r) => r.createdAt, (r) => r.updatedAt),
     {
       key: 'act', header: '', width: '48px',
       render: (r) => (
         <Kebab items={[
           { label: 'View details', icon: Eye, onClick: () => setVerify(r) },
-          { label: 'Life cycle operation', icon: Workflow, onClick: () => nav(`/execution/${r.id}?tab=lifecycle`) },
-          { label: 'View jobs', icon: ListChecks, onClick: () => nav(`/execution/${r.id}?tab=runs`) },
+          { label: 'Life cycle operation', icon: Workflow, onClick: () => nav(`/execution/${r.id}?tab=lifecycle`, fromList) },
+          { label: 'View jobs', icon: ListChecks, onClick: () => nav(`/execution/${r.id}?tab=runs`, fromList) },
           ...(r.state === 'Approved' ? [{ label: 'Validate credentials & execute', icon: ShieldCheck, onClick: () => setCreds(r) }] : []),
           ...(r.state === 'Failed' ? [{ label: 'Retry', icon: PlayCircle, onClick: () => retryOrder(r.id) }] : []),
         ]} />
@@ -240,7 +252,7 @@ export default function ProvisioningExecution() {
           <div ref={resultsRef} />
           <DataTable
             rows={ranked} total={pool.length} columns={columns} pageSize={12}
-            onRowClick={(r) => nav(`/execution/${r.id}?tab=lifecycle`)}
+            onRowClick={(r) => nav(`/execution/${r.id}?tab=lifecycle`, fromList)}
             toolbar={{
               search: { value: q, onChange: setQ, placeholder: 'Name, Code, Model' },
               /* Domain, Vendor and Category are common enough to earn their own

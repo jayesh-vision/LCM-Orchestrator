@@ -7,7 +7,7 @@ import type { Category, Conformance, Domain, Order, Service, ServiceState } from
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Card, CardBody, CardHead, CellMain, CellSub, DataTable,
-  FieldDropdown, FilterBanner, Kebab, Mono, Stat, type Column,
+  FieldDropdown, FilterBanner, Kebab, Mono, Stat, stampColumn, type Column,
 } from '@/components/ui'
 import { BarList, CHART, Donut, FILL, type FillKey } from '@/components/charts'
 import { CATEGORY_TONE, CONFORMANCE_TONE, inr, relTime, SERVICE_TONE } from '@/lib/format'
@@ -18,6 +18,26 @@ import { CeaseServiceModal, ModifyServiceDrawer } from '@/components/ServiceChan
 const STATES: ServiceState[] = ['Live', 'Activating', 'Degraded', 'Suspended', 'Ceased']
 const CONFS: Conformance[] = ['Conformant', 'Drifted', 'Never proven', 'Ghost', 'Not checked']
 const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
+
+/**
+ * When this service was last changed. Unlike an order, a service carries no
+ * `updatedAt` of its own — and it shouldn't, because a service is only ever
+ * changed by something: an executed modify, suspend, resume or cease, or an
+ * out-of-band edit the platform detected. Every one of those writes a record
+ * into `history`, so the latest of those records IS the modified time, and
+ * deriving it here means the column can never disagree with the change log on
+ * the service's own detail page.
+ *
+ * Scanned rather than read off `history[0]` — the store prepends, so index 0
+ * is newest for anything raised in-session, but the seeded history is not
+ * guaranteed to be sorted and one unsorted row would silently show the wrong
+ * date.
+ */
+function lastChangedAt(s: Service): string | undefined {
+  let latest: string | undefined
+  s.history.forEach((h) => { if (!latest || Date.parse(h.at) > Date.parse(latest)) latest = h.at })
+  return latest
+}
 
 export default function ServiceInventory() {
   const services = useStore((s) => s.services)
@@ -192,6 +212,7 @@ export default function ServiceInventory() {
     },
     { key: 'proven', header: 'Last proven', width: '116px', sortValue: (r) => r.lastProvenAt ?? '', render: (r) => <span className="text-ink-3">{relTime(r.lastProvenAt)}</span> },
     { key: 'age', header: 'Age', align: 'right', width: '86px', sortValue: (r) => new Date(r.liveSince).getTime(), render: (r) => r.ageLabel },
+    stampColumn<Service>((r) => r.liveSince, (r) => lastChangedAt(r)),
     {
       key: 'act', header: '', width: '48px',
       render: (r) => (
