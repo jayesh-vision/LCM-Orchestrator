@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
-import { Activity, Boxes, ChevronRight, Download, Eye, Ghost, GitBranch, GitCompare, Plus, RefreshCcw, ShieldCheck, ShieldQuestion, XCircle } from 'lucide-react'
+import { Activity, Boxes, ChevronRight, Eye, Ghost, GitBranch, GitCompare, RefreshCcw, ShieldCheck, ShieldQuestion, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { Category, Conformance, Domain, Order, Service, ServiceState } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
@@ -372,11 +372,6 @@ export default function ServiceInventory() {
           ],
           onResetFilters: clear,
           onRefresh: () => pushToast('info', 'Inventory refreshed.'),
-          actions: [
-            { label: 'New network service', icon: Plus, onClick: () => nav('/requests/new') },
-            { label: 'Export to CSV', icon: Download, onClick: () => pushToast('info', 'Export queued — the file will appear in Reports.') },
-            { label: 'Bulk re-prove shown', icon: RefreshCcw, onClick: () => { filtered.slice(0, 25).forEach((s) => reprove(s.id)); pushToast('good', `Re-prove queued for ${Math.min(25, filtered.length)} services.`) } },
-          ],
         }}
       />
     </>

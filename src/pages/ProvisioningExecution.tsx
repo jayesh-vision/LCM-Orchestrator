@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
 import { BarChart3, Eye, ListChecks, PlayCircle, ShieldCheck, Workflow } from 'lucide-react'
 import { useStore } from '@/store/useStore'
-import type { Category, Domain, Order, OrderState, Vendor } from '@/types'
+import type { Category, Domain, Order, OrderIntent, OrderState, Vendor } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Button, CellMain, CellSub, DataTable, Drawer,
@@ -34,6 +34,7 @@ export default function ProvisioningExecution() {
   const [state, setState] = useQueryState<OrderState | 'All' | string>('state', 'All')
   const stateList = state === 'All' ? [] : state.split(',')
   const [vendor, setVendor] = useQueryState<Vendor | 'All'>('vendor', 'All')
+  const [intent, setIntent] = useQueryState<OrderIntent | 'All'>('intent', 'All')
   /* Independent name/code/model filters for the popover — separate from
      the toolbar's broad `q` search box, which still matches across all
      three at once for a quick look-up. */
@@ -42,7 +43,7 @@ export default function ProvisioningExecution() {
   const [qmodel, setQmodel] = useQueryState('model', '')
   const [view, setView] = useQueryState<'listing' | 'insights'>('view', 'listing')
   const patch = useQueryPatch()
-  const clear = useClearQuery(['q', 'domain', 'cat', 'state', 'vendor', 'name', 'code', 'model'])
+  const clear = useClearQuery(['q', 'domain', 'cat', 'state', 'vendor', 'intent', 'name', 'code', 'model'])
   const domainCats = domain === 'All' ? CATEGORIES : CATEGORIES_BY_DOMAIN[domain]
   const setDomainScoped = (next: Domain | 'All') => {
     setDomain(next)
@@ -73,6 +74,7 @@ export default function ProvisioningExecution() {
     if (cat !== 'All' && o.category !== cat) return false
     if (stateList.length && !stateList.includes(o.state)) return false
     if (vendor !== 'All' && o.endpoints[0]?.vendor !== vendor) return false
+    if (intent !== 'All' && o.intent !== intent) return false
     if (qname && !o.name.toLowerCase().includes(qname.toLowerCase())) return false
     if (qcode && !o.code.toLowerCase().includes(qcode.toLowerCase())) return false
     if (qmodel && !o.endpoints.some((e) => e.deviceName.toLowerCase().includes(qmodel.toLowerCase()))) return false
@@ -82,7 +84,7 @@ export default function ProvisioningExecution() {
         || o.endpoints.some((e) => e.deviceName.toLowerCase().includes(t)))) return false
     }
     return true
-  }), [pool, domain, cat, state, vendor, qname, qcode, qmodel, q]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [pool, domain, cat, state, vendor, intent, qname, qcode, qmodel, q]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Fully-traceable orders first — see ProvisioningRequests for the reasoning. */
   const ranked = useMemo(() => {
@@ -98,6 +100,7 @@ export default function ProvisioningExecution() {
     if (domain !== 'All' && domainOf(o.category) !== domain) return false
     if (cat !== 'All' && o.category !== cat) return false
     if (vendor !== 'All' && o.endpoints[0]?.vendor !== vendor) return false
+    if (intent !== 'All' && o.intent !== intent) return false
     if (qname && !o.name.toLowerCase().includes(qname.toLowerCase())) return false
     if (qcode && !o.code.toLowerCase().includes(qcode.toLowerCase())) return false
     if (qmodel && !o.endpoints.some((e) => e.deviceName.toLowerCase().includes(qmodel.toLowerCase()))) return false
@@ -107,7 +110,7 @@ export default function ProvisioningExecution() {
         || o.endpoints.some((e) => e.deviceName.toLowerCase().includes(t)))) return false
     }
     return true
-  }), [pool, domain, cat, vendor, qname, qcode, qmodel, q]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [pool, domain, cat, vendor, intent, qname, qcode, qmodel, q]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const n = (s: OrderState) => pool.filter((o) => o.state === s).length
 
@@ -209,6 +212,7 @@ export default function ProvisioningExecution() {
         count={filtered.length} noun="requests" onClear={clear}
         filters={[
           ...(state !== 'All' ? [{ key: 'state', label: 'Status', value: stateList.join(' or '), onRemove: () => setState('All') }] : []),
+          ...(intent !== 'All' ? [{ key: 'intent', label: 'Request type', value: intent, onRemove: () => setIntent('All') }] : []),
           ...(qname ? [{ key: 'name', label: 'Name', value: qname, onRemove: () => setQname('') }] : []),
           ...(qcode ? [{ key: 'code', label: 'Code', value: qcode, onRemove: () => setQcode('') }] : []),
           ...(qmodel ? [{ key: 'model', label: 'Model', value: qmodel, onRemove: () => setQmodel('') }] : []),
@@ -245,6 +249,10 @@ export default function ProvisioningExecution() {
                     ...EXEC_STATES.filter((st) => n(st) > 0).map((st) => ({ value: st, label: st, count: n(st) })),
                     { value: 'Approved,Queued', label: 'Ready to run' },
                   ] },
+                { key: 'intent', label: 'Request type', value: intent, onChange: (v) => setIntent(v as OrderIntent | 'All'),
+                  options: (['Create', 'Modify', 'Suspend', 'Resume', 'Cease', 'Re-prove'] as OrderIntent[])
+                    .filter((i) => pool.some((o) => o.intent === i))
+                    .map((i) => ({ value: i, label: i, count: pool.filter((o) => o.intent === i).length })) },
                 { key: 'name', label: 'Name', type: 'text', value: qname, onChange: setQname },
                 { key: 'code', label: 'Code', type: 'text', value: qcode, onChange: setQcode },
                 { key: 'model', label: 'Model', type: 'text', value: qmodel, onChange: setQmodel },
