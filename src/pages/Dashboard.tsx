@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle, Boxes, Cable, CheckCircle2, ClipboardList, Clock, HelpCircle,
-  PlayCircle, RadioTower, Router, Wifi, Workflow as WorkflowIcon, XCircle,
+  MinusCircle, PlayCircle, RadioTower, Router, Wifi, Workflow as WorkflowIcon, XCircle,
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { Conformance, Domain, Order, OrderState } from '@/types'
@@ -11,6 +11,7 @@ import { Badge, Button, Card, CardBody, CardHead, InfoTip, Mono, Progress, StatR
 import { Donut, ColumnChart, SOFT, StackedBar, StackedTrendChart, TrendChart } from '@/components/charts'
 import { CPE_VENDORS, OPTICAL_VENDORS, RADIO_VENDORS, ROUTER_VENDORS, SWITCH_VENDORS, VNF_VENDORS } from '@/data/catalog'
 import { CATEGORY_TONE, relTime } from '@/lib/format'
+import { CONFORMANCE_BLURB, CONFORMANCE_ORDER, conformanceBreakdown } from '@/lib/conformance'
 
 const DAY = 86400000
 const CATS = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF'] as const
@@ -36,23 +37,23 @@ const DOMAIN_CHIP_CLS: Record<Domain, string> = {
    intent. The other half of the LCM story the request funnel doesn't show:
    Requests raise the order, Workflows execute it, but only this closes the
    loop on whether the result still holds. */
-const CONF_ORDER: Conformance[] = ['Conformant', 'Drifted', 'Never proven', 'Ghost']
-const CONF_ICON: Record<string, typeof CheckCircle2> = { Conformant: CheckCircle2, Drifted: AlertTriangle, 'Never proven': HelpCircle, Ghost: XCircle }
-const CONF_COLOR: Record<string, string> = { Conformant: SOFT.good, Drifted: SOFT.warn, 'Never proven': SOFT.none, Ghost: SOFT.crit }
-const CONF_CHIP_CLS: Record<string, string> = {
+/* The verdicts, their counts and their wording all come from lib/conformance
+   so this card and Service Inventory can never report the base differently —
+   which is exactly what they used to do. */
+const CONF_ICON: Record<Conformance, typeof CheckCircle2> = {
+  Conformant: CheckCircle2, Drifted: AlertTriangle, 'Never proven': HelpCircle,
+  Ghost: XCircle, 'Not checked': MinusCircle,
+}
+const CONF_COLOR: Record<Conformance, string> = {
+  Conformant: SOFT.good, Drifted: SOFT.warn, 'Never proven': SOFT.none,
+  Ghost: SOFT.crit, 'Not checked': SOFT.none,
+}
+const CONF_CHIP_CLS: Record<Conformance, string> = {
   Conformant: 'bg-[#10b981]/10 text-[#10b981]',
   Drifted: 'bg-[#f59e0b]/10 text-[#f59e0b]',
   'Never proven': 'bg-[#9ca3af]/10 text-[#6b7280]',
   Ghost: 'bg-[#ef4444]/10 text-[#ef4444]',
-}
-/* Kept short on purpose — this card is half-width (unlike the full-width
-   domain card's blurbs), so the row has roughly half the horizontal room
-   before `truncate` starts clipping it. */
-const CONF_BLURB: Record<string, string> = {
-  Conformant: 'Matches the intent exactly.',
-  Drifted: 'Changed since it was last proven.',
-  'Never proven': 'Never independently verified.',
-  Ghost: 'No configuration on the device.',
+  'Not checked': 'bg-[#9ca3af]/10 text-[#6b7280]',
 }
 
 /** Count per calendar day over the last `days`, oldest first. */
@@ -91,12 +92,9 @@ export default function Dashboard() {
   const coverageGaps = intents.filter((i) => !workflows.some((w) => w.intentId === i.id && w.state === 'Active')).length
 
   /* ---- service health: does what's live still match its own intent? ---- */
-  const confCounts = useMemo(() => {
-    const out: Record<string, number> = { Conformant: 0, Drifted: 0, 'Never proven': 0, Ghost: 0 }
-    services.forEach((s) => { if (s.conformance in out) out[s.conformance] += 1 })
-    return out
-  }, [services])
-  const confTotal = CONF_ORDER.reduce((a, c) => a + confCounts[c], 0)
+  const health = useMemo(() => conformanceBreakdown(services), [services])
+  const confCounts = health.counts
+  const confTotal = health.total
   const toRequests = (state?: string, cat?: string, domain?: string) => {
     const p = new URLSearchParams()
     if (state) p.set('state', state)
@@ -254,14 +252,14 @@ export default function Dashboard() {
           <CardBody className="vw-flex vw-items-center vw-gap-6 vw-wrap lg:flex-nowrap">
             <div className="shrink-0 w-full flex justify-center lg:w-auto lg:justify-start">
               <Donut size={168} total={confTotal}
-                segments={CONF_ORDER.map((c) => ({
+                segments={CONFORMANCE_ORDER.map((c) => ({
                   label: c, value: confCounts[c], fill: 'brand', color: CONF_COLOR[c],
                   onClick: () => nav(`/inventory?conf=${encodeURIComponent(c)}`),
                 }))}
               />
             </div>
             <div className="grid gap-2 flex-1 min-w-0 w-full">
-              {CONF_ORDER.map((c) => {
+              {CONFORMANCE_ORDER.map((c) => {
                 const share = Math.round((confCounts[c] / Math.max(1, confTotal)) * 100)
                 const Icon = CONF_ICON[c]
                 return (
@@ -281,7 +279,7 @@ export default function Dashboard() {
                           </span>
                         </span>
                         <Progress value={share} color={CONF_COLOR[c]} className="mt-1.5" />
-                        <span className="vw-card-activity-value block mt-1 truncate">{CONF_BLURB[c]}</span>
+                        <span className="vw-card-activity-value block mt-1 truncate">{CONFORMANCE_BLURB[c]}</span>
                       </span>
                     </span>
                   </button>

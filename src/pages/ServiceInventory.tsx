@@ -11,6 +11,7 @@ import {
 } from '@/components/ui'
 import { BarList, CHART, Donut, FILL, type FillKey } from '@/components/charts'
 import { CATEGORY_TONE, CONFORMANCE_TONE, DOMAIN_TONE, inr, relTime, SERVICE_TONE } from '@/lib/format'
+import { CONFORMANCE_ORDER, conformanceBreakdown } from '@/lib/conformance'
 
 const STATES: ServiceState[] = ['Live', 'Activating', 'Degraded', 'Suspended', 'Ceased']
 const CONFS: Conformance[] = ['Conformant', 'Drifted', 'Never proven', 'Ghost', 'Not checked']
@@ -53,12 +54,26 @@ export default function ServiceInventory() {
     [services],
   )
 
-  const confSegs: { label: string; value: number; fill: FillKey; note: string; onClick: () => void }[] = [
-    { label: 'Conformant', value: n.conf('Conformant'), fill: 'good', note: 'device matches intent, proven recently', onClick: () => setConf('Conformant') },
-    { label: 'Drifted', value: n.conf('Drifted'), fill: 'warn', note: 'at least one attribute differs', onClick: () => setConf('Drifted') },
-    { label: 'Never proven', value: n.conf('Never proven') + n.conf('Not checked'), fill: 'none', note: 'configured, never tested end to end', onClick: () => setConf('Never proven') },
-    { label: 'Ghost', value: n.conf('Ghost'), fill: 'crit', note: 'record exists, no configuration', onClick: () => setConf('Ghost') },
-  ]
+  /* Five segments, not four. "Never proven" used to absorb "Not checked" here
+     so the donut would sum to the base — but they mean different things, and
+     the KPI card above counts only the real never-proven figure, so the same
+     page reported two numbers for the same thing. Every verdict now gets its
+     own segment and the total is the whole base by construction. */
+  const health = useMemo(() => conformanceBreakdown(services), [services])
+  const CONF_FILL: Record<Conformance, FillKey> = {
+    Conformant: 'good', Drifted: 'warn', 'Never proven': 'none', Ghost: 'crit', 'Not checked': 'none',
+  }
+  const CONF_NOTE: Record<Conformance, string> = {
+    Conformant: 'device matches intent, proven recently',
+    Drifted: 'at least one attribute differs',
+    'Never proven': 'configured, never tested end to end',
+    Ghost: 'record exists, no configuration',
+    'Not checked': 'ceased or activating — conformance not applicable',
+  }
+  const confSegs: { label: string; value: number; fill: FillKey; note: string; onClick: () => void }[] =
+    CONFORMANCE_ORDER.map((c) => ({
+      label: c, value: health.counts[c], fill: CONF_FILL[c], note: CONF_NOTE[c], onClick: () => setConf(c),
+    }))
 
   const filtered = useMemo(() => services.filter((s) => {
     if (state !== 'All' && s.state !== state) return false
@@ -163,7 +178,7 @@ export default function ServiceInventory() {
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
         <Card className="flex flex-col">
           <CardHead title="Conformance across the base" sub="Each service holds exactly one of these verdicts"
-            info="Compares what each order says the service should be (the intent) with what is actually configured on the devices. Every service holds exactly one verdict — Conformant, Drifted, Never proven or Ghost — so the four counts always add up to the whole base. Click any segment or tile to open those services." />
+            info="Compares what each order says the service should be (the intent) with what is actually configured on the devices. Every service holds exactly one of five verdicts, so the counts always add up to the whole base. Not checked means conformance does not apply — the service is ceased, or still activating — which is different from Never proven, where a live service has simply never been tested. Click any segment or tile to open those services." />
           <CardBody className="flex-1 flex flex-col">
             <div className="flex items-center gap-6 flex-wrap">
               <Donut
