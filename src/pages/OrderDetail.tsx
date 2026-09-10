@@ -8,10 +8,32 @@ import {
   Badge, Button, Card, CardBody, CardHead, CellSub, CodeBlock, Drawer, KV,
   Mono, Note, Progress, Tabs, type Tone,
 } from '@/components/ui'
-import { CATEGORY_TONE, clockTime, dur, ORDER_TONE, relTime, RUN_TONE, TASK_TONE, shortDate } from '@/lib/format'
+import { CATEGORY_TONE, clockTime, dateTime, dur, ORDER_TONE, relTime, RUN_TONE, TASK_TONE, shortDate } from '@/lib/format'
 
 /* Stage kind → chip tone, as the platform colours its stage nodes. */
 const STAGE_KIND_TONE: Record<StageKind, Tone> = { 'Pre validation': 'teal', Configuration: 'info', 'Post validation': 'warn' }
+
+/**
+ * Why this particular attempt was made.
+ *
+ * Every run under one request shares the same reason for existing — that is
+ * the request's intent, and it belongs on the card header, stated once. What
+ * changes row to row is why the platform went back to the device: this was
+ * the first try, or it was a retry, and a retry is only readable as an audit
+ * record if it names what it was retrying after.
+ */
+function attemptReason(group: Run[], r: Run): string {
+  if (r.attempt <= 1) return 'First attempt'
+  const prev = group.find((x) => x.attempt === r.attempt - 1)
+  return prev ? `Retry after ${prev.outcome.toLowerCase()}` : 'Retry'
+}
+
+/** The request's own reason, for the header above each endpoint's attempts. */
+function requestReason(intent: string, delta?: { attribute: string; current: string; requested: string }[]): string {
+  const why = intent === 'Create' ? 'Initial provisioning' : `${intent} request`
+  if (!delta?.length) return why
+  return `${why} · ${delta.map((d) => `${d.attribute} ${d.current} → ${d.requested}`).join(', ')}`
+}
 
 export default function OrderDetail() {
   const { id = '' } = useParams()
@@ -329,7 +351,9 @@ export default function OrderDetail() {
               </div>
               <CardHead
                 title={`Run ${run.attempt} · ${run.workflowId}`}
-                sub={`Started ${relTime(run.startedAt)} · orchestrator clock ${clockTime(run.orchestratorClock)} · device clock ${clockTime(run.deviceClock)} · skew ${(run.clockSkewMs / 1000).toFixed(1)} s`}
+                sub={`${attemptReason(runs, run)} · started ${dateTime(run.startedAt)} (${relTime(run.startedAt)})`
+                  + `${run.endedAt ? `, ended ${clockTime(run.endedAt)}` : ''}`
+                  + ` · orchestrator clock ${clockTime(run.orchestratorClock)} · device clock ${clockTime(run.deviceClock)} · skew ${(run.clockSkewMs / 1000).toFixed(1)} s`}
                 right={
                   <>
                     <Badge tone={RUN_TONE[run.outcome]} dot>{run.outcome}</Badge>
@@ -455,16 +479,16 @@ export default function OrderDetail() {
             <Card key={g.endpoint?.id ?? `unassigned-${gi}`}>
               <CardHead
                 title={g.endpoint ? `${g.role} · ${g.endpoint.mgmtIp}` : g.role}
-                sub={
+                sub={`${requestReason(order.intent, order.delta)} · ${
                   g.runs.length === 1
-                    ? '1 attempt recorded.'
-                    : `${g.runs.length} attempts recorded — provisioning needed more than one try.`
-                }
+                    ? '1 attempt recorded'
+                    : `${g.runs.length} attempts recorded — provisioning needed more than one try`
+                }`}
               />
               <div className="overflow-x-auto">
                 <table className="w-full text-[13px]">
                   <thead><tr>
-                    {['Run', 'Outcome', 'Started', 'Duration', 'Tasks passed', 'Residue', ''].map((h) => (
+                    {['Run', 'Reason', 'Outcome', 'Started', 'Duration', 'Tasks passed', 'Residue', ''].map((h) => (
                       <th key={h} scope="col" className="text-left px-[18px] py-3 border-b border-line text-[12px] font-medium text-ink-3">{h}</th>
                     ))}
                   </tr></thead>
@@ -472,9 +496,19 @@ export default function OrderDetail() {
                     {g.runs.map((r) => (
                       <tr key={r.id} className="border-b border-line-soft last:border-0 hover:bg-plane">
                         <td className="px-[18px] py-3"><Mono className="font-semibold">Run {r.attempt}</Mono></td>
+                        <td className="px-[18px] py-3 text-ink-2 whitespace-nowrap">{attemptReason(g.runs, r)}</td>
                         <td className="px-[18px] py-3"><Badge tone={RUN_TONE[r.outcome]} dot>{r.outcome}</Badge></td>
-                        <td className="px-[18px] py-3 text-ink-2">{relTime(r.startedAt)}</td>
-                        <td className="px-[18px] py-3 font-mono">{dur(r.durationMs)}</td>
+                        {/* Absolute first, relative underneath. "1 h ago" answers
+                            "is this recent"; an audit trail has to answer "when",
+                            and only the timestamp does that. */}
+                        <td className="px-[18px] py-3">
+                          <div className="whitespace-nowrap">{dateTime(r.startedAt)}</div>
+                          <div className="text-[12px] text-ink-3">{relTime(r.startedAt)}</div>
+                        </td>
+                        <td className="px-[18px] py-3">
+                          <div className="font-mono">{dur(r.durationMs)}</div>
+                          <div className="text-[12px] text-ink-3 whitespace-nowrap">{r.endedAt ? `ended ${clockTime(r.endedAt)}` : 'still running'}</div>
+                        </td>
                         <td className="px-[18px] py-3 tnum">{r.tasks.filter((t) => t.state === 'Passed').length} of {r.tasks.length}</td>
                         <td className="px-[18px] py-3 text-ink-3">{r.residue ? r.residue.join('; ') : '—'}</td>
                         <td className="px-[18px] py-3 text-right">
