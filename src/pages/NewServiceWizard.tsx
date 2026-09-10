@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, CheckCircle2, PlayCircle, Pencil, Save } from 'lucide-react'
 import { useStore, type WizardDraft } from '@/store/useStore'
 import { ACCOUNTS, DEVICE_MODELS, SITES, modelsForCategory } from '@/data/catalog'
+import { bindEndpoints } from '@/data/orders'
 import type { Category, Domain, EndpointRole, OrderParamValue } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS } from '@/types'
 import {
@@ -118,6 +119,28 @@ export default function NewServiceWizard() {
     && (intent.topology !== 'Two-ended' || (eps[0].siteCode !== eps[1]?.siteCode))
   const workflowsOk = roles.every((r) => !!workflowByRole[r])
   const valuesOk = params.every((p) => p.value !== '' && p.value !== '—')
+
+  /* What each endpoint's workflow will actually receive — the same
+     derivation `createOrder` uses, run early so Step 3 can show it instead
+     of just asserting it. This is how the answer to "which workflow does
+     this belong to" is verified, not just claimed: some values here come
+     straight from what's typed above (shared), others are derived per
+     endpoint (its own port, or the far end's management IP) regardless of
+     anything entered on this screen. */
+  const previewEndpoints = useMemo(() => {
+    if (!endpointsOk) return []
+    const draftEps = eps.slice(0, endpointCount).map((e) => {
+      const dm = DEVICE_MODELS.find((d) => d.ports.includes(e.port)) ?? DEVICE_MODELS[0]
+      return {
+        id: e.siteCode, role: e.role, siteCode: e.siteCode, deviceName: dm.model, vendor: dm.vendor,
+        mgmtIp: `172.31.33.${20 + eps.indexOf(e) * 80}`, port: e.port,
+      }
+    })
+    const bandwidth = Number(values.bandwidth_mbps ?? intent.params.find((p) => p.name === 'bandwidth_mbps')?.default ?? 100)
+    return bindEndpoints(draftEps, category, intent.type, subtype, workflows, params, bandwidth)
+      .map((ep, i) => ({ ...ep, role: roleOf(i) as EndpointRole, workflowId: workflowByRole[roleOf(i)] }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eps, endpointCount, endpointsOk, category, intent, subtype, workflows, params, values.bandwidth_mbps, workflowByRole])
 
   const problems: string[] = []
   if (!endpointsOk) {
@@ -385,8 +408,9 @@ export default function NewServiceWizard() {
               </div>
               <Note>
                 <b>{intent.params.filter((p) => p.required).length} required</b> · {intent.params.filter((p) => p.fromPool).length} pool-allocated ·
-                every field below is generated from {intent.name}'s parameter definition and applies to the whole service —
-                not to the {roles.join(' or ')} workflow individually.
+                every field below is generated from {intent.name}'s parameter definition and feeds
+                both the {roles.join(' and ')} workflow — see exactly what each one receives under
+                "What each workflow receives" below.
               </Note>
               <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
                 {intent.params.map((p) => {
@@ -441,6 +465,39 @@ export default function NewServiceWizard() {
                   )
                 })}
               </div>
+
+              {previewEndpoints.length > 0 && (
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">
+                    What each workflow receives
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {previewEndpoints.map((ep) => {
+                      const wf = workflows.find((w) => w.id === ep.workflowId)
+                      return (
+                        <div key={ep.role} className="border border-line rounded-lg overflow-hidden">
+                          <div className="px-3.5 py-2.5 border-b border-line-soft bg-plane/60 flex items-center gap-2 min-w-0">
+                            <Badge tone="none" className="shrink-0">{ep.role}</Badge>
+                            <span className="text-[12.5px] font-medium truncate" title={wf?.name}>
+                              {wf ? wf.name : 'no workflow selected'}
+                            </span>
+                          </div>
+                          <table className="w-full text-[12px] table-fixed">
+                            <tbody>
+                              {(ep.params ?? []).map((p) => (
+                                <tr key={p.name} className="border-b border-line-soft last:border-0">
+                                  <td className="w-[38%] px-3.5 py-1.5 font-mono text-ink-3 truncate" title={p.name}>{p.name}</td>
+                                  <td className="w-[62%] px-3.5 py-1.5 font-mono font-medium text-right truncate" title={p.value}>{p.value}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -492,8 +549,8 @@ export default function NewServiceWizard() {
               <div className="flex flex-col gap-4">
                 <div>
                   <div className="flex items-baseline justify-between gap-2 mb-2.5">
-                    <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3">Parameters</div>
-                    <div className="text-[11px] text-ink-3">Shared across every endpoint — not per workflow</div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3">Parameters entered</div>
+                    <div className="text-[11px] text-ink-3">Feeds both workflows below</div>
                   </div>
                   <table className="w-full text-[12.5px] border border-line rounded-lg overflow-hidden">
                     <tbody>
@@ -507,6 +564,37 @@ export default function NewServiceWizard() {
                     </tbody>
                   </table>
                 </div>
+
+                {previewEndpoints.length > 0 && (
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2.5">
+                      What each workflow receives
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {previewEndpoints.map((ep) => {
+                        const wf = workflows.find((w) => w.id === ep.workflowId)
+                        return (
+                          <div key={ep.role} className="border border-line rounded-lg overflow-hidden">
+                            <div className="px-3 py-2 border-b border-line-soft bg-plane/60 flex items-center gap-1.5 min-w-0">
+                              <Badge tone="none" className="shrink-0">{ep.role}</Badge>
+                              <span className="text-[11.5px] font-medium truncate" title={wf?.name}>{wf ? wf.name : 'no workflow selected'}</span>
+                            </div>
+                            <table className="w-full text-[11.5px] table-fixed">
+                              <tbody>
+                                {(ep.params ?? []).map((p) => (
+                                  <tr key={p.name} className="border-b border-line-soft last:border-0">
+                                    <td className="w-[42%] px-3 py-1 font-mono text-ink-3 truncate" title={p.name}>{p.name}</td>
+                                    <td className="w-[58%] px-3 py-1 font-mono font-medium text-right truncate" title={p.value}>{p.value}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
                 {problems.length > 0
                   ? <Note tone="crit"><b>{problems.length} problem(s) block submission.</b><ul className="list-disc pl-5 mt-1.5">{problems.map((p) => <li key={p}>{p}</li>)}</ul></Note>
                   : <Note tone="good"><b>Validation passed.</b> All parameters resolve, endpoints are distinct, and an active workflow is bound to every endpoint.</Note>}
