@@ -239,7 +239,10 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     out.push({
       id: `ORD-2026-${pad(4417 - i * 2, 6)}`,
       code: `NS-${pad(114 + i, 6)}`,
-      name: `${intent.name}${orderIntent !== 'Create' ? ` · ${orderIntent.toLowerCase()}` : ''}`,
+      /* The name says what the service is; the intent says why the request
+         exists. Keeping them apart means the reason is a field that can be
+         sorted and scanned, not a suffix buried at the end of a string. */
+      name: intent.name,
       intent: orderIntent, intentId,
       category: intent.category,
       type: intent.type,
@@ -281,7 +284,7 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
      200 Mbps against an ordered 100. A create still in progress against a
      service that old is a contradiction; a modify reconciling the drift is
      the story the pair actually tells, and completing it clears the drift. */
-  featured.name = 'L2VPN Transparent · modify'
+  featured.name = 'L2VPN Transparent'
   featured.intent = 'Modify'
   featured.delta = [{ attribute: 'Bandwidth', current: '100 Mbps', requested: '200 Mbps' }]
   featured.intentId = 'INT-L2-P2P'
@@ -371,7 +374,10 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     out.push({
       id: `ORD-2026-${pad(6000 - i * 2, 6)}`,
       code: `NS-${pad(600 + i, 6)}`,
-      name: `${intent.name}${orderIntent !== 'Create' ? ` · ${orderIntent.toLowerCase()}` : ''}`,
+      /* The name says what the service is; the intent says why the request
+         exists. Keeping them apart means the reason is a field that can be
+         sorted and scanned, not a suffix buried at the end of a string. */
+      name: intent.name,
       intent: orderIntent, intentId,
       category: intent.category,
       type: intent.type,
@@ -436,7 +442,10 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     out.push({
       id: `ORD-2026-${pad(7000 - i * 2, 6)}`,
       code: `NS-${pad(700 + i, 6)}`,
-      name: `${intent.name}${orderIntent !== 'Create' ? ` · ${orderIntent.toLowerCase()}` : ''}`,
+      /* The name says what the service is; the intent says why the request
+         exists. Keeping them apart means the reason is a field that can be
+         sorted and scanned, not a suffix buried at the end of a string. */
+      name: intent.name,
       intent: orderIntent, intentId,
       category: intent.category,
       type: intent.type,
@@ -501,7 +510,10 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     out.push({
       id: `ORD-2026-${pad(8000 - i * 2, 6)}`,
       code: `NS-${pad(800 + i, 6)}`,
-      name: `${intent.name}${orderIntent !== 'Create' ? ` · ${orderIntent.toLowerCase()}` : ''}`,
+      /* The name says what the service is; the intent says why the request
+         exists. Keeping them apart means the reason is a field that can be
+         sorted and scanned, not a suffix buried at the end of a string. */
+      name: intent.name,
       intent: orderIntent, intentId,
       category: intent.category,
       type: intent.type,
@@ -572,7 +584,10 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     out.push({
       id: `ORD-2026-${pad(9000 - i * 2, 6)}`,
       code: `NS-${pad(900 + i, 6)}`,
-      name: `${intent.name}${orderIntent !== 'Create' ? ` · ${orderIntent.toLowerCase()}` : ''}`,
+      /* The name says what the service is; the intent says why the request
+         exists. Keeping them apart means the reason is a field that can be
+         sorted and scanned, not a suffix buried at the end of a string. */
+      name: intent.name,
       intent: orderIntent, intentId,
       category: intent.category,
       type: intent.type,

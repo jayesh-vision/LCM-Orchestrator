@@ -474,7 +474,7 @@ export const useStore = create<State>((set, get) => ({
     const order: Order = {
       id: `ORD-2026-${pad(4500 + seq, 6)}`,
       code: `NS-${pad(400 + seq, 6)}`,
-      name: `${svc.name} · ${intent.toLowerCase()}`,
+      name: svc.name,
       intent,
       intentId: svc.intentId,
       category: svc.category,

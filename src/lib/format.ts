@@ -1,4 +1,4 @@
-import type { Conformance, OrderState, RunOutcome, ServiceState, TaskState, WorkflowState } from '@/types'
+import type { Conformance, OrderIntent, OrderState, RunOutcome, ServiceState, TaskState, WorkflowState } from '@/types'
 import type { Tone } from '@/components/ui'
 
 export const ORDER_TONE: Record<OrderState, Tone> = {
@@ -49,7 +49,11 @@ export const CATEGORY_TONE: Record<string, Tone> = {
  *  unrelated domain and category isn't ambiguous in context. */
 export const DOMAIN_TONE: Record<string, Tone> = { Transport: 'none', Access: 'warn', Radio: 'info', Fiber: 'teal' }
 
-export const INTENT_TONE: Record<string, Tone> = {
+/* Why a request exists. Create is the only one that builds something new; the
+   rest act on a service already carrying traffic, which is why cease reads as
+   destructive and suspend as a warning. Keyed by OrderIntent rather than
+   string so a new intent cannot be added without choosing a tone for it. */
+export const INTENT_TONE: Record<OrderIntent, Tone> = {
   Create: 'info', Modify: 'plum', Suspend: 'warn', Resume: 'good', Cease: 'crit', 'Re-prove': 'teal',
 }
 

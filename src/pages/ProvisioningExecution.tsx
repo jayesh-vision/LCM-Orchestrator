@@ -11,7 +11,7 @@ import {
 } from '@/components/ui'
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { VENDOR_LABEL } from '@/data/workflows'
-import { ageLabel, CATEGORY_TONE, clockTime, ORDER_TONE, relTime } from '@/lib/format'
+import { ageLabel, CATEGORY_TONE, clockTime, INTENT_TONE, ORDER_TONE, relTime } from '@/lib/format'
 import { byTraceability, orderTrace } from '@/lib/traceability'
 
 const EXEC_STATES: OrderState[] = [
@@ -135,6 +135,20 @@ export default function ProvisioningExecution() {
          two grids read consistently when switching between them. */
       key: 'order', header: 'Request', width: '160px', sortValue: (r) => r.id,
       render: (r) => (<><CellMain><Mono>{r.id}</Mono></CellMain><CellSub>{r.code}</CellSub></>),
+    },
+    {
+      /* Why this request exists, as a field rather than a suffix on the name.
+         Create builds a new service; everything else acts on one that is
+         already carrying traffic — which is the distinction someone scanning
+         this list is actually trying to make. */
+      key: 'intent', header: 'Request type', width: '132px',
+      sortValue: (r) => r.intent,
+      render: (r) => (
+        <>
+          <Badge tone={INTENT_TONE[r.intent]}>{r.intent}</Badge>
+          <CellSub>{r.intent === 'Create' ? 'new build' : 'change request'}</CellSub>
+        </>
+      ),
     },
     {
       key: 'name', header: 'Name', width: '180px', sortValue: (r) => r.name,

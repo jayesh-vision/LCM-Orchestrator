@@ -11,7 +11,7 @@ import {
 } from '@/components/ui'
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { VENDOR_LABEL } from '@/data/workflows'
-import { CATEGORY_TONE, ORDER_TONE } from '@/lib/format'
+import { CATEGORY_TONE, INTENT_TONE, ORDER_TONE } from '@/lib/format'
 import { byTraceability, orderTrace } from '@/lib/traceability'
 
 const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
@@ -139,6 +139,20 @@ export default function ProvisioningRequests() {
       key: 'order', header: 'Request', width: '168px',
       sortValue: (r) => r.id,
       render: (r) => (<><CellMain><Mono>{r.id}</Mono></CellMain><CellSub>{r.code}</CellSub></>),
+    },
+    {
+      /* Why this request exists, as a field rather than a suffix on the name.
+         Create builds a new service; everything else acts on one that is
+         already carrying traffic — which is the distinction someone scanning
+         this list is actually trying to make. */
+      key: 'intent', header: 'Request type', width: '132px',
+      sortValue: (r) => r.intent,
+      render: (r) => (
+        <>
+          <Badge tone={INTENT_TONE[r.intent]}>{r.intent}</Badge>
+          <CellSub>{r.intent === 'Create' ? 'new build' : 'change request'}</CellSub>
+        </>
+      ),
     },
     {
       key: 'name', header: 'Name', width: '190px',
