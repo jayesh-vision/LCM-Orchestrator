@@ -147,7 +147,19 @@ export default function ServiceDetail() {
                 ['Last proven', relTime(svc.lastProvenAt)],
                 ['Live since', shortDate(svc.liveSince)],
                 ['Age', svc.ageLabel],
-                ['Open orders', orders.length ? orders.map((o) => o.id).join(', ') : 'none'],
+                /* Orders are the only reason a service ever changes, so every
+                   one named here opens the request that did it. */
+                ['Open orders', orders.length
+                  ? (
+                    <span className="flex flex-wrap gap-x-2 gap-y-1">
+                      {orders.map((o) => (
+                        <Link key={o.id} to={`/requests/${o.id}`} className="text-brand-600 hover:underline">
+                          <Mono>{o.id}</Mono>
+                        </Link>
+                      ))}
+                    </span>
+                  )
+                  : <span className="text-ink-3">none</span>],
               ]} />
             </CardBody>
           </Card>
@@ -240,7 +252,15 @@ export default function ServiceDetail() {
                 {svc.history.map((h, i) => (
                   <tr key={i} className="border-b border-line-soft last:border-0">
                     <td className="px-[18px] py-3 whitespace-nowrap">{shortDate(h.at)}</td>
-                    <td className="px-[18px] py-3">{h.orderId ? <Mono>{h.orderId}</Mono> : <span className="text-ink-3">none</span>}</td>
+                    {/* An id here always resolves to a request in the system —
+                        anything the platform can't account for carries no id
+                        rather than a dead one, which is what a change made
+                        before this platform, or straight on the device, is. */}
+                    <td className="px-[18px] py-3">
+                      {h.orderId
+                        ? <Link to={`/requests/${h.orderId}`} className="text-brand-600 hover:underline"><Mono>{h.orderId}</Mono></Link>
+                        : <span className="text-ink-3">none</span>}
+                    </td>
                     <td className="px-[18px] py-3">
                       {h.change}
                       {h.outOfBand && <Badge tone="warn" className="ml-2">out of band</Badge>}
