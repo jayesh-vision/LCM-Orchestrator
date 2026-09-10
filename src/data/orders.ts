@@ -276,8 +276,14 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
   const featured = out[0]
   featured.id = 'ORD-2026-004417'
   featured.code = 'NS-000114'
-  featured.name = 'L2VPN Transparent'
-  featured.intent = 'Create'
+  /* A modify, not a create. This order is bound to SVC-L2-018842, which has
+     been live for over two years and has drifted — the device is carrying
+     200 Mbps against an ordered 100. A create still in progress against a
+     service that old is a contradiction; a modify reconciling the drift is
+     the story the pair actually tells, and completing it clears the drift. */
+  featured.name = 'L2VPN Transparent · modify'
+  featured.intent = 'Modify'
+  featured.delta = [{ attribute: 'Bandwidth', current: '100 Mbps', requested: '200 Mbps' }]
   featured.intentId = 'INT-L2-P2P'
   featured.category = 'L2VPN'
   featured.type = 'Transparent'

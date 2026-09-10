@@ -139,7 +139,11 @@ export default function ServiceInventory() {
                 <Mono>{o.id}</Mono>
               </Link>
             </CellMain>
-            <CellSub>{o.intent}</CellSub>
+            {/* The state matters as much as the intent here: a live service
+                with a Modify sitting at Validated has a change waiting on
+                approval, which reads very differently from the order that
+                built it. Showing only the intent invites that misreading. */}
+            <CellSub>{o.intent} · {o.state}</CellSub>
           </>
         )
       },
