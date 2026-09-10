@@ -22,6 +22,10 @@ function editableAttributes(service: Service) {
   return service.attributes.filter((a) => a.source !== 'No source system')
 }
 
+/** Only Bandwidth can be requested through this form today — every other
+ *  attribute is shown for context (current value) but locked, not editable. */
+const MODIFIABLE_ATTRS = new Set(['Bandwidth'])
+
 interface ModifyServiceDrawerProps {
   service: Service | null
   onClose: () => void
@@ -86,14 +90,20 @@ export function ModifyServiceDrawer({ service, onClose }: ModifyServiceDrawerPro
         <div className="flex flex-col gap-4">
           <Note>Enter a new value only for what needs to change. Anything left as-is is not included in the request.</Note>
           <div className="flex flex-col gap-3">
-            {attrs.map((a) => (
-              <Field key={a.name} label={a.name} hint={`Current: ${a.intent}`}>
-                <TextInput
-                  value={values[a.name] ?? ''}
-                  onChange={(e) => setValues((v) => ({ ...v, [a.name]: e.target.value }))}
-                />
-              </Field>
-            ))}
+            {attrs.map((a) => {
+              const editable = MODIFIABLE_ATTRS.has(a.name)
+              return (
+                <Field key={a.name} label={a.name} hint={editable ? `Current: ${a.intent}` : `Current: ${a.intent} · not editable in this form`}>
+                  <TextInput
+                    value={editable ? (values[a.name] ?? '') : a.intent}
+                    readOnly={!editable}
+                    tabIndex={editable ? undefined : -1}
+                    className={editable ? '' : 'bg-plane text-ink-2 cursor-not-allowed'}
+                    onChange={(e) => setValues((v) => ({ ...v, [a.name]: e.target.value }))}
+                  />
+                </Field>
+              )
+            })}
           </div>
           <Field label="Reason for modification" required hint="Recorded on the order and shown on the approval trail.">
             <textarea
