@@ -49,8 +49,7 @@ export default function Reports() {
     },
     {
       key: 'state', header: 'Status', width: '150px', sortValue: (r) => r.state,
-      render: (r) => (<><Badge tone={STATE_TONE[r.state]} dot={r.state === 'Running'}>{r.state}</Badge>
-        {r.failureReason && <CellSub>{r.failureReason}</CellSub>}</>),
+      render: (r) => <Badge tone={STATE_TONE[r.state]} dot={r.state === 'Running'}>{r.state}</Badge>,
     },
     {
       key: 'act', header: '', width: '48px',
