@@ -136,3 +136,20 @@
 .nst-table td .vw-chip { font-weight: 400; min-width: 6rem; justify-content: center; }
 .nst-table td .font-mono { font-size: 0.8125rem; }
 .nst-action-menu-item { font-family: inherit; }
+
+/* Scroll affordance for a capped card body.
+
+   A list clipped at a card's edge looks identical to a list that simply ends,
+   so rows below the fold go unnoticed. This paints a soft shading at whichever
+   edge still has content behind it, with no JS and no resize observers: the
+   first two layers are the card's own background attached `local`, so they
+   scroll away with the content, uncovering the fixed shadow layers beneath at
+   exactly the edges where more remains. */
+.vw-scroll-hint {
+  background:
+    linear-gradient(var(--vw-color-white) 40%, rgba(255, 255, 255, 0)) top / 100% 22px no-repeat local,
+    linear-gradient(rgba(255, 255, 255, 0), var(--vw-color-white) 65%) bottom / 100% 22px no-repeat local,
+    radial-gradient(farthest-side at 50% 0, rgba(15, 23, 42, 0.11), rgba(15, 23, 42, 0)) top / 100% 11px no-repeat,
+    radial-gradient(farthest-side at 50% 100%, rgba(15, 23, 42, 0.11), rgba(15, 23, 42, 0)) bottom / 100% 11px no-repeat;
+  background-color: var(--vw-color-white);
+}

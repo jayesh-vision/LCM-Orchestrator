@@ -75,6 +75,17 @@ export function shortDate(iso?: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+/** Absolute date and time to the minute: "12 Mar 2026, 14:32". Seconds are
+ *  dropped — this is for "when did this record arrive", where the minute is
+ *  the useful unit and the extra two digits only cost column width. */
+export function dateTime(iso?: string): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return `${d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}, `
+    + d.toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit' })
+}
+
 export function clockTime(iso?: string): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })

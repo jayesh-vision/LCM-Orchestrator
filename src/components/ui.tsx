@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, Filter, Info, MoreVertical, RefreshCcw, Search, X } from 'lucide-react'
+/* format.ts only imports `Tone` back from here as a type, so this pair is a
+   type-level cycle that erases at build time, not a runtime one. */
+import { dateTime, relTime } from '@/lib/format'
 
 /* -------------------------------------------------------------- info tip
    A small ⓘ next to a widget's label. Hover, focus or click shows a short
@@ -555,7 +558,13 @@ export function FilterPopover({ fields, onReset, onClose }:
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="nst-surface--raised absolute right-0 top-11 z-50 w-[460px] max-w-[calc(100vw-2rem)] anim-in overflow-hidden" role="dialog" aria-label="Filters" onClick={(e) => e.stopPropagation()}>
+      {/* No `overflow-hidden` here. The option list below is absolutely
+          positioned and is routinely taller than this panel's body, so
+          clipping to the panel cut the list off at the bottom border with no
+          way to reach the rest — it needs to escape the panel the way a
+          native select does. Nothing inside paints into the rounded corners,
+          so there is nothing left for the clip to do. */}
+      <div className="nst-surface--raised absolute right-0 top-11 z-50 w-[460px] max-w-[calc(100vw-2rem)] anim-in" role="dialog" aria-label="Filters" onClick={(e) => e.stopPropagation()}>
         <div className="vw-flex vw-items-center vw-justify-between px-3 pt-2.5 pb-1.5 border-b border-line-soft">
           <span className="vw-card-title-sm">Filters</span>
           <button onClick={onClose} className="nst-icon-btn w-7 h-7 border-0" aria-label="Close filters"><X size={15} /></button>
@@ -596,26 +605,32 @@ export function FilterPopover({ fields, onReset, onClose }:
                       <ChevronDown size={15} className="text-ink-3" />
                     </button>
                     {listOpen && (
-                      <div className="nst-surface--raised absolute left-0 right-0 top-[calc(100%+6px)] z-10 p-1 max-h-[240px] overflow-y-auto anim-in" role="listbox">
-                        <div className="relative mb-1">
+                      /* Column, not one scrolling block: the search box stays
+                         pinned and only the options scroll under it, so
+                         narrowing a long list doesn't first require scrolling
+                         back up to find the box you type into. */
+                      <div className="nst-surface--raised absolute left-0 right-0 top-[calc(100%+6px)] z-20 p-1 anim-in flex flex-col max-h-[min(320px,50vh)]" role="listbox">
+                        <div className="relative mb-1 shrink-0">
                           <input autoFocus className="nst-input has-icon-right w-full border-0 border-b border-line-soft rounded-none focus:ring-0" placeholder="Search"
                             value={q} onChange={(e) => setQ(e.target.value)} />
                           <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none" />
                         </div>
-                        <button role="option" aria-selected={isAll(draft[field.key])}
-                          onClick={() => { setDraft((d) => ({ ...d, [field.key]: 'All' })); setListOpen(false) }}
-                          className={`w-full text-left px-2.5 py-2 rounded-[var(--vw-radius-xs)] vw-value text-[13px] hover:bg-plane ${isAll(draft[field.key]) ? 'bg-plane' : ''}`}>
-                          Any
-                        </button>
-                        {options.map((o) => (
-                          <button key={o.value} role="option" aria-selected={draft[field.key] === o.value}
-                            onClick={() => { setDraft((d) => ({ ...d, [field.key]: o.value })); setListOpen(false) }}
-                            className={`w-full text-left px-2.5 py-2 rounded-[var(--vw-radius-xs)] vw-value text-[13px] vw-flex vw-items-center vw-justify-between hover:bg-plane ${draft[field.key] === o.value ? 'bg-plane' : ''}`}>
-                            {o.label}
-                            {o.count !== undefined && <span className="vw-label tnum">{o.count}</span>}
+                        <div className="min-h-0 overflow-y-auto">
+                          <button role="option" aria-selected={isAll(draft[field.key])}
+                            onClick={() => { setDraft((d) => ({ ...d, [field.key]: 'All' })); setListOpen(false) }}
+                            className={`w-full text-left px-2.5 py-2 rounded-[var(--vw-radius-xs)] vw-value text-[13px] hover:bg-plane ${isAll(draft[field.key]) ? 'bg-plane' : ''}`}>
+                            Any
                           </button>
-                        ))}
-                        {options.length === 0 && <div className="px-3 py-2.5 vw-label">No matches</div>}
+                          {options.map((o) => (
+                            <button key={o.value} role="option" aria-selected={draft[field.key] === o.value}
+                              onClick={() => { setDraft((d) => ({ ...d, [field.key]: o.value })); setListOpen(false) }}
+                              className={`w-full text-left px-2.5 py-2 rounded-[var(--vw-radius-xs)] vw-value text-[13px] vw-flex vw-items-center vw-justify-between hover:bg-plane ${draft[field.key] === o.value ? 'bg-plane' : ''}`}>
+                              {o.label}
+                              {o.count !== undefined && <span className="vw-label tnum">{o.count}</span>}
+                            </button>
+                          ))}
+                          {options.length === 0 && <div className="px-3 py-2.5 vw-label">No matches</div>}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -667,25 +682,29 @@ export function FieldDropdown({ label, value, onChange, options, width = 220 }:
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="nst-surface--raised absolute left-0 top-[calc(100%+6px)] z-50 anim-in p-1 max-h-[280px] overflow-y-auto" style={{ width }} role="listbox" aria-label={label}>
-            <div className="relative mb-1">
+          {/* Same shape as the filter popover's list — search pinned, options
+              scrolling under it — so the two behave identically. */}
+          <div className="nst-surface--raised absolute left-0 top-[calc(100%+6px)] z-50 anim-in p-1 flex flex-col max-h-[min(320px,50vh)]" style={{ width }} role="listbox" aria-label={label}>
+            <div className="relative mb-1 shrink-0">
               <input autoFocus className="nst-input has-icon-right w-full border-0 border-b border-line-soft rounded-none focus:ring-0" placeholder="Search"
                 value={q} onChange={(e) => setQ(e.target.value)} />
               <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none" />
             </div>
-            <button role="option" aria-selected={isAll} onClick={() => { onChange('All'); setOpen(false) }}
-              className={`w-full text-left px-2.5 py-2 rounded-[var(--vw-radius-xs)] vw-value text-[13px] hover:bg-plane ${isAll ? 'bg-plane font-medium' : ''}`}>
-              Any {label.toLowerCase()}
-            </button>
-            {filtered.map((o) => (
-              <button key={o.value} role="option" aria-selected={value === o.value}
-                onClick={() => { onChange(o.value); setOpen(false) }}
-                className={`w-full text-left px-2.5 py-2 rounded-[var(--vw-radius-xs)] vw-value text-[13px] vw-flex vw-items-center vw-justify-between hover:bg-plane ${value === o.value ? 'bg-plane font-medium' : ''}`}>
-                {o.label}
-                {o.count !== undefined && <span className="vw-label tnum">{o.count}</span>}
+            <div className="min-h-0 overflow-y-auto">
+              <button role="option" aria-selected={isAll} onClick={() => { onChange('All'); setOpen(false) }}
+                className={`w-full text-left px-2.5 py-2 rounded-[var(--vw-radius-xs)] vw-value text-[13px] hover:bg-plane ${isAll ? 'bg-plane font-medium' : ''}`}>
+                Any {label.toLowerCase()}
               </button>
-            ))}
-            {filtered.length === 0 && <div className="px-3 py-2.5 vw-label">No matches</div>}
+              {filtered.map((o) => (
+                <button key={o.value} role="option" aria-selected={value === o.value}
+                  onClick={() => { onChange(o.value); setOpen(false) }}
+                  className={`w-full text-left px-2.5 py-2 rounded-[var(--vw-radius-xs)] vw-value text-[13px] vw-flex vw-items-center vw-justify-between hover:bg-plane ${value === o.value ? 'bg-plane font-medium' : ''}`}>
+                  {o.label}
+                  {o.count !== undefined && <span className="vw-label tnum">{o.count}</span>}
+                </button>
+              ))}
+              {filtered.length === 0 && <div className="px-3 py-2.5 vw-label">No matches</div>}
+            </div>
           </div>
         </>
       )}
@@ -863,6 +882,50 @@ export const CellSub = ({ children }: { children: ReactNode }) =>
   <div className="vw-card-activity-value mt-0.5 leading-snug">{children}</div>
 export const Mono = ({ children, className = '' }: { children: ReactNode; className?: string }) =>
   <span className={`font-mono text-[12.5px] ${className}`}>{children}</span>
+
+/**
+ * The last column on every list of records someone can act on: when it first
+ * arrived, and whether anything has happened to it since.
+ *
+ * A factory rather than four hand-written copies, because the wording, the
+ * width, the sort key and the "has this actually changed" test are the same
+ * question on every screen and would drift apart the moment they were typed
+ * out separately. Callers supply only where the two timestamps live on their
+ * own row type — an order carries them directly, a service has to derive the
+ * second from its change history.
+ */
+export function stampColumn<T>(
+  createdOf: (row: T) => string | undefined,
+  modifiedOf: (row: T) => string | undefined,
+  header = 'Created / Modified',
+): Column<T> {
+  return {
+    key: 'stamp',
+    header,
+    width: '172px',
+    /* Sort on the later of the two: the question this column answers when you
+       click it is "what moved most recently", not "what was raised first". */
+    sortValue: (row) => Date.parse(modifiedOf(row) ?? createdOf(row) ?? '') || 0,
+    render: (row) => {
+      const created = createdOf(row)
+      const modified = modifiedOf(row)
+      /* Only call it modified if something happened *after* it was raised.
+         Repeating the creation time on a second line under the label
+         "Modified" would state a change that never happened. */
+      const changed = created && modified && Date.parse(modified) > Date.parse(created)
+      return (
+        <>
+          <CellMain>{dateTime(created)}</CellMain>
+          <CellSub>
+            {changed
+              ? <span title={`Last modified ${dateTime(modified)}`}>Modified {relTime(modified)}</span>
+              : <span className="text-ink-3">Not modified since</span>}
+          </CellSub>
+        </>
+      )
+    },
+  }
+}
 
 /* -------------------------------------------------------------- progress */
 /* Deliberately lighter than the badge palette (--color-good-500 etc, which
