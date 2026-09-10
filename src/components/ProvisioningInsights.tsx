@@ -1,11 +1,11 @@
 import { useMemo, type ReactNode } from 'react'
 import { AlertTriangle, Boxes, CheckCircle2, ClipboardList, Gauge, Globe, PlayCircle, Server, Timer, XCircle } from 'lucide-react'
-import type { Category, Order, OrderState, Run, Vendor } from '@/types'
+import type { Category, Order, OrderIntent, OrderState, Run, Vendor } from '@/types'
 import { domainOf } from '@/types'
 import { Badge, Card, CardBody, CardHead, StatRow, type StatTone } from '@/components/ui'
 import { BarList, ColumnChart, SOFT, StackedBar, TrendChart } from '@/components/charts'
 import { VENDOR_LABEL } from '@/data/workflows'
-import { CATEGORY_TONE, dur } from '@/lib/format'
+import { CATEGORY_TONE, dur, INTENT_TONE } from '@/lib/format'
 
 const DAY = 86400000
 
@@ -71,6 +71,15 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
   const byCategory = useMemo(() => {
     const m = new Map<Category, Order[]>()
     orders.forEach((o) => { if (!m.has(o.category)) m.set(o.category, []); m.get(o.category)!.push(o) })
+    return [...m.entries()].sort((a, b) => b[1].length - a[1].length)
+  }, [orders])
+
+  /* Why the work exists, biggest first. Create is new build; everything else
+     is a change to a service already carrying traffic, and the split between
+     the two says whether this queue is growing the estate or maintaining it. */
+  const byIntent = useMemo(() => {
+    const m = new Map<OrderIntent, Order[]>()
+    orders.forEach((o) => { if (!m.has(o.intent)) m.set(o.intent, []); m.get(o.intent)!.push(o) })
     return [...m.entries()].sort((a, b) => b[1].length - a[1].length)
   }, [orders])
 
@@ -215,6 +224,22 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
           </Card>
         </div>
 
+        <RankedBreakdown title="By request type" sub="What the queue is made of — new builds against changes to services already live"
+          info="Every request in scope grouped by why it was raised, biggest first, split by where each one stands. Create is new build; Modify, Suspend, Resume, Cease and Re-prove all act on a service that already exists. Click a badge to open that type, or a segment of its bar to open just that slice of it."
+          groups={byIntent} noun={noun} onDrill={onDrill}
+          renderLabel={(i) => <Badge tone={INTENT_TONE[i as OrderIntent]}>{i}</Badge>}
+          labelFor={(i) => i}
+          patchFor={(i, states) => ({ intent: i, state: states })}
+          segmentsFor={(list) => {
+            const c = (...st: OrderState[]) => list.filter((o) => st.includes(o.state)).length
+            return [
+              { label: 'Ready', value: c('Ready'), fill: 'good' as const, states: 'Ready' },
+              { label: 'In progress', value: c('In progress', 'Queued', 'Approved'), fill: 'brand' as const, states: 'In progress,Queued,Approved' },
+              { label: 'Waiting', value: c('Draft', 'Planned', 'Validated'), fill: 'none' as const, states: 'Draft,Planned,Validated' },
+              { label: 'Failed', value: c('Failed', 'Rejected', 'Invalid', 'Reinstantiate'), fill: 'crit' as const, states: 'Failed,Rejected,Invalid,Reinstantiate' },
+            ]
+          }} />
+
         <RankedBreakdown title="By category" sub="Every category in scope, split by where it stands — click a badge or a segment to open exactly those"
           info="Every service category in the current selection, biggest first, split into Ready, In progress, Waiting and Failed. Click the count to open the whole category, or a segment of its bar to open just that slice."
           groups={byCategory} noun={noun} onDrill={onDrill}
@@ -263,6 +288,21 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
         </Card>
         {spotlightCard}
       </div>
+
+      <RankedBreakdown title="By request type" sub="What execution is working on — new builds against changes to services already live"
+        info="Everything in execution grouped by why it was raised, biggest first, split by where each one stands. Create is new build; Modify, Suspend, Resume, Cease and Re-prove all act on a service that already exists. Click a badge to open that type, or a segment of its bar to open just that slice of it."
+        groups={byIntent} noun={noun} onDrill={onDrill}
+        renderLabel={(i) => <Badge tone={INTENT_TONE[i as OrderIntent]}>{i}</Badge>}
+        labelFor={(i) => i}
+        patchFor={(i, states) => ({ intent: i, state: states })}
+        segmentsFor={(list) => {
+          const c = (...st: OrderState[]) => list.filter((o) => st.includes(o.state)).length
+          return [
+            { label: 'Ready', value: c('Ready'), fill: 'good' as const, states: 'Ready' },
+            { label: 'In progress', value: c('In progress', 'Queued', 'Approved'), fill: 'brand' as const, states: 'In progress,Queued,Approved' },
+            { label: 'Failed', value: c('Failed', 'Rejected', 'Reinstantiate'), fill: 'crit' as const, states: 'Failed,Rejected,Reinstantiate' },
+          ]
+        }} />
 
       <RankedBreakdown title="By category" sub="Every category in scope, split by where it stands — click a badge or a segment to open exactly those"
         info="Every service category in the current selection, biggest first, split into Ready, In progress and Failed. Click the count to open the whole category, or a segment of its bar to open just that slice."
