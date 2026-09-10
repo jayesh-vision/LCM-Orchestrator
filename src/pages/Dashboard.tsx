@@ -336,6 +336,71 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {/* Both cards below are pinned to the same explicit height and opted
+         out of grid stretch (`self-start`) — two independently-sized `h-full`
+         cards drift out of alignment the moment either one's natural content
+         height changes (a chart's aspect ratio, one more category row), which
+         is exactly what kept happening here. A shared fixed height makes the
+         match permanent instead of a coincidence to re-verify every time. */}
+      <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
+        {/* ---------------- pipeline ---------------- */}
+        <Card className="h-[480px] self-start vw-flex vw-flex-col">
+          <CardHead title="Requests by stage" sub="Where every open request is right now — click a bar to open that list"
+            info="Each bar is one stage of the provisioning pipeline, left to right in the order a request moves through it: Draft → Planned → Validated → Approved → In progress → Ready. Grey stages are pre-approval, blue are actively being worked, green is done and red is failed."
+            right={<Button size="sm" onClick={() => nav('/requests')}>All requests</Button>} />
+          <CardBody className="flex-1 min-h-0 vw-flex vw-flex-col">
+            <ColumnChart height={340}
+              ariaLabel="Requests by stage"
+              data={stages.map((s) => ({
+                label: s.label, color: s.color,
+                value: s.states.reduce((a, st) => a + n(st), 0),
+                onClick: () => nav(s.go),
+              }))}
+            />
+          </CardBody>
+        </Card>
+
+        {/* ---------------- by service type ---------------- */}
+        {/* Same fixed height as "Requests by stage", same opt-out of grid
+           stretch — with 7 categories today (and more to come), an unbounded
+           list would drag its own height past its sibling's regardless of
+           which one is taller. The list scrolls internally instead. */}
+        <Card className="h-[480px] self-start vw-flex vw-flex-col">
+          <CardHead title="By service type" sub="Ready · In progress · Waiting · Failed"
+            info="The same open requests split by service family across every domain. Each bar is segmented by how far along the requests are — click a segment to open exactly those requests. Scrolls if more service types are added." />
+          <CardBody className="vw-flex vw-flex-col vw-gap-lg flex-1 min-h-0 overflow-y-auto">
+            {CATS.map((c) => {
+              const list = orders.filter((o: Order) => o.category === c)
+              const cnt = (...st: OrderState[]) => list.filter((o) => st.includes(o.state)).length
+              const seg = (label: string, value: number, fill: 'good' | 'brand' | 'none' | 'crit', states: string) =>
+                ({ label, value, fill, color: SOFT[fill], onClick: () => nav(toRequests(states, c)) })
+              return (
+                <div key={c}>
+                  <div className="vw-flex vw-items-center vw-justify-between mb-2">
+                    <span className="vw-flex vw-items-center vw-gap-sm">
+                      <Badge tone={CATEGORY_TONE[c]}>{c}</Badge>
+                      <button onClick={() => nav(toRequests(undefined, c))} className="vw-value font-medium tnum hover:text-brand-600"
+                        aria-label={`${list.length} ${c} requests. Open them`}>{list.length} requests</button>
+                    </span>
+                    <span className="vw-label tnum">{cnt('Ready')} ready</span>
+                  </div>
+                  <StackedBar
+                    ariaLabel={`${c} requests by status`}
+                    compact
+                    segments={[
+                      seg('Ready', cnt('Ready'), 'good', 'Ready'),
+                      seg('In progress', cnt('Approved', 'Queued', 'In progress'), 'brand', 'Approved,Queued,In progress'),
+                      seg('Waiting', cnt('Draft', 'Planned', 'Validated'), 'none', 'Draft,Planned,Validated'),
+                      seg('Failed', cnt('Failed', 'Rejected', 'Invalid', 'Reinstantiate'), 'crit', 'Failed,Rejected,Invalid,Reinstantiate'),
+                    ]}
+                  />
+                </div>
+              )
+            })}
+          </CardBody>
+        </Card>
+      </div>
+
       {/* ---------------- by domain ---------------- */}
       <Card>
         <CardHead title="Provisioning by domain" sub="Every request belongs to exactly one domain — click a slice or a row to open it"
@@ -379,67 +444,6 @@ export default function Dashboard() {
           </div>
         </CardBody>
       </Card>
-
-      <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
-        {/* ---------------- pipeline ---------------- */}
-        <Card className="h-full vw-flex vw-flex-col">
-          <CardHead title="Requests by stage" sub="Where every open request is right now — click a bar to open that list"
-            info="Each bar is one stage of the provisioning pipeline, left to right in the order a request moves through it: Draft → Planned → Validated → Approved → In progress → Ready. Grey stages are pre-approval, blue are actively being worked, green is done and red is failed."
-            right={<Button size="sm" onClick={() => nav('/requests')}>All requests</Button>} />
-          <CardBody className="flex-1 min-h-0 vw-flex vw-flex-col">
-            <ColumnChart height={340}
-              ariaLabel="Requests by stage"
-              data={stages.map((s) => ({
-                label: s.label, color: s.color,
-                value: s.states.reduce((a, st) => a + n(st), 0),
-                onClick: () => nav(s.go),
-              }))}
-            />
-          </CardBody>
-        </Card>
-
-        {/* ---------------- by service type ---------------- */}
-        {/* `self-start` instead of `h-full`: this card sizes to its own
-           capped content instead of stretching to match "Requests by
-           stage" — with 7 categories today (and more to come), letting it
-           grow to match its sibling would drag that card's height up with
-           it, which is exactly the whitespace-above-the-chart bug this
-           fixes. The list scrolls internally past 4 rows instead. */}
-        <Card className="vw-flex vw-flex-col self-start">
-          <CardHead title="By service type" sub="Ready · In progress · Waiting · Failed"
-            info="The same open requests split by service family across every domain. Each bar is segmented by how far along the requests are — click a segment to open exactly those requests. Scrolls if more service types are added." />
-          <CardBody className="vw-flex vw-flex-col vw-gap-lg flex-1 min-h-0 max-h-[360px] overflow-y-auto">
-            {CATS.map((c) => {
-              const list = orders.filter((o: Order) => o.category === c)
-              const cnt = (...st: OrderState[]) => list.filter((o) => st.includes(o.state)).length
-              const seg = (label: string, value: number, fill: 'good' | 'brand' | 'none' | 'crit', states: string) =>
-                ({ label, value, fill, color: SOFT[fill], onClick: () => nav(toRequests(states, c)) })
-              return (
-                <div key={c}>
-                  <div className="vw-flex vw-items-center vw-justify-between mb-2">
-                    <span className="vw-flex vw-items-center vw-gap-sm">
-                      <Badge tone={CATEGORY_TONE[c]}>{c}</Badge>
-                      <button onClick={() => nav(toRequests(undefined, c))} className="vw-value font-medium tnum hover:text-brand-600"
-                        aria-label={`${list.length} ${c} requests. Open them`}>{list.length} requests</button>
-                    </span>
-                    <span className="vw-label tnum">{cnt('Ready')} ready</span>
-                  </div>
-                  <StackedBar
-                    ariaLabel={`${c} requests by status`}
-                    compact
-                    segments={[
-                      seg('Ready', cnt('Ready'), 'good', 'Ready'),
-                      seg('In progress', cnt('Approved', 'Queued', 'In progress'), 'brand', 'Approved,Queued,In progress'),
-                      seg('Waiting', cnt('Draft', 'Planned', 'Validated'), 'none', 'Draft,Planned,Validated'),
-                      seg('Failed', cnt('Failed', 'Rejected', 'Invalid', 'Reinstantiate'), 'crit', 'Failed,Rejected,Invalid,Reinstantiate'),
-                    ]}
-                  />
-                </div>
-              )
-            })}
-          </CardBody>
-        </Card>
-      </div>
 
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
         {/* ---------------- trend ---------------- */}
