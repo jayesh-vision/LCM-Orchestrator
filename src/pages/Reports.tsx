@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CalendarClock, CheckCircle2, Download, Eye, FileText, Hourglass, Plus, RotateCcw, Share2, XCircle } from 'lucide-react'
+import { CalendarClock, CheckCircle2, Download, Eye, FileText, Hourglass, Plus, RotateCcw, XCircle } from 'lucide-react'
 import { useQueryState } from '@/lib/useQueryState'
 import { useStore } from '@/store/useStore'
 import type { ReportDef } from '@/types'
@@ -9,12 +9,18 @@ import {
 } from '@/components/ui'
 import { TrendLine } from '@/components/charts'
 import { relTime, shortDate } from '@/lib/format'
+import { downloadReportCsv, type ReportContext } from '@/lib/reportExport'
 
 const STATE_TONE = { Current: 'good', Stale: 'warn', Running: 'info', Failed: 'crit' } as const
 
 export default function Reports() {
   const reports = useStore((s) => s.reports)
+  const services = useStore((s) => s.services)
+  const orders = useStore((s) => s.orders)
+  const pools = useStore((s) => s.pools)
+  const runs = useStore((s) => s.runs)
   const pushToast = useStore((s) => s.pushToast)
+  const ctx: ReportContext = { services, orders, pools, runs }
   const [q, setQ] = useQueryState('q', '')
   const [state, setState] = useQueryState<ReportDef['state'] | 'All'>('state', 'All')
   const [open, setOpen] = useState<ReportDef | null>(null)
@@ -51,9 +57,12 @@ export default function Reports() {
       render: (r) => (
         <Kebab items={[
           { label: 'View details', icon: Eye, onClick: () => setOpen(r) },
-          { label: 'Download', icon: Download, onClick: () => pushToast(r.state === 'Current' ? 'good' : 'warn', r.state === 'Current' ? `${r.name} downloaded.` : `${r.name} downloaded with a stale-data banner.`) },
-          { label: 'Share', icon: Share2, onClick: () => pushToast('info', `Share link created · ${r.audience}`) },
-          { label: 'Re-run now', icon: RotateCcw, onClick: () => pushToast('info', `${r.name} queued.`) },
+          {
+            label: 'Download', icon: Download, onClick: () => {
+              downloadReportCsv(r, ctx)
+              pushToast(r.state === 'Current' ? 'good' : 'warn', r.state === 'Current' ? `${r.name} downloaded.` : `${r.name} downloaded with a stale-data banner.`)
+            },
+          },
         ]} />
       ),
     },
@@ -80,7 +89,7 @@ export default function Reports() {
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
         <Card>
           <CardHead title={featured.name} sub={featured.question}
-            right={<><Button size="sm"><Download size={14} />Download</Button><Button size="sm"><Share2 size={14} />Share</Button></>} />
+            right={<Button size="sm" onClick={() => { downloadReportCsv(featured, ctx); pushToast(featured.state === 'Current' ? 'good' : 'warn', featured.state === 'Current' ? `${featured.name} downloaded.` : `${featured.name} downloaded with a stale-data banner.`) }}><Download size={14} />Download</Button>} />
           <CardBody>
             <div className="flex items-end gap-7 flex-wrap">
               <div>
@@ -176,7 +185,7 @@ export default function Reports() {
           <>
             {open.state === 'Failed' && <Button onClick={() => pushToast('info', `${open.name} queued for retry.`)}><RotateCcw size={15} />Retry</Button>}
             <Button variant="primary" disabled={open.state === 'Running' || open.state === 'Failed'}
-              onClick={() => pushToast('good', `${open.name} downloaded.`)}>
+              onClick={() => { downloadReportCsv(open, ctx); pushToast('good', `${open.name} downloaded.`) }}>
               <Download size={15} />Download
             </Button>
           </>
