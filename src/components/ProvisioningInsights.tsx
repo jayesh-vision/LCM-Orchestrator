@@ -51,6 +51,18 @@ const riskColor = (rate: number) => (rate >= 0.25 ? SOFT.crit : rate >= 0.1 ? SO
 type Patch = Record<string, string | null | undefined>
 
 /**
+ * Shared body for the three cards in the Insights top row.
+ *
+ * They sit in one grid row, so they are all as tall as the tallest — and the
+ * tallest is whichever has the most rows. Spreading the shorter cards' rows
+ * across that height (`justify-between`) left gaps wide enough to read as
+ * missing content. Capping the body instead keeps every row at its natural
+ * spacing and lets the one card that overflows scroll, so the row stays the
+ * height of about four rows however many any single card happens to carry.
+ */
+const KPI_BODY = 'vw-scroll-hint flex flex-col gap-2 flex-1 min-h-0 overflow-y-auto max-h-[336px]'
+
+/**
  * The six things a request can be, in lifecycle order rather than ranked by
  * volume — a KPI card people read repeatedly should hold still while they
  * change the filters, so each type keeps its own line. Create is the only one
@@ -159,7 +171,7 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
     <Card className="h-full flex flex-col">
       <CardHead title="By request type" sub="Why each one was raised, for the current selection"
         info="Every request in the current selection counted by why it was raised. Create is the only type that builds something new — Modify, Suspend, Resume, Cease and Re-prove all act on a service that is already live, so the balance between Create and the rest says whether this queue is growing the estate or maintaining it. The bar is that type's share of the selection. Click a row to open just those." />
-      <CardBody className="flex flex-col gap-2 flex-1 justify-between">
+      <CardBody className={KPI_BODY}>
         {INTENT_ROWS.map(({ intent, icon, tone, note }) => {
           const n = byIntent.get(intent) ?? 0
           return (
@@ -182,7 +194,7 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
     <Card className="h-full flex flex-col">
       <CardHead title="Problem spotlight" sub="Where failures are concentrated in scope right now"
         info="The domain, vendor and device model with the highest failure rate in the current scope (vendor and model need at least 3 orders to qualify, so one unlucky order doesn't look like a trend). Click a row to open those failures." />
-      <CardBody className="flex flex-col gap-2 flex-1 justify-between">
+      <CardBody className={KPI_BODY}>
         <StatRow label="Riskiest domain" icon={Globe} value={worstDomain ? `${Math.round(worstDomain.rate * 100)}%` : '—'}
           tone={worstDomain ? riskTone(worstDomain.rate) : undefined}
           note={worstDomain ? `${worstDomain.key} — ${worstDomain.failed} of ${worstDomain.total} failed` : 'Not enough data in scope'}
@@ -237,7 +249,7 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
           <Card className="h-full flex flex-col">
             <CardHead title="Requests" sub="At a glance, for the current selection"
               info="A quick read of every request in the current selection, broken down by where it sits between draft and execution. Click a row to open exactly those requests." />
-            <CardBody className="flex flex-col gap-2 flex-1 justify-between">
+            <CardBody className={KPI_BODY}>
               <StatRow label="Total requests" icon={ClipboardList} value={total.toLocaleString()}
                 note={`${cnt('Draft')} still in draft`} drillLabel="every request in scope" onClick={() => onDrill({ state: null })} />
               <StatRow label="Waiting for approval" icon={CheckCircle2} value={waiting} tone="plum"
@@ -307,7 +319,7 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
         <Card className="h-full flex flex-col">
           <CardHead title="Execution" sub="At a glance, for the current selection"
             info="A quick read of everything in the current selection that has moved into execution — what's finished, what's running, and what failed. Click a row to open exactly those orders." />
-          <CardBody className="flex flex-col gap-2 flex-1 justify-between">
+          <CardBody className={KPI_BODY}>
             <StatRow label="Total in execution" icon={PlayCircle} value={total.toLocaleString()}
               note={`${inProgress} in progress`} drillLabel="everything in execution" onClick={() => onDrill({ state: null })} />
             <StatRow label="Ready" icon={CheckCircle2} value={ready} tone="good"
