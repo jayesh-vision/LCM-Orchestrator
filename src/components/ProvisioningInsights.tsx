@@ -120,10 +120,10 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
      duration in as two more rows, since they're the same "how healthy is
      this scope" question as the risk rows above them. */
   const spotlightCard = (
-    <Card className="self-start flex flex-col">
+    <Card className="h-full flex flex-col">
       <CardHead title="Problem spotlight" sub="Where failures are concentrated in scope right now"
         info="The domain, vendor and device model with the highest failure rate in the current scope (vendor and model need at least 3 orders to qualify, so one unlucky order doesn't look like a trend). Click a row to open those failures." />
-      <CardBody className="flex flex-col gap-2">
+      <CardBody className="flex flex-col gap-2 flex-1">
         <StatRow label="Riskiest domain" icon={Globe} value={worstDomain ? `${Math.round(worstDomain.rate * 100)}%` : '—'}
           tone={worstDomain ? riskTone(worstDomain.rate) : undefined}
           note={worstDomain ? `${worstDomain.key} — ${worstDomain.failed} of ${worstDomain.total} failed` : 'Not enough data in scope'}
@@ -170,9 +170,9 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
     return (
       <div className="flex flex-col gap-4">
         <div className="grid gap-4 lg:grid-cols-2">
-          <Card className="self-start flex flex-col">
+          <Card className="h-full flex flex-col">
             <CardHead title="Requests" sub="At a glance, for the current selection" />
-            <CardBody className="flex flex-col gap-2">
+            <CardBody className="flex flex-col gap-2 flex-1">
               <StatRow label="Total requests" icon={ClipboardList} value={total.toLocaleString()}
                 note={`${cnt('Draft')} still in draft`} drillLabel="every request in scope" onClick={() => onDrill({ state: null })} />
               <StatRow label="Waiting for approval" icon={CheckCircle2} value={waiting} tone="plum"
@@ -234,9 +234,9 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="self-start flex flex-col">
+        <Card className="h-full flex flex-col">
           <CardHead title="Execution" sub="At a glance, for the current selection" />
-          <CardBody className="flex flex-col gap-2">
+          <CardBody className="flex flex-col gap-2 flex-1">
             <StatRow label="Total in execution" icon={PlayCircle} value={total.toLocaleString()}
               note={`${inProgress} in progress`} drillLabel="everything in execution" onClick={() => onDrill({ state: null })} />
             <StatRow label="Ready" icon={CheckCircle2} value={ready} tone="good"
