@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from 'react'
-import { Boxes, CheckCircle2, ClipboardList, Gauge, Globe, PlayCircle, Server, Timer, XCircle } from 'lucide-react'
+import { AlertTriangle, Boxes, CheckCircle2, ClipboardList, Gauge, Globe, PlayCircle, Server, Timer, XCircle } from 'lucide-react'
 import type { Category, Order, OrderState, Run, Vendor } from '@/types'
 import { domainOf } from '@/types'
 import { Badge, Card, CardBody, CardHead, StatRow, type StatTone } from '@/components/ui'
@@ -92,6 +92,7 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
   const worstDomain = useMemo(() => worstBy(orders, (o) => domainOf(o.category), failStates, 1), [orders, failStates])
   const worstVendor = useMemo(() => worstBy(orders, (o) => o.endpoints[0]?.vendor, failStates, 3), [orders, failStates])
   const worstModel = useMemo(() => worstBy(orders, (o) => o.endpoints[0]?.deviceName, failStates, 3), [orders, failStates])
+  const slaBreaches = orders.filter((o) => o.slaBreached).length
 
   const DAYS = 14
   const trend = useMemo(() => {
@@ -123,7 +124,7 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
     <Card className="h-full flex flex-col">
       <CardHead title="Problem spotlight" sub="Where failures are concentrated in scope right now"
         info="The domain, vendor and device model with the highest failure rate in the current scope (vendor and model need at least 3 orders to qualify, so one unlucky order doesn't look like a trend). Click a row to open those failures." />
-      <CardBody className="flex flex-col gap-2 flex-1">
+      <CardBody className="flex flex-col gap-2 flex-1 justify-between">
         <StatRow label="Riskiest domain" icon={Globe} value={worstDomain ? `${Math.round(worstDomain.rate * 100)}%` : '—'}
           tone={worstDomain ? riskTone(worstDomain.rate) : undefined}
           note={worstDomain ? `${worstDomain.key} — ${worstDomain.failed} of ${worstDomain.total} failed` : 'Not enough data in scope'}
@@ -139,6 +140,11 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
           note={worstModel ? `${worstModel.key} — ${worstModel.failed} of ${worstModel.total} failed` : 'Needs 3+ orders on one model'}
           drillLabel={worstModel ? `failed orders on ${worstModel.key}` : undefined}
           onClick={worstModel ? () => onDrill({ q: worstModel.key, state: failStates.join(',') }) : undefined} />
+        {mode === 'requests' && (
+          <StatRow label="SLA breaches" icon={AlertTriangle} value={slaBreaches}
+            tone={slaBreaches ? 'crit' : 'good'}
+            note={slaBreaches ? `${slaBreaches} request${slaBreaches === 1 ? '' : 's'} past commitment` : 'Nothing has breached SLA in scope'} />
+        )}
         {mode === 'execution' && (
           <>
             <StatRow label="First-pass rate" icon={Gauge} value={firstPassRate !== undefined ? `${firstPassRate}%` : '—'}
@@ -172,7 +178,7 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
         <div className="grid gap-4 lg:grid-cols-2">
           <Card className="h-full flex flex-col">
             <CardHead title="Requests" sub="At a glance, for the current selection" />
-            <CardBody className="flex flex-col gap-2 flex-1">
+            <CardBody className="flex flex-col gap-2 flex-1 justify-between">
               <StatRow label="Total requests" icon={ClipboardList} value={total.toLocaleString()}
                 note={`${cnt('Draft')} still in draft`} drillLabel="every request in scope" onClick={() => onDrill({ state: null })} />
               <StatRow label="Waiting for approval" icon={CheckCircle2} value={waiting} tone="plum"
@@ -236,7 +242,7 @@ export function ProvisioningInsights({ mode, orders, runs, onDrill }: {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="h-full flex flex-col">
           <CardHead title="Execution" sub="At a glance, for the current selection" />
-          <CardBody className="flex flex-col gap-2 flex-1">
+          <CardBody className="flex flex-col gap-2 flex-1 justify-between">
             <StatRow label="Total in execution" icon={PlayCircle} value={total.toLocaleString()}
               note={`${inProgress} in progress`} drillLabel="everything in execution" onClick={() => onDrill({ state: null })} />
             <StatRow label="Ready" icon={CheckCircle2} value={ready} tone="good"
