@@ -1,12 +1,9 @@
 import { useMemo, type ComponentType, type ReactNode } from 'react'
-import {
-  AlertTriangle, Boxes, CheckCircle2, CircleOff, ClipboardList, Gauge, Globe, PauseCircle,
-  Pencil, PlayCircle, Plus, Server, ShieldCheck, Timer, XCircle,
-} from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Boxes, Gauge, Globe, Server, Timer } from 'lucide-react'
 import type { Category, Order, OrderIntent, OrderState, Run, Vendor } from '@/types'
 import { domainOf } from '@/types'
-import { Badge, Card, CardBody, CardHead, StatRow, type StatTone } from '@/components/ui'
-import { BarList, ColumnChart, SOFT, StackedBar, TrendChart } from '@/components/charts'
+import { Badge, Card, CardBody, CardHead, type StatTone } from '@/components/ui'
+import { BarList, ColumnChart, Donut, DonutLegend, SOFT, StackedBar, TrendChart } from '@/components/charts'
 import { VENDOR_LABEL } from '@/data/workflows'
 import { CATEGORY_TONE, dur } from '@/lib/format'
 
@@ -51,42 +48,104 @@ const riskColor = (rate: number) => (rate >= 0.25 ? SOFT.crit : rate >= 0.1 ? SO
 type Patch = Record<string, string | null | undefined>
 
 /**
- * Shared body for the KPI cards in the Insights top row.
- *
- * Cards in one grid row are all as tall as the tallest — and the tallest is
- * whichever has the most rows. Spreading the shorter cards' rows across that
- * height (`justify-between`) left gaps wide enough to read as missing
- * content. Capping the body instead keeps every row at its natural spacing
- * and lets the one card that overflows scroll, so the row stays the height
- * of about four rows however many any single card happens to carry.
+ * One line in a donut card's legend: a colour dot matching its ring slice,
+ * label + value on one row, and a note that wraps instead of truncating (the
+ * old stacked rows clipped "Rejected, invalid or rolled back — needs a
+ * retry" mid-sentence). A plain list row rather than a boxed tile — the
+ * donut is the widget here, this just names its slices.
  */
-const KPI_BODY = 'vw-scroll-hint flex flex-col gap-2 flex-1 min-h-0 overflow-y-auto max-h-[336px]'
+function RingLegendRow({ color, label, value, note, onClick, drillLabel }: {
+  color: string
+  label: string
+  value: ReactNode
+  note: string
+  onClick?: () => void
+  drillLabel?: string
+}) {
+  const Tag = onClick ? 'button' : 'div'
+  return (
+    <Tag
+      {...(onClick ? { type: 'button' as const, onClick, 'aria-label': drillLabel ?? label } : {})}
+      className={`group flex flex-col gap-0.5 text-left w-full py-2 border-b border-line-soft last:border-b-0
+        ${onClick ? 'cursor-pointer hover:bg-plane -mx-1.5 px-1.5 rounded-md transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100' : ''}`}
+    >
+      <span className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-2 min-w-0">
+          <i className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} aria-hidden />
+          <span className="text-[12.5px] font-semibold text-ink-1 truncate">{label}</span>
+        </span>
+        <span className="flex items-center gap-1 shrink-0">
+          <span className="tnum font-semibold text-[14px] text-ink-1">{value}</span>
+          {onClick && <ArrowUpRight size={12} className="text-ink-3 opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden />}
+        </span>
+      </span>
+      <span className="text-[11px] text-ink-3 leading-snug pl-[18px]">{note}</span>
+    </Tag>
+  )
+}
 
 /**
  * The six things a request can be, in lifecycle order rather than ranked by
- * volume — a KPI card people read repeatedly should hold still while they
- * change the filters, so each type keeps its own line. Create is the only one
+ * volume — a card people read repeatedly should hold still while they change
+ * the filters, so each type keeps its own colour. Create is the only one
  * that builds something new; every other type acts on a service that is
- * already carrying traffic, which is the split the card exists to show.
- *
- * Tones follow INTENT_TONE where StatRow has a matching one. It has four
- * (good/warn/crit/plum) against that palette's seven, so Create and Re-prove
- * both fall back to the default brand — they are the two that never damage
- * anything, and the icon and label carry the difference.
+ * already carrying traffic, which is the split the ring exists to show.
+ * Every intent gets its own colour (no repeats) so the ring and the legend
+ * beside it are unambiguous without an icon per row.
  */
-const INTENT_ROWS: {
-  intent: OrderIntent
+const INTENT_META: { intent: OrderIntent; color: string }[] = [
+  { intent: 'Create', color: SOFT.brand },
+  { intent: 'Modify', color: SOFT.purple },
+  { intent: 'Suspend', color: SOFT.warn },
+  { intent: 'Resume', color: SOFT.good },
+  { intent: 'Cease', color: SOFT.crit },
+  { intent: 'Re-prove', color: SOFT.cyan },
+]
+
+/** Icon-chip tone tokens for Problem spotlight's metric grid — a small local
+ * map, since these cells use an icon + coloured value neither Stat nor
+ * StatRow renders. */
+const ICON_TONE: Record<StatTone | 'brand', { value: string; iconBg: string; iconFg: string; ring: string }> = {
+  brand: { value: 'text-ink-1', iconBg: 'bg-brand-50', iconFg: 'text-brand-600', ring: 'ring-brand-200/60' },
+  good: { value: 'text-good-700', iconBg: 'bg-good-50', iconFg: 'text-good-700', ring: 'ring-good-200/70' },
+  warn: { value: 'text-warn-700', iconBg: 'bg-warn-50', iconFg: 'text-warn-700', ring: 'ring-warn-200/70' },
+  crit: { value: 'text-crit-500', iconBg: 'bg-crit-50', iconFg: 'text-crit-500', ring: 'ring-crit-200/70' },
+  plum: { value: 'text-plum-700', iconBg: 'bg-plum-50', iconFg: 'text-plum-700', ring: 'ring-plum-200/70' },
+}
+
+/**
+ * One cell in Problem spotlight's 2×2 metric grid — an icon, a headline
+ * value and a label, with the note wrapping in full underneath instead of
+ * a truncated line. Plain padding and a hover tint, not a bordered tile.
+ */
+function SpotlightStat({ icon: Icon, tone, value, label, note, onClick, drillLabel }: {
   icon: ComponentType<{ size?: number; className?: string }>
   tone?: StatTone
+  value: ReactNode
+  label: string
   note: string
-}[] = [
-  { intent: 'Create', icon: Plus, note: 'New build — lands a service in inventory' },
-  { intent: 'Modify', icon: Pencil, tone: 'plum', note: 'Changes an attribute of a live service' },
-  { intent: 'Suspend', icon: PauseCircle, tone: 'warn', note: 'Billing stop — configuration retained' },
-  { intent: 'Resume', icon: PlayCircle, tone: 'good', note: 'Restores the revision captured at suspend' },
-  { intent: 'Cease', icon: CircleOff, tone: 'crit', note: 'Permanent — resources go to quarantine' },
-  { intent: 'Re-prove', icon: ShieldCheck, note: 'Read-only re-check, nothing written' },
-]
+  onClick?: () => void
+  drillLabel?: string
+}) {
+  const c = ICON_TONE[tone ?? 'brand']
+  const Tag = onClick ? 'button' : 'div'
+  return (
+    <Tag
+      {...(onClick ? { type: 'button' as const, onClick, 'aria-label': drillLabel ?? label } : {})}
+      className={`group flex flex-col gap-1 text-left rounded-lg p-1.5 -m-1.5
+        ${onClick ? 'cursor-pointer hover:bg-plane transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100' : ''}`}
+    >
+      <span className="flex items-center gap-2">
+        <span className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ring-1 ring-inset ${c.iconBg} ${c.iconFg} ${c.ring}`} aria-hidden>
+          <Icon size={14} />
+        </span>
+        <span className={`tnum font-semibold text-[16px] leading-none ${c.value}`}>{value}</span>
+      </span>
+      <span className="text-[11.5px] font-semibold text-ink-1 leading-tight">{label}</span>
+      <span className="text-[10.5px] text-ink-3 leading-snug">{note}</span>
+    </Tag>
+  )
+}
 
 /* The two vocabularies the pipeline's halves have always used. A request can
    fail before a device is ever touched (Invalid pre-validation), which is why
@@ -199,59 +258,64 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
   const execInProgress = ecnt('In progress', 'Queued', 'Approved')
   const execFailed = ecnt(...EXEC_FAIL)
 
-  /* What the work is, rather than how much of it there is. Whether this queue
-     is mostly Create or mostly Modify is the difference between an estate
-     still being built and one being maintained, and nothing else on this
-     screen answers that. */
+  /* What the work is, rather than how much of it there is: every request in
+     scope falls into exactly one of these six, so a ring fits it without a
+     residual slice. Whether this queue is mostly Create or mostly Modify is
+     the difference between an estate still being built and one being
+     maintained. `justify-center` (rather than pt-1/top-aligned) is what
+     keeps this card free of trailing white space: the donut + legend block
+     is shorter than the Requests/Execution cards' donut + 3-row list, so
+     top-aligning it left a visible gap under the legend — centering spreads
+     any leftover room evenly above and below instead. */
+  const intentSegments = INTENT_META.map(({ intent, color }) => ({
+    label: intent, value: byIntent.get(intent) ?? 0, fill: 'brand' as const, color,
+    onClick: (byIntent.get(intent) ?? 0) > 0 ? () => onDrill({ intent, state: null }) : undefined,
+  }))
   const intentCard = (
     <Card className="h-full flex flex-col">
       <CardHead title="By request type" sub="Why each one was raised, for the current selection"
-        info="Every request in the current selection counted by why it was raised. Create is the only type that builds something new — Modify, Suspend, Resume, Cease and Re-prove all act on a service that is already live, so the balance between Create and the rest says whether this queue is growing the estate or maintaining it. The bar is that type's share of the selection. Click a row to open just those." />
-      <CardBody className={KPI_BODY}>
-        {INTENT_ROWS.map(({ intent, icon, tone, note }) => {
-          const n = byIntent.get(intent) ?? 0
-          return (
-            <StatRow key={intent} label={intent} icon={icon} value={n.toLocaleString()}
-              tone={n ? tone : undefined} progress={(n / Math.max(1, total)) * 100} note={note}
-              drillLabel={n ? `${intent} ${noun}` : undefined}
-              onClick={n ? () => onDrill({ intent, state: null }) : undefined} />
-          )
-        })}
+        info="Every request in the current selection counted by why it was raised. Create is the only type that builds something new — Modify, Suspend, Resume, Cease and Re-prove all act on a service that is already live, so the balance between Create and the rest says whether this queue is growing the estate or maintaining it. Click a slice or a row to open just those." />
+      <CardBody className="flex-1 min-h-0 flex flex-col items-center justify-center gap-4">
+        <Donut size={128} total={total} segments={intentSegments} />
+        <DonutLegend segments={intentSegments} columns={2} />
       </CardBody>
     </Card>
   )
 
-  /* One combined "Problem spotlight" card instead of 3–7 separate Stat
-     tiles — request-side risks and SLA first, then execution's own health
-     (first-pass rate, run duration), all one "how healthy is this scope"
-     question. The capped body scrolls past four rows. */
+  /* One combined "Problem spotlight" card instead of 3–7 separate stat rows.
+     Unlike Requests/Execution/By request type, these six figures aren't
+     parts of one whole — a percentage, a count and a duration can't share a
+     ring — so the widget here is a dense 2×2 metric grid instead: request
+     risk and SLA first, then execution's own health (first-pass rate, run
+     duration), laid out two to a row so all six fill the card with no
+     scrolling and no trailing gap. */
   const spotlightCard = (
     <Card className="h-full flex flex-col">
       <CardHead title="Problem spotlight" sub="Where failures are concentrated in scope right now"
-        info="The domain, vendor and device model with the highest failure rate in the current scope (vendor and model need at least 3 orders to qualify, so one unlucky order doesn't look like a trend), plus SLA breaches and how execution itself is performing. Click a risk row to open those failures." />
-      <CardBody className={KPI_BODY}>
-        <StatRow label="Riskiest domain" icon={Globe} value={worstDomain ? `${Math.round(worstDomain.rate * 100)}%` : '—'}
+        info="The domain, vendor and device model with the highest failure rate in the current scope (vendor and model need at least 3 orders to qualify, so one unlucky order doesn't look like a trend), plus SLA breaches and how execution itself is performing. Click a metric to open those failures." />
+      <CardBody className="flex-1 min-h-0 grid grid-cols-2 gap-x-4 gap-y-3.5 content-start">
+        <SpotlightStat icon={Globe} value={worstDomain ? `${Math.round(worstDomain.rate * 100)}%` : '—'} label="Riskiest domain"
           tone={worstDomain ? riskTone(worstDomain.rate) : undefined}
           note={worstDomain ? `${worstDomain.key} — ${worstDomain.failed} of ${worstDomain.total} failed` : 'Not enough data in scope'}
           drillLabel={worstDomain ? `failed ${worstDomain.key} ${noun}` : undefined}
           onClick={worstDomain ? () => onDrill({ domain: worstDomain.key, state: REQUEST_FAIL.join(',') }) : undefined} />
-        <StatRow label="Riskiest vendor" icon={Boxes} value={worstVendor ? `${Math.round(worstVendor.rate * 100)}%` : '—'}
+        <SpotlightStat icon={Boxes} value={worstVendor ? `${Math.round(worstVendor.rate * 100)}%` : '—'} label="Riskiest vendor"
           tone={worstVendor ? riskTone(worstVendor.rate) : undefined}
           note={worstVendor ? `${VENDOR_LABEL[worstVendor.key as Vendor] ?? worstVendor.key} — ${worstVendor.failed} of ${worstVendor.total} failed` : 'Needs 3+ orders on one vendor'}
           drillLabel={worstVendor ? `failed orders on ${worstVendor.key}` : undefined}
           onClick={worstVendor ? () => onDrill({ vendor: worstVendor.key, state: REQUEST_FAIL.join(',') }) : undefined} />
-        <StatRow label="Riskiest model" icon={Server} value={worstModel ? `${Math.round(worstModel.rate * 100)}%` : '—'}
+        <SpotlightStat icon={Server} value={worstModel ? `${Math.round(worstModel.rate * 100)}%` : '—'} label="Riskiest model"
           tone={worstModel ? riskTone(worstModel.rate) : undefined}
           note={worstModel ? `${worstModel.key} — ${worstModel.failed} of ${worstModel.total} failed` : 'Needs 3+ orders on one model'}
           drillLabel={worstModel ? `failed orders on ${worstModel.key}` : undefined}
           onClick={worstModel ? () => onDrill({ q: worstModel.key, state: REQUEST_FAIL.join(',') }) : undefined} />
-        <StatRow label="SLA breaches" icon={AlertTriangle} value={slaBreaches}
+        <SpotlightStat icon={AlertTriangle} value={slaBreaches} label="SLA breaches"
           tone={slaBreaches ? 'crit' : 'good'}
           note={slaBreaches ? `${slaBreaches} request${slaBreaches === 1 ? '' : 's'} past commitment` : 'Nothing has breached SLA in scope'} />
-        <StatRow label="First-pass rate" icon={Gauge} value={firstPassRate !== undefined ? `${firstPassRate}%` : '—'}
+        <SpotlightStat icon={Gauge} value={firstPassRate !== undefined ? `${firstPassRate}%` : '—'} label="First-pass rate"
           tone={firstPassRate === undefined ? undefined : firstPassRate >= 90 ? 'good' : firstPassRate >= 70 ? 'plum' : 'crit'}
           note="First attempts accepted without a retry" />
-        <StatRow label="Average run duration" icon={Timer} value={avgDuration !== undefined ? dur(avgDuration) : '—'}
+        <SpotlightStat icon={Timer} value={avgDuration !== undefined ? dur(avgDuration) : '—'} label="Average run duration"
           note="Across every run in scope" />
       </CardBody>
     </Card>
@@ -275,43 +339,58 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
   return (
     <div className="flex flex-col gap-4">
 
-      {/* One glance card per half of the pipeline, side by side, each with
-         exactly the rows its standalone screen always showed — so request
-         counts and execution counts never blur into each other. */}
+      {/* One glance card per half of the pipeline, side by side, with exactly
+         the same counts each standalone screen always showed — as a donut
+         plus legend list, so the card fills its height with content instead
+         of a partly-empty list. Requests' ring carries a fourth, grey slice
+         for everything the three named figures don't cover — draft, planned,
+         in progress or already live — so the ring is never misleadingly
+         partial; Execution's three slices already exhaust its pool. */}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card className="h-full flex flex-col">
           <CardHead title="Requests" sub="At a glance, for the current selection"
-            info="A quick read of every request in the current selection, broken down by where it sits between draft and execution. Click a row to open exactly those requests." />
-          <CardBody className={KPI_BODY}>
-            <StatRow label="Total requests" icon={ClipboardList} value={total.toLocaleString()}
-              note={`${cnt('Draft')} still in draft`} drillLabel="every request in scope" onClick={() => onDrill({ state: null })} />
-            <StatRow label="Waiting for approval" icon={CheckCircle2} value={waiting} tone="plum"
-              progress={(waiting / Math.max(1, total)) * 100} note="Pre-validated, ready for a decision"
-              drillLabel="requests waiting on approval" onClick={() => onDrill({ state: 'Validated' })} />
-            <StatRow label="Ready to run" icon={PlayCircle} value={readyToRun} tone="good"
-              progress={(readyToRun / Math.max(1, total)) * 100} note="Approved, waiting for a change window"
-              drillLabel="requests ready to run" onClick={() => onDrill({ state: 'Approved,Queued' })} />
-            <StatRow label="Failed" icon={XCircle} value={reqFailed} tone={reqFailed ? 'crit' : undefined}
-              progress={(reqFailed / Math.max(1, total)) * 100} note="Rejected, invalid or rolled back — needs a retry"
-              drillLabel="failed requests" onClick={() => onDrill({ state: REQUEST_FAIL.join(',') })} />
+            info="Every request in the current selection, as one ring: how many are waiting on a decision, how many are cleared and ready to run, and how many failed. The grey slice is everything else in the pipeline — drafted, planned, in progress or already live. Click a slice or a row to open exactly those requests." />
+          <CardBody className="flex-1 min-h-0 flex flex-col items-center gap-1 pt-1">
+            <Donut size={116} total={total} segments={[
+              { label: 'Waiting for approval', value: waiting, fill: 'brand', color: SOFT.purple, onClick: () => onDrill({ state: 'Validated' }) },
+              { label: 'Ready to run', value: readyToRun, fill: 'good', color: SOFT.good, onClick: () => onDrill({ state: 'Approved,Queued' }) },
+              { label: 'Failed', value: reqFailed, fill: 'crit', color: SOFT.crit, onClick: () => onDrill({ state: REQUEST_FAIL.join(',') }) },
+              {
+                label: 'Elsewhere in the pipeline', value: Math.max(0, total - waiting - readyToRun - reqFailed), fill: 'none', color: SOFT.none,
+                onClick: () => onDrill({ state: 'Draft,Planned,In progress,Ready' }),
+              },
+            ]} />
+            <button type="button" onClick={() => onDrill({ state: null })} aria-label="Every request in scope. Open them"
+              className="text-[11.5px] text-ink-3 hover:text-brand-600 transition-colors -mt-1">
+              {cnt('Draft')} still in draft
+            </button>
+            <div className="w-full mt-1">
+              <RingLegendRow color={SOFT.purple} label="Waiting for approval" value={waiting} note="Pre-validated, ready for a decision"
+                drillLabel="requests waiting on approval" onClick={() => onDrill({ state: 'Validated' })} />
+              <RingLegendRow color={SOFT.good} label="Ready to run" value={readyToRun} note="Approved, waiting for a change window"
+                drillLabel="requests ready to run" onClick={() => onDrill({ state: 'Approved,Queued' })} />
+              <RingLegendRow color={SOFT.crit} label="Failed" value={reqFailed} note="Rejected, invalid or rolled back — needs a retry"
+                drillLabel="failed requests" onClick={() => onDrill({ state: REQUEST_FAIL.join(',') })} />
+            </div>
           </CardBody>
         </Card>
         <Card className="h-full flex flex-col">
           <CardHead title="Execution" sub="At a glance, for the current selection"
-            info="A quick read of everything in the current selection that has moved into execution — what's finished, what's running, and what failed. Click a row to open exactly those orders." />
-          <CardBody className={KPI_BODY}>
-            <StatRow label="Total in execution" icon={PlayCircle} value={execTotal.toLocaleString()}
-              note={`${execInProgress} in progress`} drillLabel="everything in execution"
-              onClick={() => onDrill({ state: [...EXEC_FAIL, 'Approved', 'Queued', 'In progress', 'Ready'].join(',') })} />
-            <StatRow label="Ready" icon={CheckCircle2} value={execReady} tone="good"
-              progress={(execReady / Math.max(1, execTotal)) * 100} note="Finished successfully"
-              drillLabel="orders that finished successfully" onClick={() => onDrill({ state: 'Ready' })} />
-            <StatRow label="In progress" icon={PlayCircle} value={execInProgress}
-              progress={(execInProgress / Math.max(1, execTotal)) * 100} note="Running or queued behind a change window"
-              drillLabel="orders in progress" onClick={() => onDrill({ state: 'In progress,Queued,Approved' })} />
-            <StatRow label="Failed" icon={XCircle} value={execFailed} tone={execFailed ? 'crit' : undefined}
-              progress={(execFailed / Math.max(1, execTotal)) * 100} note="Rolled back, can be retried"
-              drillLabel="failed orders" onClick={() => onDrill({ state: EXEC_FAIL.join(',') })} />
+            info="Everything in the current selection that has moved into execution, as one ring: finished, still moving, or failed — every order in scope is exactly one of the three. Click a slice or a row to open exactly those orders." />
+          <CardBody className="flex-1 min-h-0 flex flex-col items-center gap-1 pt-1">
+            <Donut size={116} total={execTotal} segments={[
+              { label: 'Ready', value: execReady, fill: 'good', color: SOFT.good, onClick: () => onDrill({ state: 'Ready' }) },
+              { label: 'In progress', value: execInProgress, fill: 'brand', color: SOFT.brand, onClick: () => onDrill({ state: 'In progress,Queued,Approved' }) },
+              { label: 'Failed', value: execFailed, fill: 'crit', color: SOFT.crit, onClick: () => onDrill({ state: EXEC_FAIL.join(',') }) },
+            ]} />
+            <div className="w-full mt-2">
+              <RingLegendRow color={SOFT.good} label="Ready" value={execReady} note="Finished successfully"
+                drillLabel="orders that finished successfully" onClick={() => onDrill({ state: 'Ready' })} />
+              <RingLegendRow color={SOFT.brand} label="In progress" value={execInProgress} note="Running or queued behind a change window"
+                drillLabel="orders in progress" onClick={() => onDrill({ state: 'In progress,Queued,Approved' })} />
+              <RingLegendRow color={SOFT.crit} label="Failed" value={execFailed} note="Rolled back, can be retried"
+                drillLabel="failed orders" onClick={() => onDrill({ state: EXEC_FAIL.join(',') })} />
+            </div>
           </CardBody>
         </Card>
         {intentCard}
