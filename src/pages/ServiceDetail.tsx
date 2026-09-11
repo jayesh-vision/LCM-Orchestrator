@@ -1,15 +1,34 @@
 import { useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, PauseCircle, PlayCircle, RefreshCcw, Trash2 } from 'lucide-react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { ArrowLeft, CircleOff, PauseCircle, Pencil, PlayCircle, Plus, RefreshCcw, ShieldCheck, Trash2 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import {
   Badge, Button, Card, CardBody, CardHead, KV, Mono, Note, Tabs,
 } from '@/components/ui'
-import { CATEGORY_TONE, CONFORMANCE_TONE, inr, relTime, SERVICE_TONE, shortDate } from '@/lib/format'
+import {
+  CATEGORY_TONE, CONFORMANCE_TONE, dateTime, dur, inr, INTENT_TONE, ORDER_TONE,
+  relTime, RUN_TONE, SERVICE_TONE, shortDate,
+} from '@/lib/format'
 import { ORIGIN_BLURB, ORIGIN_LABEL, serviceOrigins } from '@/lib/traceability'
 import { CeaseServiceModal, ModifyServiceDrawer } from '@/components/ServiceChangeDialogs'
+import { RUN_LOG_RETENTION_DAYS } from '@/data/orders'
+import { endpointRole } from '@/types'
+import type { OrderIntent, Run } from '@/types'
 
-type Tab = 'overview' | 'realised' | 'evidence' | 'history' | 'resources'
+type Tab = 'overview' | 'realised' | 'evidence' | 'lifecycle' | 'history' | 'resources'
+
+/* The mark on each stop of the journey. Intent is the one thing that is true
+   of a request before anything happens to it, so it carries the colour; the
+   outcome is stated in words underneath rather than recoloured, which would
+   leave two competing meanings on one dot. */
+const JOURNEY: Record<OrderIntent, { icon: typeof Plus; dot: string }> = {
+  Create: { icon: Plus, dot: 'bg-brand-500' },
+  Modify: { icon: Pencil, dot: 'bg-plum-500' },
+  Suspend: { icon: PauseCircle, dot: 'bg-warn-500' },
+  Resume: { icon: PlayCircle, dot: 'bg-good-500' },
+  Cease: { icon: CircleOff, dot: 'bg-crit-500' },
+  'Re-prove': { icon: ShieldCheck, dot: 'bg-brand-500' },
+}
 
 export default function ServiceDetail() {
   const { id = '' } = useParams()
@@ -18,11 +37,50 @@ export default function ServiceDetail() {
   const allOrders = useStore((s) => s.orders)
   const raiseChange = useStore((s) => s.raiseChange)
   const reprove = useStore((s) => s.reproveService)
-  const [tab, setTab] = useState<Tab>('overview')
+  /* The tab lives in the URL so another screen can link straight to it — a
+     change request points at this service's lifecycle, not at its overview. */
+  const [sp, setSp] = useSearchParams()
+  const tab = (sp.get('tab') ?? 'overview') as Tab
+  const setTab = (t: string) => setSp({ tab: t }, { replace: true })
+  /* Which stop on the journey strip is selected, so the strip and the detail
+     list below it point at the same request instead of being two lists the
+     reader has to line up by eye. */
+  const [focus, setFocus] = useState<string | null>(null)
   const [modifyOpen, setModifyOpen] = useState(false)
   const [ceaseOpen, setCeaseOpen] = useState(false)
   const orders = useMemo(() => allOrders.filter((o) => o.serviceId === id), [allOrders, id])
   const origin = useMemo(() => serviceOrigins(allOrders).get(id ?? '') ?? 'inherited', [allOrders, id])
+
+  /**
+   * Every request ever raised against this service, newest first, each with the
+   * runs that carried it out.
+   *
+   * A request detail screen answers "what happened to this request". Nothing
+   * answered "what has been done to this service, by whom, and when" — you had
+   * to already know each order id to walk the chain. This is that walk: the
+   * create that built it, then every change since, with the device-level
+   * execution under each one.
+   */
+  const allRuns = useStore((s) => s.runs)
+  const lifecycle = useMemo(() => {
+    const byOrder = new Map<string, Run[]>()
+    allRuns.forEach((r) => {
+      const list = byOrder.get(r.orderId) ?? []
+      list.push(r)
+      byOrder.set(r.orderId, list)
+    })
+    /* Oldest first. This is a provenance record, not a feed: it reads "built,
+       then changed, then changed again", which is the order the events
+       happened in and the order anyone narrates them in. */
+    return [...orders]
+      .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+      .map((o) => ({
+        order: o,
+        /* Oldest attempt first — a retry only reads as a retry after the thing
+           it retried. */
+        runs: (byOrder.get(o.id) ?? []).sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)),
+      }))
+  }, [orders, allRuns])
 
   if (!svc) {
     return (
@@ -77,11 +135,12 @@ export default function ServiceDetail() {
         </CardBody>
         <div className="px-5">
           <Tabs
-            value={tab} onChange={(t) => setTab(t as Tab)}
+            value={tab} onChange={setTab}
             tabs={[
               { id: 'overview', label: 'Overview' },
               { id: 'realised', label: 'Intent vs realised', count: svc.attributes.length },
               { id: 'evidence', label: 'Evidence' },
+              { id: 'lifecycle', label: 'Lifecycle', count: orders.length },
               { id: 'history', label: 'Change history', count: svc.history.length },
               { id: 'resources', label: 'Resources', count: svc.resources.length },
             ]}
@@ -249,6 +308,158 @@ export default function ServiceDetail() {
               <Button variant="primary" onClick={() => reprove(svc.id)}><RefreshCcw size={15} />Re-prove now</Button>
             </CardBody>
           )}
+        </Card>
+      )}
+
+      {tab === 'lifecycle' && (
+        <Card>
+          <CardHead
+            title="Lifecycle"
+            sub="Built, then every change since — oldest first, with the runs that carried each one out"
+            info="The audit trail for the service rather than for one request: who asked for what, who cleared it, when it reached the devices and what came back. Change history sits alongside this and records what changed on the device — including changes made outside the platform, which have no request behind them."
+          />
+          <CardBody>
+            {lifecycle.length === 0 ? (
+              <div className="py-12 text-center">
+                <div className="text-[15px] font-semibold mb-1">No requests on record</div>
+                <p className="text-ink-3 text-[13px] max-w-[440px] mx-auto leading-relaxed">
+                  This service was already carrying traffic when the platform was deployed, so nothing
+                  here raised it. Changes made to it since are on the Change history tab.
+                </p>
+              </div>
+            ) : (<>
+              {/* The shape of the whole life in one line, before any of the
+                  detail. Scanning six stacked cards to work out that a service
+                  was built once and changed twice is work the eye should not
+                  have to do — and this is the view someone opens precisely to
+                  ask "what has happened to this thing". */}
+              <div className="vw-scroll-hint overflow-x-auto pb-2 mb-5">
+                <ol className="flex items-start m-0 p-0 list-none min-w-max">
+                  {lifecycle.map(({ order: o, runs }, i) => {
+                    const { icon: Icon, dot } = JOURNEY[o.intent]
+                    /* Judged on the last attempt per endpoint, not on every run
+                       ever made. A change that failed once and succeeded on
+                       retry landed — reporting it as "2 of 4 accepted" would
+                       mark a service that is correctly configured as half
+                       broken. The retry is worth saying, so it is said. */
+                    const latest = new Map<string, Run>()
+                    runs.forEach((r) => {
+                      const key = r.endpointId ?? '-'
+                      const cur = latest.get(key)
+                      if (!cur || r.attempt > cur.attempt) latest.set(key, r)
+                    })
+                    const final = [...latest.values()]
+                    const retried = runs.length > final.length
+                    const outcome = runs.length === 0
+                      ? (o.archived ? 'log not retained' : 'not executed')
+                      : final.some((r) => r.outcome === 'Running') ? 'running now'
+                        : final.every((r) => r.outcome === 'Accepted') ? (retried ? 'accepted on retry' : 'accepted')
+                          : 'failed'
+                    return (
+                      <li key={o.id} className="flex items-start">
+                        {i > 0 && <span aria-hidden className="w-10 h-px bg-line mt-6 shrink-0" />}
+                        <button
+                          type="button" onClick={() => setFocus(focus === o.id ? null : o.id)}
+                          aria-pressed={focus === o.id}
+                          className={`flex flex-col items-center gap-1.5 w-[132px] shrink-0 px-2 py-2 rounded-[var(--vw-radius-sm)] bg-transparent border-0 cursor-pointer
+                            hover:bg-plane ${focus === o.id ? 'bg-plane ring-1 ring-brand-500' : ''}`}
+                        >
+                          <span className={`w-8 h-8 rounded-full flex items-center justify-center text-white shrink-0 ${dot}`}>
+                            <Icon size={16} />
+                          </span>
+                          <span className="vw-value font-medium leading-tight">{o.intent}</span>
+                          <span className="text-[12px] text-ink-3 leading-tight">{shortDate(o.updatedAt)}</span>
+                          <span className="text-[11px] text-ink-3 leading-tight text-center">{outcome}</span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                  {/* Where it stands now. Without it the line reads as though
+                      the last request is the end of the story rather than the
+                      state it left the service in. */}
+                  <li className="flex items-start">
+                    <span aria-hidden className="w-10 h-px bg-line mt-6 shrink-0" />
+                    <div className="flex flex-col items-center gap-1.5 w-[132px] shrink-0 px-2 py-2">
+                      <span className="w-8 h-8 rounded-full border-2 border-dashed border-line flex items-center justify-center shrink-0">
+                        <span className={`w-2.5 h-2.5 rounded-full ${svc.state === 'Live' ? 'bg-good-500' : svc.state === 'Ceased' || svc.state === 'Purged' ? 'bg-crit-500' : 'bg-warn-500'}`} />
+                      </span>
+                      <span className="vw-value font-medium leading-tight">Today</span>
+                      <span className="text-[12px] text-ink-3 leading-tight">{svc.state}</span>
+                      <span className="text-[11px] text-ink-3 leading-tight text-center">{svc.conformance.toLowerCase()}</span>
+                    </div>
+                  </li>
+                </ol>
+              </div>
+
+              <ol className="m-0 p-0 list-none flex flex-col">
+                {lifecycle.map(({ order: o, runs }, i) => {
+                  const cleared = o.approvals.find((a) => a.decision)
+                  const last = i === lifecycle.length - 1
+                  return (
+                    /* Padding, not margin, so the rail below can reach into the
+                       gap — a margin would collapse out of the item's box and
+                       leave the line stopping at each card. */
+                    <li key={o.id} className={`relative pl-7 ${last ? '' : 'pb-3'}`}>
+                      {/* The rail stops at the last entry so it reads as a
+                          beginning — the create — not as a trail running off. */}
+                      {!last && <span aria-hidden className="absolute left-[6px] top-4 bottom-0 w-px bg-line" />}
+                      <span aria-hidden className={`absolute left-0 top-[7px] w-[13px] h-[13px] rounded-full border-[3px] border-white
+                        ${o.intent === 'Create' ? 'bg-brand-500' : o.intent === 'Cease' ? 'bg-crit-500' : 'bg-plum-500'}`}
+                      />
+                      <div className={`vw-card-section bg-plane p-3.5 transition-shadow ${focus === o.id ? 'ring-2 ring-brand-500' : ''}`}>
+                        <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                          <Badge tone={INTENT_TONE[o.intent]}>{o.intent}</Badge>
+                          <Link to={`/requests/${o.id}`} className="text-brand-600 hover:underline"><Mono>{o.id}</Mono></Link>
+                          <Mono className="text-ink-3 text-[12px]">{o.code}</Mono>
+                          <span className="ml-auto"><Badge tone={ORDER_TONE[o.state]} dot>{o.state}</Badge></span>
+                        </div>
+                        <div className="vw-value font-medium mb-1">
+                          {o.delta?.length
+                            ? o.delta.map((d) => `${d.attribute} ${d.current} → ${d.requested}`).join(' · ')
+                            : o.intent === 'Create' ? 'Initial provisioning — service went live' : `${o.intent} requested`}
+                        </div>
+                        <div className="text-[12px] text-ink-3 leading-relaxed">
+                          Raised {dateTime(o.createdAt)}{o.owner ? ` by ${o.owner}` : ''}
+                          {cleared?.at && <> · {cleared.decision} by {cleared.by} {dateTime(cleared.at)}</>}
+                          {' · '}closed {dateTime(o.updatedAt)} ({relTime(o.updatedAt)})
+                        </div>
+
+                        {runs.length > 0 ? (
+                          <div className="mt-2.5 pt-2.5 border-t border-line-soft flex flex-col gap-1.5">
+                            {runs.map((r) => {
+                              const ep = o.endpoints.find((e) => e.id === r.endpointId)
+                              return (
+                                <div key={r.id} className="flex items-center gap-2 flex-wrap text-[12px]">
+                                  <Badge tone={RUN_TONE[r.outcome]} dot>{r.outcome}</Badge>
+                                  <span className="text-ink-2">
+                                    {ep ? `${endpointRole(ep)} · ` : ''}<Mono>{ep?.mgmtIp ?? 'device'}</Mono>
+                                  </span>
+                                  <span className="text-ink-3">attempt {r.attempt}</span>
+                                  <span className="text-ink-3">{dateTime(r.startedAt)}</span>
+                                  <span className="text-ink-3 font-mono">{dur(r.durationMs)}</span>
+                                  <span className="text-ink-3">
+                                    {r.tasks.filter((t) => t.state === 'Passed').length} of {r.tasks.length} tasks passed
+                                  </span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          /* Not a gap — the request is kept for the life of the
+                             service, the device transcript behind it is not. */
+                          <div className="mt-2.5 pt-2.5 border-t border-line-soft text-[12px] text-ink-3">
+                            {o.archived
+                              ? `Execution log not retained — per-task device logs are kept for ${RUN_LOG_RETENTION_DAYS} days.`
+                              : 'Not executed yet.'}
+                          </div>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ol>
+            </>)}
+          </CardBody>
         </Card>
       )}
 

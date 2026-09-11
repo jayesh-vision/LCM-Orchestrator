@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, CheckCircle2, GitBranch, PlayCircle, RotateCcw, Server, Square, XCircle } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ChevronDown, GitBranch, PlayCircle, RotateCcw, Server, Square, XCircle } from 'lucide-react'
 import { useStore } from '@/store/useStore'
+import { RUN_LOG_RETENTION_DAYS } from '@/data/orders'
 import type { Endpoint, Run, RunTask, StageKind } from '@/types'
 import { endpointRole } from '@/types'
 import {
@@ -35,6 +36,18 @@ type Delta = { attribute: string; current: string; requested: string }[]
 function changeSummary(intent: string, delta?: Delta): string {
   if (!delta?.length) return intent === 'Create' ? 'initial configuration' : `${intent.toLowerCase()} applied`
   return delta.map((d) => `${d.attribute} ${d.current} → ${d.requested}`).join(', ')
+}
+
+/** One fact about the change's life, in the strip above the attribute table.
+ *  Four of these read left to right as the order things happened in. */
+function ChangeFact({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
+  return (
+    <div className="vw-card-section bg-plane p-3">
+      <div className="vw-label mb-1">{label}</div>
+      <div className="vw-value font-medium leading-snug">{value}</div>
+      {sub && <div className="text-[12px] text-ink-3 mt-0.5 leading-snug">{sub}</div>}
+    </div>
+  )
 }
 
 /** The request's own reason, for the header above each endpoint's attempts. */
@@ -133,11 +146,75 @@ export default function OrderDetail() {
     return { total: w.length, passed: w.filter((t) => t.state === 'Passed').length }
   }
 
+  /**
+   * The life of the change itself.
+   *
+   * A change record that cannot answer "when was this asked for, who cleared
+   * it, when did it reach the devices, and is it on them now" is not an audit
+   * record. Every one of those facts already existed — on the order, on its
+   * approvals, on its runs — but scattered across three tabs, so the change
+   * card showed what was asked for and nothing about what became of it.
+   *
+   * Counted over the latest attempt per endpoint, not every run: a retry
+   * re-writes the same commands, and summing across attempts would report a
+   * change applied twice when it landed once.
+   */
+  const changeAudit = useMemo(() => {
+    const latest = runGroups.map((g) => g.runs[0]).filter(Boolean)
+    const starts = latest.map((r) => Date.parse(r.startedAt)).filter((n) => !Number.isNaN(n))
+    const ends = latest.map((r) => (r.endedAt ? Date.parse(r.endedAt) : NaN)).filter((n) => !Number.isNaN(n))
+    const startedAt = starts.length ? new Date(Math.min(...starts)).toISOString() : undefined
+    /* Only call the change finished once every endpoint has finished. */
+    const endedAt = ends.length === latest.length && ends.length > 0 ? new Date(Math.max(...ends)).toISOString() : undefined
+    const elapsed = startedAt && endedAt ? Date.parse(endedAt) - Date.parse(startedAt) : undefined
+    const writes = latest.reduce((acc, r) => {
+      const w = writesIn(r)
+      return { total: acc.total + w.total, passed: acc.passed + w.passed }
+    }, { total: 0, passed: 0 })
+    const devices = `${latest.length} device${latest.length === 1 ? '' : 's'}`
+    const outcome: { tone: Tone; label: string; note: string } = latest.length === 0
+      ? {
+        tone: 'none', label: 'Not applied yet',
+        note: order?.state === 'Approved' ? 'approved — waiting to be executed'
+          : order?.state === 'Validated' ? 'waiting for approval'
+            : `request is ${order?.state.toLowerCase() ?? 'draft'}`,
+      }
+      : latest.some((r) => r.outcome === 'Running')
+        ? { tone: 'info', label: 'Applying now', note: `${writes.passed} of ${writes.total} commands written so far` }
+        : latest.every((r) => r.outcome === 'Accepted')
+          ? {
+            tone: 'good', label: 'Applied and proved',
+            note: writes.total ? `${writes.total} command${writes.total === 1 ? '' : 's'} written across ${devices}` : `read-only — nothing written to ${devices}`,
+          }
+          : {
+            tone: 'crit',
+            label: latest.some((r) => r.outcome === 'Failed') ? 'Failed — change not applied' : latest[0].outcome,
+            note: `${writes.passed} of ${writes.total} commands written before it stopped`,
+          }
+    return { startedAt, endedAt, elapsed, writes, outcome, decision: order?.approvals.find((a) => a.decision) }
+  }, [runGroups, order, writeTaskIds]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const tab = (sp.get('tab') ?? 'service') as 'service' | 'lifecycle' | 'runs'
   /* replace: true — switching tabs shouldn't push a browser-history entry, so
      the Back button (and the browser's own back button) never gets stuck
      cycling through tabs instead of leaving the screen. */
   const setTab = (t: string) => setSp({ tab: t === 'params' ? 'service' : t }, { replace: true })
+
+  /**
+   * Whether the change card is open.
+   *
+   * It sits above all three tabs, which is right — the change is the subject of
+   * the screen, not of one tab — but that also means its height is paid on
+   * every tab. Someone reading runs has usually already read the change. The
+   * choice is remembered for the session rather than per request, so it does
+   * not have to be made again on the next one; the header carries the summary
+   * either way, so collapsing it hides detail, never the answer.
+   */
+  const [changeOpen, setChangeOpen] = useState(() => sessionStorage.getItem('lcm.changeCard') !== 'closed')
+  const toggleChange = () => setChangeOpen((v) => {
+    sessionStorage.setItem('lcm.changeCard', v ? 'closed' : 'open')
+    return !v
+  })
 
   const [runIdx, setRunIdx] = useState(0)
   const [openStageIdx, setOpenStageIdx] = useState(0)
@@ -181,6 +258,35 @@ export default function OrderDetail() {
   const canApprove = order.state === 'Validated'
   const canExecute = order.state === 'Approved'
   const isRunning = order.state === 'In progress'
+
+  /**
+   * Why there is nothing to show, said once for both tabs that can hit it.
+   *
+   * "No runs recorded" is true and useless: on a completed request it reads as
+   * missing data, which is exactly how it was read. An archived request did
+   * run — it produced the service it points at — and what is gone is the
+   * task-by-task device log, which ages out while the order is kept for the
+   * life of the service. Saying that is the difference between a record and a
+   * gap. Lifecycle and Runs both reached this state and answered it
+   * differently, so the answer lives in one place now.
+   */
+  const noRuns = (
+    <Card><CardBody className="py-14 text-center">
+      <div className="text-[15px] font-semibold mb-1">
+        {order.archived ? 'Execution log not retained' : 'No runs yet'}
+      </div>
+      <p className="text-ink-3 text-[13px] mb-4 max-w-[440px] mx-auto leading-relaxed">
+        {order.archived
+          ? <>This request completed on {shortDate(order.updatedAt)} and produced{' '}
+            {order.serviceId
+              ? <Link className="text-brand-600" to={`/inventory/${order.serviceId}?tab=lifecycle`}><Mono>{order.serviceId}</Mono></Link>
+              : 'a service'}. Per-task device logs are kept for {RUN_LOG_RETENTION_DAYS} days; the request
+            and what it configured are kept for the life of the service.</>
+          : canExecute ? 'This request is approved and ready to execute.' : 'Runs appear once the request is approved and executed.'}
+      </p>
+      {canExecute && !order.archived && <Button variant="primary" onClick={() => startRun(order.id)}><PlayCircle size={15} />Execute workflow</Button>}
+    </CardBody></Card>
+  )
 
   return (
     <>
@@ -234,7 +340,19 @@ export default function OrderDetail() {
             tabs={[
               { id: 'service', label: 'Network service' },
               { id: 'lifecycle', label: 'Lifecycle operation' },
-              { id: 'runs', label: 'Runs', count: runs.length },
+              /* Every run on the request, not the selected endpoint's share of
+                 them. The tab body groups Source and Destination side by side,
+                 so counting one endpoint made a two-ended request that executed
+                 correctly on both ends read as though only one run existed.
+
+                 No count at all on an archived request whose log has aged out:
+                 "0" asserts that nothing ran, when what happened is that the
+                 transcript is no longer held. The tab says so when opened. */
+              {
+                id: 'runs',
+                label: 'Runs',
+                count: order.archived && allOrderRuns.length === 0 ? undefined : allOrderRuns.length,
+              },
             ]}
           />
         </div>
@@ -244,29 +362,94 @@ export default function OrderDetail() {
           requested — kept visible across tabs since not every attribute has
           a device command parameter to show up in below (MTU, for one, is
           not a modelled command placeholder for any vendor in this
-          prototype), so this is the only place some of them are ever shown. */}
-      {order.delta && order.delta.length > 0 && (
+          prototype), so this is the only place some of them are ever shown.
+
+          Shown for every change against a live service, not only the ones
+          carrying an attribute delta: a cease or a suspend changes nothing
+          about the configuration and so has no delta to show, but it is
+          precisely the kind of request whose audit trail someone comes
+          looking for. A create is the exception — there is no prior state
+          for it to be a change from. */}
+      {order.intent !== 'Create' && (
         <Card>
           {/* A change is raised somewhere and lands somewhere: Change & Cease is
               where it was raised and where its siblings against this service
               sit, the service is what it acts on. Both were a search away from
               here and are now one click. */}
           <CardHead
-            title="Requested change"
-            sub={order.notes ? `Reason: ${order.notes}` : `Raised as a ${order.intent.toLowerCase()} against this service`}
+            tight={!changeOpen}
+            title={
+              <button
+                type="button" onClick={toggleChange} aria-expanded={changeOpen}
+                className="flex items-center gap-1.5 bg-transparent border-0 p-0 m-0 font-[inherit] text-ink-1 cursor-pointer hover:text-brand-600"
+              >
+                Requested change
+                <ChevronDown size={16} className={`text-ink-3 transition-transform ${changeOpen ? 'rotate-180' : ''}`} />
+              </button>
+            }
+            /* Collapsed, the header has to carry the answer on its own —
+               otherwise closing the card loses the thing it was opened for.
+               What changed, whether it landed, and when, in one line. */
+            sub={changeOpen
+              ? (order.notes ? `Reason: ${order.notes}` : `Raised as a ${order.intent.toLowerCase()} against this service`)
+              : (
+                <span className="flex items-center gap-2 flex-wrap">
+                  <span className="truncate max-w-[620px]">{changeSummary(order.intent, order.delta)}</span>
+                  <Badge tone={changeAudit.outcome.tone} dot>{changeAudit.outcome.label}</Badge>
+                  {/* Named, not bare: an unlabelled date next to a change reads
+                      as when it was asked for, not when it reached the device. */}
+                  {changeAudit.startedAt && <span className="text-ink-3">executed {dateTime(changeAudit.startedAt)}</span>}
+                </span>
+              )}
             right={
               <>
                 <Link to={`/change?q=${order.id}`} className="nst-btn nst-btn--xs no-underline">
                   <GitBranch size={14} />Open in Change &amp; Cease
                 </Link>
+                {/* Not the service overview — its lifecycle. From a change
+                    request the question is what else has been done to this
+                    service and in what order; this request is one entry on
+                    that list, and the list is the only place it can be seen
+                    in context. */}
                 {order.serviceId && (
-                  <Link to={`/inventory/${order.serviceId}`} className="nst-btn nst-btn--xs no-underline">
-                    <Server size={14} />Open service
+                  <Link to={`/inventory/${order.serviceId}?tab=lifecycle`} className="nst-btn nst-btn--xs no-underline">
+                    <Server size={14} />Service lifecycle
                   </Link>
                 )}
               </>
             }
           />
+          {!changeOpen && <div className="pb-4" />}
+          {changeOpen && (<>
+          {/* Raised → cleared → executed → landed. The four questions asked of
+              any change record, in the order they get answered. */}
+          <div className="grid gap-3 px-4 pt-4 sm:grid-cols-2 xl:grid-cols-4">
+            <ChangeFact
+              label="Raised"
+              value={dateTime(order.createdAt)}
+              sub={<>{relTime(order.createdAt)}{order.owner ? ` · by ${order.owner}` : ''}</>}
+            />
+            <ChangeFact
+              label={changeAudit.decision?.decision === 'Rejected' ? 'Rejected' : 'Approved'}
+              value={changeAudit.decision?.at ? dateTime(changeAudit.decision.at) : <span className="text-ink-3">Not cleared yet</span>}
+              sub={changeAudit.decision
+                ? `${changeAudit.decision.role} · ${changeAudit.decision.by}`
+                : order.approvals.length > 0 ? `waiting on ${order.approvals[0].role}` : 'no approval recorded'}
+            />
+            <ChangeFact
+              label="Executed"
+              value={changeAudit.startedAt ? dateTime(changeAudit.startedAt) : <span className="text-ink-3">Not executed yet</span>}
+              sub={changeAudit.startedAt
+                ? <>{relTime(changeAudit.startedAt)}{changeAudit.elapsed !== undefined ? ` · took ${dur(changeAudit.elapsed)}` : ' · still running'}</>
+                : 'no run has reached the devices'}
+            />
+            <ChangeFact
+              label="Result"
+              value={<Badge tone={changeAudit.outcome.tone} dot>{changeAudit.outcome.label}</Badge>}
+              sub={changeAudit.outcome.note}
+            />
+          </div>
+          {order.delta && order.delta.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-[13px]">
               <thead><tr>
@@ -285,6 +468,66 @@ export default function OrderDetail() {
               </tbody>
             </table>
           </div>
+          )}
+          {/* An attribute delta says what should change; it says nothing about
+              how. The workflow bound to each endpoint is the how — and it is
+              knowable before the request ever runs, so this reads as a plan
+              beforehand and as a record afterwards. */}
+          <div className="border-t border-line-soft px-4 py-4">
+            <div className="vw-card-title-sm mb-2.5">
+              {changeAudit.startedAt ? 'Applied by' : 'Will be applied by'}
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {order.endpoints.map((e) => {
+                const last = allOrderRuns.find((r) => r.endpointId === e.id)
+                /* Bound template first; failing that, whichever one the run
+                   actually used. An endpoint can reach execution unbound — the
+                   platform falls back to the Source's template — and claiming
+                   "no workflow bound" next to an accepted run would be false. */
+                const w = workflows.find((x) => x.id === e.workflowId)
+                  ?? workflows.find((x) => x.id === last?.workflowId)
+                const cmds = w ? w.tasks.filter((t) => t.kind === 'write').length : 0
+                return (
+                  <div key={e.id} className="vw-card-section bg-plane p-3 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="vw-label mb-1">{endpointRole(e)} · <Mono>{e.mgmtIp}</Mono></div>
+                      {w ? (
+                        <>
+                          <Link to={`/workflows/${w.id}`} className="vw-value font-medium block hover:text-brand-600">
+                            {w.name} — V {w.version}
+                          </Link>
+                          <div className="text-[12px] text-ink-3 mt-0.5">
+                            {w.vendor} {e.deviceName} · {w.stages.length} stages · {cmds || 'no'} config command{cmds === 1 ? '' : 's'}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="vw-value text-ink-3">No workflow bound — assigned at design</div>
+                      )}
+                    </div>
+                    {/* The card names the workflow and says it was accepted;
+                        the next question is always what it actually did on the
+                        device. Same jump the Runs table offers — select this
+                        endpoint's latest attempt and open it in Lifecycle —
+                        rather than making someone find the row again there. */}
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      <Badge tone={last ? RUN_TONE[last.outcome] : 'none'} dot>
+                        {last ? last.outcome : 'Not run'}
+                      </Badge>
+                      {last && (
+                        <Button
+                          size="sm"
+                          onClick={() => { setEpId(e.id); setRunIdx(0); setTab('lifecycle') }}
+                        >
+                          Open
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+          </>)}
         </Card>
       )}
 
@@ -513,28 +756,7 @@ export default function OrderDetail() {
               </CardBody>
             </Card>
           </>
-        ) : (
-          <Card><CardBody className="py-14 text-center">
-            {/* An archived request did run — it produced the service it points
-                at. What is missing is the task-by-task device log, which ages
-                out while the order itself is kept. Saying that is the
-                difference between a record and a gap. */}
-            <div className="text-[15px] font-semibold mb-1">
-              {order.archived ? 'Execution log not retained' : 'No runs yet'}
-            </div>
-            <p className="text-ink-3 text-[13px] mb-4 max-w-[440px] mx-auto leading-relaxed">
-              {order.archived
-                ? <>This request completed on {shortDate(order.updatedAt)} and produced{' '}
-                  {order.serviceId
-                    ? <Link className="text-brand-600" to={`/inventory/${order.serviceId}`}><Mono>{order.serviceId}</Mono></Link>
-                    : 'a service'}. Per-task device logs are kept for 90 days; the request and what it
-                  configured are kept for the life of the service.</>
-                : canExecute ? 'This request is approved and ready to execute.' : 'Runs appear once the request is approved and executed.'}
-            </p>
-            {canExecute && !order.archived && <Button variant="primary" onClick={() => startRun(order.id)}><PlayCircle size={15} />Execute workflow</Button>}
-          </CardBody></Card>
-        )
-      )}
+        ) : noRuns)}
 
       {/* ---------------- runs ---------------- */}
       {tab === 'runs' && (
@@ -613,9 +835,7 @@ export default function OrderDetail() {
               </div>
             </Card>
           ))}
-          {runGroups.length === 0 && (
-            <Card><CardBody className="py-14 text-center text-ink-3">No runs recorded.</CardBody></Card>
-          )}
+          {runGroups.length === 0 && noRuns}
         </div>
       )}
 

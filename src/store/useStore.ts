@@ -6,7 +6,7 @@ import type {
 import { INTENTS, PROFILE_TYPES, intentById, pad } from '@/data/catalog'
 import { buildWorkflows } from '@/data/workflows'
 import { buildServices, serviceFromOrder } from '@/data/services'
-import { bindEndpoints, buildHistoricalOrders, buildOrders, buildRuns, claimFor, linkProvenance, orderedTasks, WAITING } from '@/data/orders'
+import { bindEndpoints, buildHistoricalOrders, buildOrders, buildRuns, claimFor, hasRetainedLog, linkProvenance, orderedTasks, WAITING } from '@/data/orders'
 import { renderCommand } from '@/data/templates'
 import { REPORTS, allocateForService, buildNotifications, buildPools, releaseForService } from '@/data/misc'
 
@@ -14,10 +14,29 @@ import { REPORTS, allocateForService, buildNotifications, buildPools, releaseFor
 const workflows = buildWorkflows()
 const services = buildServices()
 const liveOrders = buildOrders(services, workflows)
-const runs = buildRuns(liveOrders, workflows)
+const historicalOrders = buildHistoricalOrders(services, workflows)
+/* Archived work executed too — it is what put the estate on the devices. What
+   decides whether its runs are still here is age, not archival: anything that
+   completed inside the log retention window keeps its task-by-task record, and
+   older work keeps the request while the transcript behind it has aged out.
+   Built in one pass so run ids stay unique across both sets. */
+const runs = buildRuns([...liveOrders, ...historicalOrders.filter((o) => hasRetainedLog(o))], workflows)
+
+/* A request that executed was last touched when its last run finished. Runs are
+   built after the orders that own them, so the order carries a placeholder
+   stamp until here — left alone, a request showed as "closed" days after the
+   work it closed on, which the service lifecycle puts side by side. Archived
+   orders keep their own stamp: their create closes when the service goes live,
+   which is after the run that put it there, not at the same instant. */
+liveOrders.forEach((o) => {
+  const own = runs.filter((r) => r.orderId === o.id)
+  if (own.length === 0) return
+  const last = Math.max(...own.map((r) => Date.parse(r.endedAt ?? r.startedAt)))
+  o.updatedAt = new Date(last).toISOString()
+})
 /* The queue plus the archive. Both are orders and both are the same shape;
    only `archived` separates work in flight from the record of work done. */
-const orders = [...liveOrders, ...buildHistoricalOrders(services, workflows)]
+const orders = [...liveOrders, ...historicalOrders]
 linkProvenance(services, orders)
 const pools = buildPools(services)
 

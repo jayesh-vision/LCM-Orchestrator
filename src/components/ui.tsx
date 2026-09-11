@@ -902,7 +902,7 @@ export function stampColumn<T>(
   return {
     key: 'stamp',
     header,
-    width: '172px',
+    width: '196px',
     /* Sort on the later of the two: the question this column answers when you
        click it is "what moved most recently", not "what was raised first". */
     sortValue: (row) => Date.parse(modifiedOf(row) ?? createdOf(row) ?? '') || 0,
@@ -916,9 +916,15 @@ export function stampColumn<T>(
       return (
         <>
           <CellMain>{dateTime(created)}</CellMain>
+          {/* Both lines carry the same absolute stamp, to the minute. A
+              relative age here ("Modified 23 d ago") could not be compared
+              against the creation date sitting directly above it without doing
+              arithmetic in your head, and could not be compared against the
+              row below it at all; the age moves to the tooltip, where it
+              answers "is this recent" without costing a column. */}
           <CellSub>
             {changed
-              ? <span title={`Last modified ${dateTime(modified)}`}>Modified {relTime(modified)}</span>
+              ? <span title={`Last modified ${relTime(modified)}`} className="whitespace-nowrap">Modified {dateTime(modified)}</span>
               : <span className="text-ink-3">Not modified since</span>}
           </CellSub>
         </>

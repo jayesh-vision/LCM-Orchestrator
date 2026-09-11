@@ -241,6 +241,14 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     const created = new Date(now - ageDays * 86400000)
     created.setHours(between(8, 20), between(0, 59), 0, 0)
     if (created.getTime() > now) created.setTime(now - between(5, 180) * 60000)
+    /* A review recorded at the same instant the request was raised reads as
+       rubber-stamped, not reviewed — the change card shows raise and approval
+       side by side, and an audit trail only holds if the clearance visibly
+       sits after the ask. Placed a quarter of the way through the request's
+       life so it is always strictly between the raise and now, however old or
+       fresh the request is, and derived rather than drawn from the seeded RNG
+       so adding it doesn't reshuffle every other field in the dataset. */
+    const decided = new Date(created.getTime() + Math.max(60000, Math.round((now - created.getTime()) * 0.25)))
 
     out.push({
       id: `ORD-2026-${pad(4417 - i * 2, 6)}`,
@@ -268,15 +276,18 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
          cannot have been modified before it existed, and the column
          above compares the two to decide whether to say so. */
       updatedAt: state === 'Draft' ? created.toISOString()
-        : new Date(Math.min(now, created.getTime() + between(1, Math.max(1, ageDays * 24)) * 3600000)).toISOString(),
+        /* Never earlier than the decision on it either: a request cannot have
+           been last touched before the approval or rejection that touched it. */
+        : new Date(Math.min(now, Math.max(decided.getTime(),
+          created.getTime() + between(1, Math.max(1, ageDays * 24)) * 3600000))).toISOString(),
       ageDays,
       owner: pick(OWNERS),
       waitingOn: WAITING[state],
       runIds: [],
       approvals: ['Ready', 'Approved', 'In progress', 'Queued', 'Reinstantiate', 'Failed'].includes(state)
-        ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Approved' }]
+        ? [{ role: 'NOC lead', by: 'Ravi K.', at: decided.toISOString(), decision: 'Approved' }]
         : state === 'Rejected'
-          ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Rejected', comment: 'Uplink headroom insufficient at the A-end.' }]
+          ? [{ role: 'NOC lead', by: 'Ravi K.', at: decided.toISOString(), decision: 'Rejected', comment: 'Uplink headroom insufficient at the A-end.' }]
           : [{ role: 'NOC lead' }],
       delta: orderIntent === 'Modify'
         ? [
@@ -390,6 +401,14 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     const created = new Date(now - ageDays * 86400000)
     created.setHours(between(8, 20), between(0, 59), 0, 0)
     if (created.getTime() > now) created.setTime(now - between(5, 180) * 60000)
+    /* A review recorded at the same instant the request was raised reads as
+       rubber-stamped, not reviewed — the change card shows raise and approval
+       side by side, and an audit trail only holds if the clearance visibly
+       sits after the ask. Placed a quarter of the way through the request's
+       life so it is always strictly between the raise and now, however old or
+       fresh the request is, and derived rather than drawn from the seeded RNG
+       so adding it doesn't reshuffle every other field in the dataset. */
+    const decided = new Date(created.getTime() + Math.max(60000, Math.round((now - created.getTime()) * 0.25)))
 
     out.push({
       id: `ORD-2026-${pad(6000 - i * 2, 6)}`,
@@ -417,15 +436,18 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
          cannot have been modified before it existed, and the column
          above compares the two to decide whether to say so. */
       updatedAt: state === 'Draft' ? created.toISOString()
-        : new Date(Math.min(now, created.getTime() + between(1, Math.max(1, ageDays * 24)) * 3600000)).toISOString(),
+        /* Never earlier than the decision on it either: a request cannot have
+           been last touched before the approval or rejection that touched it. */
+        : new Date(Math.min(now, Math.max(decided.getTime(),
+          created.getTime() + between(1, Math.max(1, ageDays * 24)) * 3600000))).toISOString(),
       ageDays,
       owner: pick(OWNERS),
       waitingOn: WAITING[state],
       runIds: [],
       approvals: ['Ready', 'Approved', 'In progress', 'Queued', 'Reinstantiate', 'Failed'].includes(state)
-        ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Approved' }]
+        ? [{ role: 'NOC lead', by: 'Ravi K.', at: decided.toISOString(), decision: 'Approved' }]
         : state === 'Rejected'
-          ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Rejected', comment: 'CPE stock unavailable at the requested site.' }]
+          ? [{ role: 'NOC lead', by: 'Ravi K.', at: decided.toISOString(), decision: 'Rejected', comment: 'CPE stock unavailable at the requested site.' }]
           : [{ role: 'NOC lead' }],
       delta: orderIntent === 'Modify'
         ? [{ attribute: 'Bandwidth plan', current: `${bandwidth} Mbps`, requested: `${bandwidth * 2} Mbps` }]
@@ -472,6 +494,14 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     const created = new Date(now - ageDays * 86400000)
     created.setHours(between(8, 20), between(0, 59), 0, 0)
     if (created.getTime() > now) created.setTime(now - between(5, 180) * 60000)
+    /* A review recorded at the same instant the request was raised reads as
+       rubber-stamped, not reviewed — the change card shows raise and approval
+       side by side, and an audit trail only holds if the clearance visibly
+       sits after the ask. Placed a quarter of the way through the request's
+       life so it is always strictly between the raise and now, however old or
+       fresh the request is, and derived rather than drawn from the seeded RNG
+       so adding it doesn't reshuffle every other field in the dataset. */
+    const decided = new Date(created.getTime() + Math.max(60000, Math.round((now - created.getTime()) * 0.25)))
 
     out.push({
       id: `ORD-2026-${pad(7000 - i * 2, 6)}`,
@@ -499,15 +529,18 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
          cannot have been modified before it existed, and the column
          above compares the two to decide whether to say so. */
       updatedAt: state === 'Draft' ? created.toISOString()
-        : new Date(Math.min(now, created.getTime() + between(1, Math.max(1, ageDays * 24)) * 3600000)).toISOString(),
+        /* Never earlier than the decision on it either: a request cannot have
+           been last touched before the approval or rejection that touched it. */
+        : new Date(Math.min(now, Math.max(decided.getTime(),
+          created.getTime() + between(1, Math.max(1, ageDays * 24)) * 3600000))).toISOString(),
       ageDays,
       owner: pick(OWNERS),
       waitingOn: WAITING[state],
       runIds: [],
       approvals: ['Ready', 'Approved', 'In progress', 'Queued', 'Reinstantiate', 'Failed'].includes(state)
-        ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Approved' }]
+        ? [{ role: 'NOC lead', by: 'Ravi K.', at: decided.toISOString(), decision: 'Approved' }]
         : state === 'Rejected'
-          ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Rejected', comment: 'Frequency channel unavailable at the requested band.' }]
+          ? [{ role: 'NOC lead', by: 'Ravi K.', at: decided.toISOString(), decision: 'Rejected', comment: 'Frequency channel unavailable at the requested band.' }]
           : [{ role: 'NOC lead' }],
       delta: orderIntent === 'Modify'
         ? [{ attribute: 'Link capacity', current: `${bandwidth} Mbps`, requested: `${bandwidth * 2} Mbps` }]
@@ -554,6 +587,14 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     const created = new Date(now - ageDays * 86400000)
     created.setHours(between(8, 20), between(0, 59), 0, 0)
     if (created.getTime() > now) created.setTime(now - between(5, 180) * 60000)
+    /* A review recorded at the same instant the request was raised reads as
+       rubber-stamped, not reviewed — the change card shows raise and approval
+       side by side, and an audit trail only holds if the clearance visibly
+       sits after the ask. Placed a quarter of the way through the request's
+       life so it is always strictly between the raise and now, however old or
+       fresh the request is, and derived rather than drawn from the seeded RNG
+       so adding it doesn't reshuffle every other field in the dataset. */
+    const decided = new Date(created.getTime() + Math.max(60000, Math.round((now - created.getTime()) * 0.25)))
 
     out.push({
       id: `ORD-2026-${pad(8000 - i * 2, 6)}`,
@@ -581,15 +622,18 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
          cannot have been modified before it existed, and the column
          above compares the two to decide whether to say so. */
       updatedAt: state === 'Draft' ? created.toISOString()
-        : new Date(Math.min(now, created.getTime() + between(1, Math.max(1, ageDays * 24)) * 3600000)).toISOString(),
+        /* Never earlier than the decision on it either: a request cannot have
+           been last touched before the approval or rejection that touched it. */
+        : new Date(Math.min(now, Math.max(decided.getTime(),
+          created.getTime() + between(1, Math.max(1, ageDays * 24)) * 3600000))).toISOString(),
       ageDays,
       owner: pick(OWNERS),
       waitingOn: WAITING[state],
       runIds: [],
       approvals: ['Ready', 'Approved', 'In progress', 'Queued', 'Reinstantiate', 'Failed'].includes(state)
-        ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Approved' }]
+        ? [{ role: 'NOC lead', by: 'Ravi K.', at: decided.toISOString(), decision: 'Approved' }]
         : state === 'Rejected'
-          ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Rejected', comment: 'Wavelength channel unavailable on this span.' }]
+          ? [{ role: 'NOC lead', by: 'Ravi K.', at: decided.toISOString(), decision: 'Rejected', comment: 'Wavelength channel unavailable on this span.' }]
           : [{ role: 'NOC lead' }],
       delta: orderIntent === 'Modify'
         ? [{ attribute: 'Circuit capacity', current: `${bandwidth} Gbps`, requested: `${bandwidth * 2} Gbps` }]
@@ -642,6 +686,14 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     const created = new Date(now - ageDays * 86400000)
     created.setHours(between(8, 20), between(0, 59), 0, 0)
     if (created.getTime() > now) created.setTime(now - between(5, 180) * 60000)
+    /* A review recorded at the same instant the request was raised reads as
+       rubber-stamped, not reviewed — the change card shows raise and approval
+       side by side, and an audit trail only holds if the clearance visibly
+       sits after the ask. Placed a quarter of the way through the request's
+       life so it is always strictly between the raise and now, however old or
+       fresh the request is, and derived rather than drawn from the seeded RNG
+       so adding it doesn't reshuffle every other field in the dataset. */
+    const decided = new Date(created.getTime() + Math.max(60000, Math.round((now - created.getTime()) * 0.25)))
 
     out.push({
       id: `ORD-2026-${pad(9000 - i * 2, 6)}`,
@@ -669,15 +721,18 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
          cannot have been modified before it existed, and the column
          above compares the two to decide whether to say so. */
       updatedAt: state === 'Draft' ? created.toISOString()
-        : new Date(Math.min(now, created.getTime() + between(1, Math.max(1, ageDays * 24)) * 3600000)).toISOString(),
+        /* Never earlier than the decision on it either: a request cannot have
+           been last touched before the approval or rejection that touched it. */
+        : new Date(Math.min(now, Math.max(decided.getTime(),
+          created.getTime() + between(1, Math.max(1, ageDays * 24)) * 3600000))).toISOString(),
       ageDays,
       owner: pick(OWNERS),
       waitingOn: WAITING[state],
       runIds: [],
       approvals: ['Ready', 'Approved', 'In progress', 'Queued', 'Reinstantiate', 'Failed'].includes(state)
-        ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Approved' }]
+        ? [{ role: 'NOC lead', by: 'Ravi K.', at: decided.toISOString(), decision: 'Approved' }]
         : state === 'Rejected'
-          ? [{ role: 'NOC lead', by: 'Ravi K.', at: created.toISOString(), decision: 'Rejected', comment: 'Compute quota for this CU/DU workload is exhausted at the target site.' }]
+          ? [{ role: 'NOC lead', by: 'Ravi K.', at: decided.toISOString(), decision: 'Rejected', comment: 'Compute quota for this CU/DU workload is exhausted at the target site.' }]
           : [{ role: 'NOC lead' }],
       delta: orderIntent === 'Modify'
         ? [{ attribute: 'Max UE capacity', current: `${bandwidth}`, requested: `${bandwidth * 2}` }]
@@ -839,7 +894,29 @@ export function buildRuns(orders: Order[], workflows: Workflow[]): Run[] {
     for (let a = 1; a <= attempts; a += 1) {
       const last = a === attempts
       const running = o.state === 'In progress' && last
-      const start = Date.now() - (attempts - a + 1) * 3600000
+      /**
+       * When this attempt went to the device.
+       *
+       * Anchored to the approval that released the work, not to "a few hours
+       * ago" — a run cannot have happened before the request that ordered it,
+       * and the request detail screen now shows raised, approved and executed
+       * side by side, where a run predating its own request is obvious. An
+       * order still In progress is the exception: its last attempt is live by
+       * definition, so that one hangs off the present and the earlier attempts
+       * step back from it.
+       */
+      const cleared = Date.parse(o.approvals.find((ap) => ap.decision === 'Approved')?.at ?? o.createdAt)
+      /* Every attempt has to land strictly inside the window between clearance
+         and now, and attempt N+1 strictly after attempt N. Dividing that window
+         into one slot per attempt guarantees both by construction, whether the
+         request was cleared five minutes ago or five weeks ago; the usual
+         quarter-hour queue delay and hour-apart retries apply on top, capped by
+         the slot so a young request can't have a run in its own future. */
+      const slot = Math.max(60000, Date.now() - cleared) / (attempts + 1)
+      const step = Math.min(slot, 3600000)
+      const start = o.state === 'In progress'
+        ? Date.now() - (attempts - a) * step - Math.min(slot, 12 * 60000)
+        : cleared + Math.min(slot, 15 * 60000) + (a - 1) * step
       const srcWf = workflows.find((w) => w.id === sourceEp.workflowId) ?? workflows.find((w) => w.id === o.workflowId) ?? workflows[0]
 
       const push = (ep: Endpoint, wf: Workflow, tasks: RunTask[], outcome: Run['outcome'], endAt: number | undefined, residue?: string[]) => {
@@ -931,26 +1008,80 @@ export function buildRuns(orders: Order[], workflows: Workflow[]): Run[] {
 export const PLATFORM_LIVE_DAYS = 365
 
 /**
- * The completed create behind every service young enough to have come from
- * this platform. Archived: they are the provenance record, not open work, so
- * the request queue does not carry them by default.
+ * How long the task-by-task device log behind a run is kept.
  *
- * No runs are attached, which mirrors how retention actually works: the order
- * is kept indefinitely because it is what the service points back to, while
- * the per-task device logs behind it age out. Order detail says so rather than
- * showing an empty lifecycle.
+ * The request record itself is kept for the life of the service — it is what
+ * the service points back to — but the transcript of every command sent to
+ * every device is bulk, and eventually ages out. This is the line between "we
+ * still have the evidence" and "we have the record of what was asked and
+ * approved", and the request detail screen says which of the two you are
+ * looking at.
+ *
+ * Set wider than PLATFORM_LIVE_DAYS, so nothing this platform has ever run has
+ * aged out yet. That is a real state for a young deployment, and it is the one
+ * worth showing: every service can be walked end to end, from the create that
+ * built it through every change since, with the device-level execution under
+ * each one. The rule and the screen that explains it stay in place for the day
+ * that stops being true — shorten this and the older half of the estate falls
+ * back to "log not retained" without another line changing.
+ */
+export const RUN_LOG_RETENTION_DAYS = 400
+
+/** Whether this order's runs are still held, or have aged out from under it. */
+export function hasRetainedLog(o: Order, now = Date.now()): boolean {
+  return now - Date.parse(o.updatedAt) <= RUN_LOG_RETENTION_DAYS * 86400000
+}
+
+/**
+ * The change a history line describes, as the request would have carried it.
+ *
+ * A service's history records changes the way an operator writes them down —
+ * "Bandwidth 100 → 200 Mbps" — which is the same information the request's
+ * delta holds, in a different shape. Reading it back rather than inventing a
+ * new one is what keeps the two records telling the same story.
+ */
+function deltaFromChange(change: string): Order['delta'] {
+  const m = change.match(/^(.+?)\s+(\S+)\s+→\s+(.+)$/)
+  if (!m) return undefined
+  const [, attribute, from, requested] = m
+  /* "100 → 200 Mbps" states the unit once, at the end. Both sides of a delta
+     are read side by side in a table, so the unit belongs on both. */
+  const unit = requested.match(/\s([A-Za-z/]+)$/)?.[1]
+  const current = unit && !/[A-Za-z]/.test(from) ? `${from} ${unit}` : from
+  return [{ attribute, current, requested }]
+}
+
+/**
+ * The completed create behind every service young enough to have come from
+ * this platform, plus the change requests raised against it since.
+ * Archived: they are the provenance record, not open work, so the request
+ * queue does not carry them by default.
+ *
+ * Whether the per-task device log survives is a question of age, not of being
+ * archived: the order is kept indefinitely because it is what the service
+ * points back to, while the logs behind it age out at RUN_LOG_RETENTION_DAYS.
+ * Anything completed inside that window still has its runs; order detail says
+ * so for the rest rather than showing an empty lifecycle.
  */
 export function buildHistoricalOrders(services: Service[], workflows: Workflow[]): Order[] {
   const now = Date.now()
   const out: Order[] = []
   let n = 0
+  let m = 0
 
   services.forEach((svc) => {
-    const ageDays = Math.floor((now - new Date(svc.liveSince).getTime()) / 86400000)
+    const live = new Date(svc.liveSince).getTime()
+    const ageDays = Math.floor((now - live) / 86400000)
     if (ageDays > PLATFORM_LIVE_DAYS || svc.state === 'Ceased') return
     n += 1
     const intent = intentById(svc.intentId)
-    const created = new Date(svc.liveSince)
+    /* liveSince is when the create *finished* — the moment the service started
+       carrying traffic. Everything that produced it therefore sits before that
+       instant: raised a day earlier, cleared two hours out, executed in the
+       hour before the service went live. Dating the request at liveSince, as
+       this used to, put the approval months after the thing it approved. */
+    const created = new Date(live - 26 * 3600000)
+    const decided = new Date(live - 2 * 3600000)
     const subtype = pick(['Tagged', 'Untagged', 'Other', 'BGP', 'Static'])
 
     /* Built exactly like a live order: the values it was raised with, and each
@@ -968,37 +1099,60 @@ export function buildHistoricalOrders(services: Service[], workflows: Workflow[]
     }))
     const boundEps = bindEndpoints(svc.endpoints, svc.category, svc.type, subtype, workflows, params, svc.bandwidthMbps)
 
-    out.push({
-      id: `ORD-2025-${pad(100000 + n * 3, 6)}`,
-      code: `NS-${pad(700000 + n, 6)}`,
-      name: intent.name,
-      intent: 'Create',
-      intentId: svc.intentId,
-      category: svc.category,
-      type: svc.type,
-      subtype,
-      accountId: svc.accountId,
-      accountName: svc.accountName,
-      state: 'Ready',
-      serviceId: svc.id,
-      workflowId: boundEps[0]?.workflowId,
-      endpoints: boundEps,
-      params,
-      createdAt: created.toISOString(),
-      updatedAt: created.toISOString(),
-      ageDays,
-      owner: pick(OWNERS),
+    /* Create and every later change against this service share everything that
+       describes the service itself; what separates them is why they were
+       raised, when they closed, and what they changed. */
+    const archivedOrder = (
+      id: string, code: string, orderIntent: OrderIntent,
+      raisedAt: Date, clearedAt: Date, closedAt: string,
+      by: string, delta?: Order['delta'],
+    ): Order => ({
+      id, code, name: intent.name, intent: orderIntent, intentId: svc.intentId,
+      category: svc.category, type: svc.type, subtype,
+      accountId: svc.accountId, accountName: svc.accountName,
+      state: 'Ready', serviceId: svc.id,
+      workflowId: boundEps[0]?.workflowId, endpoints: boundEps, params,
+      createdAt: raisedAt.toISOString(),
+      updatedAt: closedAt,
+      ageDays: Math.floor((now - raisedAt.getTime()) / 86400000),
+      owner: by,
       runIds: [],
-      approvals: [{ role: 'NOC lead', by: pick(OWNERS), at: created.toISOString(), decision: 'Approved' }],
+      approvals: [{ role: 'NOC lead', by: pick(OWNERS), at: clearedAt.toISOString(), decision: 'Approved' }],
+      delta,
       slaBreached: false,
       archived: true,
+    })
+
+    const createId = `ORD-2025-${pad(100000 + n * 3, 6)}`
+    out.push(archivedOrder(createId, `NS-${pad(700000 + n, 6)}`, 'Create', created, decided, svc.liveSince, pick(OWNERS)))
+
+    /* Every in-band change the service records is a request that was raised,
+       approved and executed — so give it the request. Without this the estate
+       is 3,000 services each with exactly one order behind it, and the history
+       above is a list of changes nobody can trace to a decision.
+
+       Out-of-band entries are deliberately skipped: no request exists for them,
+       which is the whole point of recording them separately. */
+    svc.history.forEach((h) => {
+      if (!h.orderId || h.change.startsWith('Created')) {
+        if (h.change.startsWith('Created')) h.orderId = createId
+        return
+      }
+      m += 1
+      const at = Date.parse(h.at)
+      /* Same raised → cleared → closed shape as the create, squeezed into the
+         gap since the service went live when the change came soon after it. */
+      const raised = new Date(Math.max(live + 3600000, at - 26 * 3600000))
+      const cleared = new Date(Math.max(raised.getTime() + 60000, at - 2 * 3600000))
+      const id = `ORD-2025-${pad(200000 + m * 3, 6)}`
+      h.orderId = id
+      out.push(archivedOrder(id, `NS-${pad(800000 + m, 6)}`, 'Modify', raised, cleared, h.at, h.by, deltaFromChange(h.change)))
     })
   })
   return out
 }
 
 export function linkProvenance(services: Service[], orders: Order[]): void {
-  const realOrder = new Set(orders.map((o) => o.id))
   const claimed = new Set(orders.map((o) => o.serviceId).filter(Boolean) as string[])
 
   /* A Create that reached Ready did its work, so something in the estate is
@@ -1023,6 +1177,7 @@ export function linkProvenance(services: Service[], orders: Order[]): void {
 
   /* Point each service's history at the orders that actually touched it, and
      strip the invented ids from everything else. */
+  const byId = new Map(orders.map((o) => [o.id, o]))
   const bySvc = new Map<string, Order[]>()
   orders.forEach((o) => {
     if (!o.serviceId) return
@@ -1032,9 +1187,21 @@ export function linkProvenance(services: Service[], orders: Order[]): void {
   })
 
   services.forEach((s) => {
-    const own = [...(bySvc.get(s.id) ?? [])]
+    /* Oldest first, so the service's own history — which reads newest first —
+       hands out ids in the order the work actually happened. */
+    const own = [...(bySvc.get(s.id) ?? [])].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
     s.history = s.history.map((h) => {
-      if (!h.orderId || realOrder.has(h.orderId)) return h
+      /* An invented id is only trustworthy if it names an order raised against
+         THIS service. Checking existence alone was not enough: history ids are
+         invented in the same ORD-2026- namespace the generator uses, so they
+         collide with real orders often, and a collision left the entry pointing
+         at some other customer's request — a false provenance link, which is
+         worse than none at all. */
+      /* No id at all is the honest record for an out-of-band change — someone
+         went at the device directly. Never invent a request for one. */
+      if (!h.orderId) return h
+      const cur = byId.get(h.orderId)
+      if (cur && cur.serviceId === s.id) return h
       const real = own.shift()
       return real ? { ...h, orderId: real.id } : { ...h, orderId: undefined }
     })

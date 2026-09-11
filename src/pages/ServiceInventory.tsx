@@ -53,6 +53,24 @@ function oldestOf(matches: Service[]): Service | undefined {
   return matches.reduce<Service | undefined>((oldest, s) => (!oldest || s.liveSince < oldest.liveSince ? s : oldest), undefined)
 }
 
+/**
+ * How often this service has been changed since it was built, counted two ways.
+ *
+ * "Created · service went Live" is the service arriving, not a change to it, so
+ * it is excluded — a service nobody has touched should read as untouched.
+ *
+ * The split matters more than the total. A change with a request behind it was
+ * asked for, approved and executed, and the lifecycle tab can show all three.
+ * A change made straight on the device has none of that, and no amount of
+ * scrolling the request queue will ever surface it. Counting them together
+ * would hide exactly the thing worth looking at.
+ */
+function changeStats(s: Service): { total: number; tracked: number; outOfBand: number } {
+  const changes = s.history.filter((h) => !h.change.startsWith('Created'))
+  const outOfBand = changes.filter((h) => h.outOfBand).length
+  return { total: changes.length, tracked: changes.length - outOfBand, outOfBand }
+}
+
 export default function ServiceInventory() {
   const services = useStore((s) => s.services)
   const orders = useStore((s) => s.orders)
@@ -226,6 +244,39 @@ export default function ServiceInventory() {
     },
     { key: 'proven', header: 'Last proven', width: '116px', sortValue: (r) => r.lastProvenAt ?? '', render: (r) => <span className="text-ink-3">{relTime(r.lastProvenAt)}</span> },
     { key: 'age', header: 'Age', align: 'right', width: '86px', sortValue: (r) => new Date(r.liveSince).getTime(), render: (r) => r.ageLabel },
+    {
+      /* Next to Created / Modified on purpose: that column says when the
+         service last moved, this one says how often and whether anyone
+         approved it. Sortable, so "what has been churned most" is one click. */
+      key: 'changes', header: 'Changes', width: '156px',
+      sortValue: (r) => changeStats(r).total,
+      render: (r) => {
+        const { total, tracked, outOfBand } = changeStats(r)
+        if (total === 0) return <span className="text-ink-3">Never modified</span>
+        return (
+          <>
+            <CellMain>
+              {/* Straight to the trail rather than the overview. Out-of-band
+                  changes never reach the Lifecycle tab — no request exists for
+                  them — so a service changed only outside the platform opens
+                  on the change log instead, where its changes actually are. */}
+              <Link
+                to={`/inventory/${r.id}?tab=${tracked > 0 ? 'lifecycle' : 'history'}`}
+                onClick={(e) => e.stopPropagation()}
+                className="text-brand-600 hover:underline"
+              >
+                {total} change{total === 1 ? '' : 's'}
+              </Link>
+            </CellMain>
+            <CellSub>
+              {tracked > 0 && <span>{tracked} by request</span>}
+              {tracked > 0 && outOfBand > 0 && ' · '}
+              {outOfBand > 0 && <span className="text-warn-700">{outOfBand} out of band</span>}
+            </CellSub>
+          </>
+        )
+      },
+    },
     stampColumn<Service>((r) => r.liveSince, (r) => lastChangedAt(r)),
     {
       key: 'act', header: '', width: '48px',
