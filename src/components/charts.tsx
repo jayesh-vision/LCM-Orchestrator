@@ -95,11 +95,11 @@ export interface BarItem {
   valueLabel?: string
 }
 
-export function BarList({ items, labelWidth = 150, max, valueWidth = 56 }:
-{ items: BarItem[]; labelWidth?: number; max?: number; valueWidth?: number }) {
+export function BarList({ items, labelWidth = 150, max, valueWidth = 56, className = '' }:
+{ items: BarItem[]; labelWidth?: number; max?: number; valueWidth?: number; className?: string }) {
   const top = max ?? Math.max(1, ...items.map((i) => i.value))
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className={`flex flex-col gap-2.5 ${className}`}>
       {items.map((it, idx) => {
         const cols = { gridTemplateColumns: `${labelWidth}px 1fr ${valueWidth}px` }
         const inner = (

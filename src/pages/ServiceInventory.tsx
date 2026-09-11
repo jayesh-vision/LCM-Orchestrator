@@ -7,10 +7,10 @@ import type { Category, Conformance, Domain, Order, Service, ServiceState } from
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Card, CardBody, CardHead, CellMain, CellSub, DataTable,
-  FieldDropdown, FilterBanner, Kebab, Mono, Stat, stampColumn, type Column,
+  FieldDropdown, FilterBanner, Kebab, Mono, Progress, Stat, stampColumn, type Column,
 } from '@/components/ui'
 import { BarList, CHART, Donut, FILL, type FillKey } from '@/components/charts'
-import { CATEGORY_TONE, CONFORMANCE_TONE, inr, relTime, SERVICE_TONE } from '@/lib/format'
+import { CATEGORY_TONE, CONFORMANCE_TONE, inr, relTime, SERVICE_TONE, shortDate } from '@/lib/format'
 import { CONFORMANCE_ORDER, conformanceBreakdown } from '@/lib/conformance'
 import { byTraceability, serviceTrace, serviceOrigins, ORIGIN_LABEL, ORIGIN_BLURB, type ServiceOrigin } from '@/lib/traceability'
 import { CeaseServiceModal, ModifyServiceDrawer } from '@/components/ServiceChangeDialogs'
@@ -37,6 +37,20 @@ function lastChangedAt(s: Service): string | undefined {
   let latest: string | undefined
   s.history.forEach((h) => { if (!latest || Date.parse(h.at) > Date.parse(latest)) latest = h.at })
   return latest
+}
+
+/** The two categories carrying the most of a flagged group — what a NOC lead
+ *  actually needs to know past the raw count: where to start looking. */
+function topCategories(matches: Service[]): { category: Category; count: number }[] {
+  const counts = new Map<Category, number>()
+  matches.forEach((s) => counts.set(s.category, (counts.get(s.category) ?? 0) + 1))
+  return [...counts.entries()].map(([category, count]) => ({ category, count })).sort((a, b) => b.count - a.count).slice(0, 2)
+}
+
+/** The longest-standing case in a flagged group — the one that's been sitting
+ *  the longest, which is usually the one worth opening first. */
+function oldestOf(matches: Service[]): Service | undefined {
+  return matches.reduce<Service | undefined>((oldest, s) => (!oldest || s.liveSince < oldest.liveSince ? s : oldest), undefined)
 }
 
 export default function ServiceInventory() {
@@ -279,25 +293,43 @@ export default function ServiceInventory() {
                 segments={confSegs.map(({ label, value, fill, onClick }) => ({ label, value, fill, onClick }))}
               />
               <div className="flex-1 min-w-[280px] grid sm:grid-cols-2 gap-2.5">
-                {confSegs.map((s) => (
-                  <button
-                    key={s.label} type="button" onClick={s.onClick}
-                    aria-label={`${s.label}: ${s.value}. Open the matching services`}
-                    className="flex items-start gap-2.5 border border-line rounded-lg px-3.5 py-2.5 text-left cursor-pointer
-                      transition-colors hover:bg-plane hover:border-brand-200
-                      focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
-                  >
-                    <i className="w-2.5 h-2.5 rounded-[3px] shrink-0 mt-1.5" style={{ background: FILL[s.fill] }} aria-hidden />
-                    <span className="min-w-0">
-                      <span className="block text-[16px] font-semibold tnum text-ink-1 leading-tight">
-                        {s.value.toLocaleString()}
-                        <span className="text-[11px] text-ink-3 font-medium ml-1.5">{Math.round((s.value / services.length) * 100)}%</span>
-                      </span>
-                      <span className="block text-[12px] font-medium text-ink-2 mt-0.5">{s.label}</span>
-                      <span className="block text-[11px] text-ink-3 leading-snug">{s.note}</span>
-                    </span>
-                  </button>
-                ))}
+                {confSegs.map((s) => {
+                  /* Five verdicts in a two-column grid leaves the last tile
+                     alone in its row — spanning it full width and laying it
+                     out sideways uses that row instead of leaving it blank. */
+                  const wide = s.label === 'Not checked'
+                  return (
+                    <button
+                      key={s.label} type="button" onClick={s.onClick}
+                      aria-label={`${s.label}: ${s.value}. Open the matching services`}
+                      className={`flex gap-2.5 border border-line rounded-lg px-3.5 py-2.5 text-left cursor-pointer
+                        transition-colors hover:bg-plane hover:border-brand-200
+                        focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100
+                        ${wide ? 'sm:col-span-2 items-center' : 'items-start'}`}
+                    >
+                      <i className="w-2.5 h-2.5 rounded-[3px] shrink-0 mt-1.5" style={{ background: FILL[s.fill] }} aria-hidden />
+                      {wide ? (
+                        <span className="min-w-0 flex-1 flex items-baseline gap-2.5 flex-wrap">
+                          <span className="text-[16px] font-semibold tnum text-ink-1 leading-tight shrink-0">
+                            {s.value.toLocaleString()}
+                            <span className="text-[11px] text-ink-3 font-medium ml-1.5">{Math.round((s.value / services.length) * 100)}%</span>
+                          </span>
+                          <span className="text-[12px] font-medium text-ink-2 shrink-0">{s.label}</span>
+                          <span className="text-[11px] text-ink-3 leading-snug">· {s.note}</span>
+                        </span>
+                      ) : (
+                        <span className="min-w-0">
+                          <span className="block text-[16px] font-semibold tnum text-ink-1 leading-tight">
+                            {s.value.toLocaleString()}
+                            <span className="text-[11px] text-ink-3 font-medium ml-1.5">{Math.round((s.value / services.length) * 100)}%</span>
+                          </span>
+                          <span className="block text-[12px] font-medium text-ink-2 mt-0.5">{s.label}</span>
+                          <span className="block text-[11px] text-ink-3 leading-snug">{s.note}</span>
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             </div>
             <div className="h-px bg-line-soft my-5" />
@@ -305,6 +337,7 @@ export default function ServiceInventory() {
             <BarList
               labelWidth={170}
               valueWidth={96}
+              className="flex-1 justify-between"
               items={[...intents]
                 .map((i) => ({ intent: i, count: services.filter((s) => s.intentId === i.id).length }))
                 .sort((a, b) => b.count - a.count)
@@ -322,49 +355,86 @@ export default function ServiceInventory() {
 
         <Card className="flex flex-col">
           <CardHead title="Needs attention" sub="Ranked by exposure — click a row to open the matching services"
-            info="The three service groups carrying operational or revenue risk right now, ranked by how much exposure each one represents. Ghost services leak revenue, degraded services break the customer experience, and drifted services no longer match their order." />
-          <CardBody className="flex-1 flex flex-col gap-3">
+            info="The four service groups carrying operational, revenue or evidence risk right now, ranked by how much exposure each one represents. Ghost services leak revenue, degraded services break the customer experience, drifted services no longer match their order, and never-proven services carry no evidence either way." />
+          <CardBody className="flex-1 flex flex-col gap-5">
             {([
               {
-                key: 'ghost', label: 'Ghost services', count: n.conf('Ghost'), icon: Ghost,
-                tint: 'bg-crit-50 text-crit-500', num: 'text-crit-500',
+                key: 'ghost', label: 'Ghost services', icon: Ghost,
+                tint: 'bg-crit-50 text-crit-500', num: 'text-crit-500', bar: 'crit' as const,
                 why: `Billed and marked live with no configuration on any endpoint. Combined ${inr(ghostValue)} per year.`,
+                filter: (s: Service) => s.conformance === 'Ghost',
                 go: () => patch({ conf: 'Ghost', state: null }),
               },
               {
-                key: 'degraded', label: 'Degraded right now', count: n.state('Degraded'), icon: Activity,
-                tint: 'bg-warn-50 text-warn-700', num: 'text-warn-700',
+                key: 'degraded', label: 'Degraded right now', icon: Activity,
+                tint: 'bg-warn-50 text-warn-700', num: 'text-warn-700', bar: 'warn' as const,
                 why: 'Contractually live, operationally impaired.',
+                filter: (s: Service) => s.state === 'Degraded',
                 go: () => patch({ state: 'Degraded', conf: null }),
               },
               {
-                key: 'drifted', label: 'Drifted from intent', count: n.conf('Drifted'), icon: GitCompare,
-                tint: 'bg-warn-50 text-warn-700', num: 'text-warn-700',
+                key: 'drifted', label: 'Drifted from intent', icon: GitCompare,
+                tint: 'bg-warn-50 text-warn-700', num: 'text-warn-700', bar: 'warn' as const,
                 why: 'At least one attribute on the device disagrees with the order.',
+                filter: (s: Service) => s.conformance === 'Drifted',
                 go: () => patch({ conf: 'Drifted', state: null }),
               },
-            ]).map((row) => (
-              <button
-                key={row.key} type="button" onClick={row.go}
-                aria-label={`${row.label}: ${row.count}. Open the matching services`}
-                className="flex-1 flex items-center gap-3.5 border border-line rounded-lg px-4 py-3 text-left cursor-pointer
-                  transition-colors hover:bg-plane hover:border-brand-200 group
-                  focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
-              >
-                <span className={`w-9 h-9 rounded-lg grid place-items-center shrink-0 ${row.tint}`} aria-hidden>
-                  <row.icon size={17} />
-                </span>
-                <span className="flex-1 min-w-0">
-                  <span className="block text-[13px] font-semibold text-ink-1">{row.label}</span>
-                  <span className="block text-[12px] text-ink-3 mt-0.5 leading-snug">{row.why}</span>
-                </span>
-                <span className="text-right shrink-0">
-                  <span className={`block text-[22px] font-semibold tnum leading-tight ${row.num}`}>{row.count}</span>
-                  <span className="block text-[11px] text-ink-3">{((row.count / services.length) * 100).toFixed(1)}% of base</span>
-                </span>
-                <ChevronRight size={16} className="text-ink-3 shrink-0 group-hover:text-brand-600 transition-colors" aria-hidden />
-              </button>
-            ))}
+              {
+                key: 'never-proven', label: 'Never proven end to end', icon: ShieldQuestion,
+                tint: 'bg-plum-50 text-plum-700', num: 'text-plum-700', bar: 'plum' as const,
+                why: 'Configured on the device, but no end-to-end test has ever proven it.',
+                filter: (s: Service) => s.conformance === 'Never proven',
+                go: () => patch({ conf: 'Never proven', state: null }),
+              },
+            ]).map((row) => {
+              const matches = services.filter(row.filter)
+              const top = topCategories(matches)
+              const oldest = oldestOf(matches)
+              return (
+                <button
+                  key={row.key} type="button" onClick={row.go}
+                  aria-label={`${row.label}: ${matches.length}. Open the matching services`}
+                  className="flex flex-col gap-3.5 border border-line rounded-lg px-5 py-5 text-left cursor-pointer
+                    transition-colors hover:bg-plane hover:border-brand-200 group
+                    focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
+                >
+                  <span className="flex items-center gap-3.5">
+                    <span className={`w-9 h-9 rounded-lg grid place-items-center shrink-0 ${row.tint}`} aria-hidden>
+                      <row.icon size={17} />
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[13px] font-semibold text-ink-1">{row.label}</span>
+                      <span className="block text-[12px] text-ink-3 mt-0.5 leading-snug">{row.why}</span>
+                    </span>
+                    <span className="text-right shrink-0">
+                      <span className={`block text-[22px] font-semibold tnum leading-tight ${row.num}`}>{matches.length}</span>
+                      <span className="block text-[11px] text-ink-3">{((matches.length / services.length) * 100).toFixed(1)}% of base</span>
+                    </span>
+                    <ChevronRight size={16} className="text-ink-3 shrink-0 group-hover:text-brand-600 transition-colors" aria-hidden />
+                  </span>
+                  <Progress value={(matches.length / services.length) * 100} tone={row.bar} />
+                  {matches.length > 0 && (
+                    <div className="flex items-center justify-between gap-3 pt-3.5 border-t border-line-soft flex-wrap">
+                      <span className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[11px] text-ink-3">Mostly</span>
+                        {top.map((t) => (
+                          <Badge key={t.category} tone={CATEGORY_TONE[t.category]}>{t.category} · {t.count}</Badge>
+                        ))}
+                      </span>
+                      {oldest && (
+                        <span className="text-[11px] text-ink-3">
+                          Longest-standing: <span className="font-medium text-ink-2">{oldest.name}</span> · live since {shortDate(oldest.liveSince)} ({oldest.ageLabel})
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </button>
+              )
+            })}
+            <div className="pt-2 border-t border-line-soft text-[11px] text-ink-3 leading-snug">
+              Ghost, drifted and never-proven are three of the five conformance verdicts shown on the left.
+              Degraded is a live operational read, tracked independently of conformance.
+            </div>
           </CardBody>
         </Card>
       </div>
