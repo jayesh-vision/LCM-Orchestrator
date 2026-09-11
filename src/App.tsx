@@ -1,8 +1,7 @@
-import { Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import AppShell from '@/components/AppShell'
 import Dashboard from '@/pages/Dashboard'
 import ProvisioningRequests from '@/pages/ProvisioningRequests'
-import ProvisioningExecution from '@/pages/ProvisioningExecution'
 import OrderDetail from '@/pages/OrderDetail'
 import NewServiceWizard from '@/pages/NewServiceWizard'
 import ServiceInventory from '@/pages/ServiceInventory'
@@ -16,6 +15,20 @@ import Evidence from '@/pages/Evidence'
 import Reports from '@/pages/Reports'
 import NotFound from '@/pages/NotFound'
 
+/**
+ * The Execution queue is folded into Provisioning Requests, but its links
+ * are not: dashboards, Change & Cease and old bookmarks still say
+ * /execution?state=… — send them to the unified screen with their filters
+ * intact. Those links expect to land on a grid of orders, so default the
+ * view to Listing unless the link asked for something else.
+ */
+function ExecutionRedirect() {
+  const { search } = useLocation()
+  const p = new URLSearchParams(search)
+  if (!p.has('view')) p.set('view', 'listing')
+  return <Navigate to={`/requests?${p}`} replace />
+}
+
 export default function App() {
   return (
     <Routes>
@@ -24,7 +37,7 @@ export default function App() {
         <Route path="requests" element={<ProvisioningRequests />} />
         <Route path="requests/new" element={<NewServiceWizard />} />
         <Route path="requests/:id" element={<OrderDetail />} />
-        <Route path="execution" element={<ProvisioningExecution />} />
+        <Route path="execution" element={<ExecutionRedirect />} />
         <Route path="execution/:id" element={<OrderDetail />} />
         <Route path="inventory" element={<ServiceInventory />} />
         <Route path="inventory/:id" element={<ServiceDetail />} />
