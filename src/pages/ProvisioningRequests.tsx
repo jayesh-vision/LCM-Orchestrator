@@ -11,7 +11,7 @@ import {
 } from '@/components/ui'
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { VENDOR_LABEL } from '@/data/workflows'
-import { CATEGORY_TONE, INTENT_TONE, ORDER_TONE } from '@/lib/format'
+import { CATEGORY_TONE, INTENT_TONE, ORDER_INTENTS, ORDER_TONE } from '@/lib/format'
 import { byRaised, orderTrace } from '@/lib/traceability'
 
 const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
@@ -267,10 +267,14 @@ export default function ProvisioningRequests() {
             onRowClick={(r) => nav(`/requests/${r.id}`, fromList)}
             toolbar={{
               search: { value: q, onChange: setQ, placeholder: 'Name, Code, Model' },
-              /* Domain, Vendor and Category are common enough to earn their own
-                 dropdown right in the toolbar, instead of a click-through to the
-                 filter icon — everything else stays in the popover. */
+              /* Request type, Domain, Vendor and Category are common enough to
+                 earn their own dropdown right in the toolbar, instead of a
+                 click-through to the filter icon — everything else stays in
+                 the popover. */
               chips: [
+                <FieldDropdown key="intent" label="Request type" value={intent} onChange={(v) => setIntent(v as OrderIntent | 'All')}
+                  options={ORDER_INTENTS.filter((i) => orders.some((o) => o.intent === i))
+                    .map((i) => ({ value: i, label: i, count: orders.filter((o) => o.intent === i).length }))} />,
                 <FieldDropdown key="domain" label="Domain" value={domain} onChange={(v) => setDomainScoped(v as Domain | 'All')}
                   options={DOMAINS.map((d) => ({ value: d, label: d, count: orders.filter((o) => domainOf(o.category) === d).length }))} />,
                 <FieldDropdown key="vendor" label="Vendor" value={vendor} onChange={(v) => setVendor(v as Vendor | 'All')}
@@ -294,10 +298,6 @@ export default function ProvisioningRequests() {
                     { value: 'Failed,Rejected,Invalid,Reinstantiate', label: 'Blocked' },
                   ],
                 },
-                { key: 'intent', label: 'Request type', value: intent, onChange: (v) => setIntent(v as OrderIntent | 'All'),
-                  options: (['Create', 'Modify', 'Suspend', 'Resume', 'Cease', 'Re-prove'] as OrderIntent[])
-                    .filter((i) => orders.some((o) => o.intent === i))
-                    .map((i) => ({ value: i, label: i, count: orders.filter((o) => o.intent === i).length })) },
                 { key: 'customer', label: 'Customer Name', type: 'text', value: customer, onChange: setCustomer },
                 { key: 'name', label: 'Name', type: 'text', value: qname, onChange: setQname },
                 { key: 'code', label: 'Code', type: 'text', value: qcode, onChange: setQcode },

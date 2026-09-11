@@ -11,7 +11,7 @@ import {
 } from '@/components/ui'
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { VENDOR_LABEL } from '@/data/workflows'
-import { ageLabel, CATEGORY_TONE, clockTime, INTENT_TONE, ORDER_TONE, relTime } from '@/lib/format'
+import { ageLabel, CATEGORY_TONE, clockTime, INTENT_TONE, ORDER_INTENTS, ORDER_TONE, relTime } from '@/lib/format'
 import { byRaised, orderTrace } from '@/lib/traceability'
 
 const EXEC_STATES: OrderState[] = [
@@ -255,11 +255,15 @@ export default function ProvisioningExecution() {
             onRowClick={(r) => nav(`/execution/${r.id}?tab=lifecycle`, fromList)}
             toolbar={{
               search: { value: q, onChange: setQ, placeholder: 'Name, Code, Model' },
-              /* Domain, Vendor and Category are common enough to earn their own
-                 dropdown right in the toolbar, instead of a click-through to the
-                 filter icon — everything else (status, search-by-name) still
-                 lives in the popover, or the visible search box above. */
+              /* Request type, Domain, Vendor and Category are common enough to
+                 earn their own dropdown right in the toolbar, instead of a
+                 click-through to the filter icon — everything else (status,
+                 search-by-name) still lives in the popover, or the visible
+                 search box above. */
               chips: [
+                <FieldDropdown key="intent" label="Request type" value={intent} onChange={(v) => setIntent(v as OrderIntent | 'All')}
+                  options={ORDER_INTENTS.filter((i) => pool.some((o) => o.intent === i))
+                    .map((i) => ({ value: i, label: i, count: pool.filter((o) => o.intent === i).length }))} />,
                 <FieldDropdown key="domain" label="Domain" value={domain} onChange={(v) => setDomainScoped(v as Domain | 'All')}
                   options={DOMAINS.map((d) => ({ value: d, label: d, count: pool.filter((o) => domainOf(o.category) === d).length }))} />,
                 <FieldDropdown key="vendor" label="Vendor" value={vendor} onChange={(v) => setVendor(v as Vendor | 'All')}
@@ -278,10 +282,6 @@ export default function ProvisioningExecution() {
                     ...EXEC_STATES.filter((st) => n(st) > 0).map((st) => ({ value: st, label: st, count: n(st) })),
                     { value: 'Approved,Queued', label: 'Ready to run' },
                   ] },
-                { key: 'intent', label: 'Request type', value: intent, onChange: (v) => setIntent(v as OrderIntent | 'All'),
-                  options: (['Create', 'Modify', 'Suspend', 'Resume', 'Cease', 'Re-prove'] as OrderIntent[])
-                    .filter((i) => pool.some((o) => o.intent === i))
-                    .map((i) => ({ value: i, label: i, count: pool.filter((o) => o.intent === i).length })) },
                 { key: 'name', label: 'Name', type: 'text', value: qname, onChange: setQname },
                 { key: 'code', label: 'Code', type: 'text', value: qcode, onChange: setQcode },
                 { key: 'model', label: 'Model', type: 'text', value: qmodel, onChange: setQmodel },

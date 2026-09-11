@@ -57,6 +57,12 @@ export const INTENT_TONE: Record<OrderIntent, Tone> = {
   Create: 'info', Modify: 'plum', Suspend: 'warn', Resume: 'good', Cease: 'crit', 'Re-prove': 'teal',
 }
 
+/* Lifecycle order, not alphabetical: a service is built, changed, paused,
+   resumed, ceased — and re-proved at any point without touching it. Filter
+   dropdowns read down this list so the options sit in the order an operator
+   already thinks about them. */
+export const ORDER_INTENTS: OrderIntent[] = ['Create', 'Modify', 'Suspend', 'Resume', 'Cease', 'Re-prove']
+
 export function relTime(iso?: string): string {
   if (!iso) return 'never'
   const diff = Date.now() - new Date(iso).getTime()
