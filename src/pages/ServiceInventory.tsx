@@ -9,7 +9,7 @@ import {
   Badge, Card, CardBody, CardHead, CellMain, CellSub, DataTable,
   FieldDropdown, FilterBanner, Kebab, Mono, Progress, Stat, stampColumn, type Column,
 } from '@/components/ui'
-import { BarList, CHART, Donut, FILL, type FillKey } from '@/components/charts'
+import { CHART, Donut, FILL, type FillKey } from '@/components/charts'
 import { CATEGORY_TONE, CONFORMANCE_TONE, inr, relTime, SERVICE_TONE, shortDate } from '@/lib/format'
 import { CONFORMANCE_ORDER, conformanceBreakdown } from '@/lib/conformance'
 import { byTraceability, serviceTrace, serviceOrigins, ORIGIN_LABEL, ORIGIN_BLURB, type ServiceOrigin } from '@/lib/traceability'
@@ -131,6 +131,23 @@ export default function ServiceInventory() {
   const confSegs: { label: string; value: number; fill: FillKey; note: string; onClick: () => void }[] =
     CONFORMANCE_ORDER.map((c) => ({
       label: c, value: health.counts[c], fill: CONF_FILL[c], note: CONF_NOTE[c], onClick: () => setConf(c),
+    }))
+
+  /* Ranked, biggest first — the intent list has no fixed size (it grows with
+     every new template), so this reads as a ranked grid of tiles rather than
+     a vertical list that would only ever get longer. Rank, not the intent's
+     own identity, picks the colour, so the shade always says "how big" the
+     same way the old bar list did. */
+  const intentItems = [...intents]
+    .map((i) => ({ intent: i, count: services.filter((s) => s.intentId === i.id).length }))
+    .sort((a, b) => b.count - a.count)
+    .map(({ intent: i, count }, rank) => ({
+      id: i.id,
+      label: i.name,
+      value: count,
+      color: [CHART.blue700, CHART.blue600, CHART.blue500, CHART.blue400, CHART.blue300, CHART.blue200][Math.min(rank, 5)],
+      pct: Math.round((count / Math.max(1, services.length)) * 100),
+      onClick: () => patch({ intent: i.id, conf: null, state: null }),
     }))
 
   /* Where each service came from. Most of this base predates the platform,
@@ -334,11 +351,11 @@ export default function ServiceInventory() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
-        <Card className="flex flex-col">
-          <CardHead title="Conformance across the base" sub="Each service holds exactly one of these verdicts"
-            info="Compares what each order says the service should be (the intent) with what is actually configured on the devices. Every service holds exactly one of five verdicts, so the counts always add up to the whole base. Not checked means conformance does not apply — the service is ceased, or still activating — which is different from Never proven, where a live service has simply never been tested. Click any segment or tile to open those services." />
-          <CardBody className="flex-1 flex flex-col">
-            <div className="flex items-center gap-6 flex-wrap">
+        <div className="flex flex-col gap-4">
+          <Card className="flex flex-col">
+            <CardHead title="Conformance across the base" sub="Each service holds exactly one of these verdicts"
+              info="Compares what each order says the service should be (the intent) with what is actually configured on the devices. Every service holds exactly one of five verdicts, so the counts always add up to the whole base. Not checked means conformance does not apply — the service is ceased, or still activating — which is different from Never proven, where a live service has simply never been tested. Click any segment or tile to open those services." />
+            <CardBody className="flex items-center gap-6 flex-wrap">
               <Donut
                 size={158}
                 segments={confSegs.map(({ label, value, fill, onClick }) => ({ label, value, fill, onClick }))}
@@ -382,32 +399,43 @@ export default function ServiceInventory() {
                   )
                 })}
               </div>
-            </div>
-            <div className="h-px bg-line-soft my-5" />
-            <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-3">Services by intent</div>
-            <BarList
-              labelWidth={170}
-              valueWidth={96}
-              className="flex-1 justify-between"
-              items={[...intents]
-                .map((i) => ({ intent: i, count: services.filter((s) => s.intentId === i.id).length }))
-                .sort((a, b) => b.count - a.count)
-                .map(({ intent: i, count }, rank) => ({
-                  label: i.name,
-                  value: count,
-                  color: [CHART.blue700, CHART.blue600, CHART.blue500, CHART.blue400, CHART.blue300, CHART.blue200][Math.min(rank, 5)],
-                  valueLabel: `${count.toLocaleString()} · ${Math.round((count / services.length) * 100)}%`,
-                  drillLabel: `${count} services on intent ${i.name}`,
-                  onClick: () => patch({ intent: i.id, conf: null, state: null }),
-                }))}
-            />
-          </CardBody>
-        </Card>
+            </CardBody>
+          </Card>
+
+          <Card className="flex flex-col">
+            <CardHead title="Services by intent" sub="Volume by provisioning intent, ranked biggest first"
+              info="Every service in the base, grouped by the template that provisioned it and ranked by volume — darker tiles carry more of the base. Click a tile to open just that intent's services." />
+            <CardBody className="vw-scroll-hint grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[360px] overflow-y-auto">
+              {intentItems.map((it) => (
+                <button
+                  key={it.id} type="button" onClick={it.onClick}
+                  aria-label={`${it.value} services on intent ${it.label}. Open them`}
+                  className="flex flex-col gap-2 border border-line rounded-lg px-3 py-2.5 text-left cursor-pointer
+                    transition-colors hover:bg-plane hover:border-brand-200
+                    focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
+                >
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <i className="w-2 h-2 rounded-[2px] shrink-0" style={{ background: it.color }} aria-hidden />
+                    <span className="text-[11.5px] font-medium text-ink-2 truncate">{it.label}</span>
+                  </span>
+                  <span className="flex items-baseline gap-1.5">
+                    <span className="text-[17px] font-semibold tnum text-ink-1 leading-none">{it.value.toLocaleString()}</span>
+                    <span className="text-[11px] text-ink-3">{it.pct}%</span>
+                  </span>
+                  <div className="h-1.5 rounded-full bg-line-soft overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${it.pct}%`, background: it.color }} />
+                  </div>
+                </button>
+              ))}
+            </CardBody>
+          </Card>
+        </div>
 
         <Card className="flex flex-col">
           <CardHead title="Needs attention" sub="Ranked by exposure — click a row to open the matching services"
             info="The four service groups carrying operational, revenue or evidence risk right now, ranked by how much exposure each one represents. Ghost services leak revenue, degraded services break the customer experience, drifted services no longer match their order, and never-proven services carry no evidence either way." />
-          <CardBody className="flex-1 flex flex-col gap-5">
+          <CardBody className="flex-1 flex flex-col gap-3">
+          <div className="vw-scroll-hint flex flex-col gap-5 max-h-[640px] overflow-y-auto">
             {([
               {
                 key: 'ghost', label: 'Ghost services', icon: Ghost,
@@ -482,8 +510,9 @@ export default function ServiceInventory() {
                 </button>
               )
             })}
+          </div>
             <div className="pt-2 border-t border-line-soft text-[11px] text-ink-3 leading-snug">
-              Ghost, drifted and never-proven are three of the five conformance verdicts shown on the left.
+              Ghost, drifted and never-proven are three of the five conformance verdicts shown above.
               Degraded is a live operational read, tracked independently of conformance.
             </div>
           </CardBody>
