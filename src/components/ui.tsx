@@ -446,10 +446,11 @@ export function Select({ children, ...p }: React.SelectHTMLAttributes<HTMLSelect
     </div>
   )
 }
-export function Toggle({ checked, onChange, label, hint }:
-{ checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
+export function Toggle({ checked, onChange, label, hint, disabled }:
+{ checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string; disabled?: boolean }) {
   return (
-    <button type="button" onClick={() => onChange(!checked)} className="flex items-start gap-2.5 text-left w-full group">
+    <button type="button" disabled={disabled} onClick={() => onChange(!checked)}
+      className="flex items-start gap-2.5 text-left w-full group disabled:opacity-55 disabled:cursor-not-allowed">
       <span className={`mt-0.5 w-[34px] h-[19px] rounded-full shrink-0 transition-colors relative ${checked ? 'bg-brand-500' : 'bg-line'}`}>
         <span className={`absolute top-[2px] w-[15px] h-[15px] rounded-full bg-white shadow transition-all ${checked ? 'left-[17px]' : 'left-[2px]'}`} />
       </span>

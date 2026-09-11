@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Check, CheckCircle2, ChevronRight, Plus, RotateCcw,
+  AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Check, CheckCircle2, ChevronRight, Eye, Pencil, Plus, RotateCcw,
   Save, Send, ShieldCheck, Trash2, X,
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
@@ -240,6 +240,10 @@ export default function WorkflowBuilder() {
 
   const isNew = wf.id === 'new'
   const taskCount = wf.tasks.length
+  /* "View details" (no ?edit) lands here read-only; "Edit workflow" adds
+     ?edit=1. A brand-new draft is always editable — there is nothing to
+     view yet. */
+  const readOnly = !isNew && sp.get('edit') !== '1'
 
   return (
     <>
@@ -255,6 +259,7 @@ export default function WorkflowBuilder() {
                 <h1 className="text-[21px] font-semibold tracking-[-.4px] m-0 truncate max-w-[60vw]">{wf.displayName || (isNew ? 'New workflow' : wf.name)}</h1>
                 <Badge tone={WORKFLOW_TONE[wf.state]} dot={wf.state === 'Active'}>{wf.state} · v{wf.version}</Badge>
                 <Badge tone={CATEGORY_TONE[wf.category]}>{wf.category}</Badge>
+                {readOnly && <Badge tone="none"><Eye size={11} className="inline -mt-px mr-1" />View only</Badge>}
                 {dirty && <Badge tone="warn">Unsaved changes</Badge>}
               </div>
               <p className="text-[13px] text-ink-2 m-0">
@@ -263,19 +268,25 @@ export default function WorkflowBuilder() {
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <Button onClick={() => nav('/workflows')}>Cancel</Button>
-              <Button onClick={() => persist(wf.state === 'Active' ? 'Active' : 'Draft', wf.state === 'Active' ? `${wf.id} saved as version ${wf.version + 1}.` : undefined)} disabled={!wf.type || !wf.models.length || !wf.displayName.trim()}>
-                <Save size={15} />{wf.state === 'Active' ? `Save as v${wf.version + 1}` : 'Save draft'}
-              </Button>
-              {(wf.state === 'Draft' || wf.state === 'Assigned' || wf.state === 'Rejected') && (
-                <Button variant="primary" disabled={blockers > 0} onClick={() => persist('Awaiting approval', `${wf.displayName} submitted for approval.`)} title={blockers ? `${blockers} checks to clear first` : undefined}>
-                  <Send size={15} />{blockers ? `Submit · ${blockers} to fix` : 'Submit for approval'}
-                </Button>
-              )}
-              {wf.state === 'Awaiting approval' && !isNew && (
-                <Button variant="primary" disabled={blockers > 0 || dirty} onClick={() => setWorkflowState(wf.id, 'Active')}>
-                  <ShieldCheck size={15} />Approve & activate
-                </Button>
+              <Button onClick={() => nav('/workflows')}>{readOnly ? 'Close' : 'Cancel'}</Button>
+              {readOnly ? (
+                <Button variant="primary" onClick={() => nav(`/workflows/${wf.id}?edit=1`)}><Pencil size={15} />Edit workflow</Button>
+              ) : (
+                <>
+                  <Button onClick={() => persist(wf.state === 'Active' ? 'Active' : 'Draft', wf.state === 'Active' ? `${wf.id} saved as version ${wf.version + 1}.` : undefined)} disabled={!wf.type || !wf.models.length || !wf.displayName.trim()}>
+                    <Save size={15} />{wf.state === 'Active' ? `Save as v${wf.version + 1}` : 'Save draft'}
+                  </Button>
+                  {(wf.state === 'Draft' || wf.state === 'Assigned' || wf.state === 'Rejected') && (
+                    <Button variant="primary" disabled={blockers > 0} onClick={() => persist('Awaiting approval', `${wf.displayName} submitted for approval.`)} title={blockers ? `${blockers} checks to clear first` : undefined}>
+                      <Send size={15} />{blockers ? `Submit · ${blockers} to fix` : 'Submit for approval'}
+                    </Button>
+                  )}
+                  {wf.state === 'Awaiting approval' && !isNew && (
+                    <Button variant="primary" disabled={blockers > 0 || dirty} onClick={() => setWorkflowState(wf.id, 'Active')}>
+                      <ShieldCheck size={15} />Approve & activate
+                    </Button>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -284,22 +295,22 @@ export default function WorkflowBuilder() {
         <div className="px-5 pb-5 border-t border-line-soft pt-4">
           <div className="grid gap-x-4 gap-y-3 md:grid-cols-3 xl:grid-cols-6">
             <Field label="Category" required>
-              <Select value={wf.category} onChange={(e) => setCategory(e.target.value as Category)}>
+              <Select value={wf.category} disabled={readOnly} onChange={(e) => setCategory(e.target.value as Category)}>
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </Select>
             </Field>
             <Field label="Type" required>
-              <Select value={wf.type} onChange={(e) => setType(e.target.value)}>
+              <Select value={wf.type} disabled={readOnly} onChange={(e) => setType(e.target.value)}>
                 {types.map((t) => <option key={t}>{t}</option>)}
               </Select>
             </Field>
             <Field label="Catalog subtype" required>
-              <Select value={wf.subtype} onChange={(e) => patch({ subtype: e.target.value })}>
+              <Select value={wf.subtype} disabled={readOnly} onChange={(e) => patch({ subtype: e.target.value })}>
                 {subtypes.map((t) => <option key={t}>{t}</option>)}
               </Select>
             </Field>
             <Field label="Vendor" required hint={wf.category === 'L2VPN' ? undefined : 'Router vendors only — this category needs BGP/VRF, which a Switch does not run.'}>
-              <Select value={wf.vendor} onChange={(e) => setVendor(e.target.value as Vendor)}>
+              <Select value={wf.vendor} disabled={readOnly} onChange={(e) => setVendor(e.target.value as Vendor)}>
                 {categoryVendors.map((v) => <option key={v} value={v}>{VENDOR_LABEL[v]}</option>)}
               </Select>
             </Field>
@@ -308,20 +319,24 @@ export default function WorkflowBuilder() {
                 {wf.models.map((m) => (
                   <span key={m} className="vw-chip vw-chip--neutral gap-1 pr-1">
                     {m}
-                    <button aria-label={`Remove ${m}`} onClick={() => removeModel(m)} className="text-ink-3 hover:text-ink-1 grid place-items-center"><X size={12} /></button>
+                    {!readOnly && (
+                      <button aria-label={`Remove ${m}`} onClick={() => removeModel(m)} className="text-ink-3 hover:text-ink-1 grid place-items-center"><X size={12} /></button>
+                    )}
                   </span>
                 ))}
-                <select aria-label="Add model" value="" onChange={(e) => addModel(e.target.value)}
-                  className="bg-transparent text-[12.5px] text-ink-3 outline-none min-w-[90px] flex-1">
-                  <option value="">{wf.models.length ? '+ add' : 'Select model'}</option>
-                  {vendorModels.filter((d) => !wf.models.includes(d.model)).map((d) => <option key={d.model} value={d.model}>{d.model} · {d.os}</option>)}
-                </select>
+                {!readOnly && (
+                  <select aria-label="Add model" value="" onChange={(e) => addModel(e.target.value)}
+                    className="bg-transparent text-[12.5px] text-ink-3 outline-none min-w-[90px] flex-1">
+                    <option value="">{wf.models.length ? '+ add' : 'Select model'}</option>
+                    {vendorModels.filter((d) => !wf.models.includes(d.model)).map((d) => <option key={d.model} value={d.model}>{d.model} · {d.os}</option>)}
+                  </select>
+                )}
               </div>
             </Field>
             <Field label="Location" required hint={wf.category === 'IBW' ? 'IBW is single-ended — the template runs on the access device.' : undefined}>
               <div className="flex gap-1.5">
                 {(['Source', 'Destination'] as EndpointRole[]).map((r) => (
-                  <button key={r} type="button" aria-pressed={wf.endpointRole === r} disabled={wf.category === 'IBW'}
+                  <button key={r} type="button" aria-pressed={wf.endpointRole === r} disabled={wf.category === 'IBW' || readOnly}
                     onClick={() => patch({ endpointRole: r })}
                     className={`vw-chip is-clickable flex-1 justify-center py-[7px] ${wf.endpointRole === r ? 'vw-chip--info-solid is-strong' : 'vw-chip--neutral hover:brightness-95'} disabled:opacity-50`}>
                     {r}
@@ -331,15 +346,17 @@ export default function WorkflowBuilder() {
             </Field>
           </div>
           <div className="grid gap-x-4 gap-y-3 md:grid-cols-2 mt-3">
-            <Field label="Name" required hint={autoName ? 'Composed from the selections above in the platform convention. Switch it off to type your own.' : 'Typed manually.'}>
+            <Field label="Name" required hint={readOnly ? undefined : autoName ? 'Composed from the selections above in the platform convention. Switch it off to type your own.' : 'Typed manually.'}>
               <div className="flex gap-2">
-                <TextInput value={wf.name} readOnly={autoName} onChange={(e) => patch({ name: e.target.value })} className={autoName ? 'bg-plane font-mono text-[12.5px]' : 'font-mono text-[12.5px]'} maxLength={100} />
-                <button type="button" onClick={() => setAutoName(!autoName)} aria-pressed={autoName}
-                  className={`nst-btn nst-btn--sm whitespace-nowrap ${autoName ? 'nst-btn--filled' : ''}`}>Auto</button>
+                <TextInput value={wf.name} readOnly={autoName} disabled={readOnly} onChange={(e) => patch({ name: e.target.value })} className={autoName ? 'bg-plane font-mono text-[12.5px]' : 'font-mono text-[12.5px]'} maxLength={100} />
+                {!readOnly && (
+                  <button type="button" onClick={() => setAutoName(!autoName)} aria-pressed={autoName}
+                    className={`nst-btn nst-btn--sm whitespace-nowrap ${autoName ? 'nst-btn--filled' : ''}`}>Auto</button>
+                )}
               </div>
             </Field>
-            <Field label="Display name" required hint={`${wf.displayName.length} / 100`}>
-              <TextInput value={wf.displayName} maxLength={100} placeholder="How the workflow appears in lists, e.g. IBW | Static | Other | Juniper"
+            <Field label="Display name" required hint={readOnly ? undefined : `${wf.displayName.length} / 100`}>
+              <TextInput value={wf.displayName} maxLength={100} disabled={readOnly} placeholder="How the workflow appears in lists, e.g. IBW | Static | Other | Juniper"
                 onChange={(e) => patch({ displayName: e.target.value })} />
             </Field>
           </div>
@@ -355,7 +372,7 @@ export default function WorkflowBuilder() {
               <div className="vw-card-title-sm">Stages</div>
               <div className="vw-card-description">Top to bottom on the device</div>
             </div>
-            {taskCount === 0 && <Button size="sm" onClick={loadTemplate}><RotateCcw size={13} />Start from template</Button>}
+            {taskCount === 0 && !readOnly && <Button size="sm" onClick={loadTemplate}><RotateCcw size={13} />Start from template</Button>}
           </div>
           <div className="p-4 rounded-b-[inherit]" style={{ backgroundColor: 'var(--vw-color-gray-50)', backgroundImage: 'radial-gradient(var(--vw-color-gray-300) 1px, transparent 1px)', backgroundSize: '16px 16px' }}>
             <ol className="m-0 p-0 list-none flex flex-col items-stretch" aria-label="Stage flow">
@@ -371,18 +388,22 @@ export default function WorkflowBuilder() {
                       <div className="px-3.5 pt-3 pb-2.5">
                         <div className="flex items-start gap-2">
                           <div className="text-[13.5px] font-semibold leading-snug flex-1 min-w-0">{s.name}</div>
-                          <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                            <button aria-label={`Add task to ${s.name}`} onClick={() => addTask(s)} className="nst-icon-btn w-7 h-7"><Plus size={14} /></button>
-                            <button aria-label={`Delete stage ${s.name}`} onClick={() => removeStage(s.id)} className="nst-icon-btn w-7 h-7 text-crit-500"><Trash2 size={13} /></button>
-                          </div>
+                          {!readOnly && (
+                            <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                              <button aria-label={`Add task to ${s.name}`} onClick={() => addTask(s)} className="nst-icon-btn w-7 h-7"><Plus size={14} /></button>
+                              <button aria-label={`Delete stage ${s.name}`} onClick={() => removeStage(s.id)} className="nst-icon-btn w-7 h-7 text-crit-500"><Trash2 size={13} /></button>
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 mt-1">
                           <span className={`vw-chip ${KIND_CHIP[s.kind]} text-[11px]`}>{s.kind}</span>
                           <span className="text-[11.5px] text-ink-3 tnum">{list.length} task{list.length === 1 ? '' : 's'}</span>
-                          <span className="ml-auto flex gap-0.5" onClick={(e) => e.stopPropagation()}>
-                            <button aria-label={`Move ${s.name} up`} disabled={i === 0} onClick={() => moveStage(s.id, -1)} className="w-6 h-6 grid place-items-center rounded text-ink-3 hover:bg-plane hover:text-ink-1 disabled:opacity-25"><ArrowUp size={13} /></button>
-                            <button aria-label={`Move ${s.name} down`} disabled={i === stages.length - 1} onClick={() => moveStage(s.id, 1)} className="w-6 h-6 grid place-items-center rounded text-ink-3 hover:bg-plane hover:text-ink-1 disabled:opacity-25"><ArrowDown size={13} /></button>
-                          </span>
+                          {!readOnly && (
+                            <span className="ml-auto flex gap-0.5" onClick={(e) => e.stopPropagation()}>
+                              <button aria-label={`Move ${s.name} up`} disabled={i === 0} onClick={() => moveStage(s.id, -1)} className="w-6 h-6 grid place-items-center rounded text-ink-3 hover:bg-plane hover:text-ink-1 disabled:opacity-25"><ArrowUp size={13} /></button>
+                              <button aria-label={`Move ${s.name} down`} disabled={i === stages.length - 1} onClick={() => moveStage(s.id, 1)} className="w-6 h-6 grid place-items-center rounded text-ink-3 hover:bg-plane hover:text-ink-1 disabled:opacity-25"><ArrowDown size={13} /></button>
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="px-3 pb-3 flex flex-col gap-1.5">
@@ -397,17 +418,22 @@ export default function WorkflowBuilder() {
                             {(!t.name || !t.setCommand || !t.validations.length) && <AlertTriangle size={12} className="text-warn-500 shrink-0" aria-label="Incomplete" />}
                           </button>
                         ))}
-                        {list.length === 0 && (
+                        {list.length === 0 && (readOnly ? (
+                          <div className="rounded-[var(--vw-radius-sm)] border border-dashed border-line px-2.5 py-2 text-[12px] text-ink-3">
+                            No tasks in this stage
+                          </div>
+                        ) : (
                           <button onClick={(e) => { e.stopPropagation(); addTask(s) }} className="text-left rounded-[var(--vw-radius-sm)] border border-dashed border-line px-2.5 py-2 text-[12px] text-ink-3 hover:bg-plane">
                             + Add the first task
                           </button>
-                        )}
+                        ))}
                       </div>
                     </div>
                     <div className="self-center w-px h-5 bg-[var(--vw-color-gray-400)]" aria-hidden />
                   </li>
                 )
               })}
+              {!readOnly && (
               <li className="flex flex-col items-stretch">
                 {adding ? (
                   <div className="vw-card-section bg-white p-3.5 flex flex-col gap-2.5" aria-label="New stage">
@@ -425,6 +451,7 @@ export default function WorkflowBuilder() {
                   <button onClick={() => setAdding(true)} className="self-center nst-btn nst-btn--sm bg-white" aria-label="Add stage"><Plus size={14} />Add stage</button>
                 )}
               </li>
+              )}
             </ol>
           </div>
         </Card>
@@ -432,7 +459,7 @@ export default function WorkflowBuilder() {
         {/* context pane */}
         {task && stage ? (
           <TaskEditor
-            task={task} stage={stage} known={known}
+            task={task} stage={stage} known={known} readOnly={readOnly}
             onChange={(p) => patchTask(task.id, p)}
             onDelete={() => removeTask(task.id)}
             onDone={() => setSelTask(null)}
@@ -442,15 +469,15 @@ export default function WorkflowBuilder() {
             <div className="px-5 pt-4 pb-3 border-b border-line-soft flex items-start justify-between gap-4 flex-wrap">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <input aria-label="Stage name" value={stage.name} maxLength={50} onChange={(e) => renameStage(stage.id, e.target.value)}
-                    className="text-[16px] font-semibold bg-transparent border-b border-transparent hover:border-line focus:border-brand-500 outline-none min-w-[240px]" />
-                  <Select value={stage.kind} onChange={(e) => rekindStage(stage.id, e.target.value as StageKind)} aria-label="Stage kind" className="!h-[30px] !py-0 text-[12.5px] w-[170px]">
+                  <input aria-label="Stage name" value={stage.name} maxLength={50} disabled={readOnly} onChange={(e) => renameStage(stage.id, e.target.value)}
+                    className="text-[16px] font-semibold bg-transparent border-b border-transparent hover:border-line focus:border-brand-500 outline-none min-w-[240px] disabled:opacity-100" />
+                  <Select value={stage.kind} disabled={readOnly} onChange={(e) => rekindStage(stage.id, e.target.value as StageKind)} aria-label="Stage kind" className="!h-[30px] !py-0 text-[12.5px] w-[170px]">
                     {STAGE_KINDS.map((k) => <option key={k}>{k}</option>)}
                   </Select>
                 </div>
                 <div className="vw-card-description mt-1">{KIND_HINT[stage.kind]}</div>
               </div>
-              <Button variant="primary" size="sm" onClick={() => addTask(stage)}><Plus size={14} />Add task</Button>
+              {!readOnly && <Button variant="primary" size="sm" onClick={() => addTask(stage)}><Plus size={14} />Add task</Button>}
             </div>
             {tasksOf(stage.id).length ? (
               <div className="nst-table-card border-0 rounded-none shadow-none">
@@ -472,10 +499,16 @@ export default function WorkflowBuilder() {
                         <td>{t.rollbackEnabled ? <Badge tone={t.inverseCommand ? 'good' : 'crit'}>{t.inverseCommand ? 'Enabled' : 'Missing'}</Badge> : <span className="text-ink-3">—</span>}</td>
                         <td onClick={(e) => e.stopPropagation()}>
                           <div className="flex gap-1 justify-end">
-                            <button aria-label={`Move ${t.name} up`} disabled={i === 0} onClick={() => moveTask(t.id, -1)} className="nst-icon-btn w-7 h-7 disabled:opacity-30"><ArrowUp size={13} /></button>
-                            <button aria-label={`Move ${t.name} down`} disabled={i === arr.length - 1} onClick={() => moveTask(t.id, 1)} className="nst-icon-btn w-7 h-7 disabled:opacity-30"><ArrowDown size={13} /></button>
-                            <button aria-label={`Edit ${t.name}`} onClick={() => setSelTask(t.id)} className="nst-icon-btn w-7 h-7"><ChevronRight size={14} /></button>
-                            <button aria-label={`Delete ${t.name}`} onClick={() => removeTask(t.id)} className="nst-icon-btn w-7 h-7 text-crit-500"><Trash2 size={13} /></button>
+                            {readOnly ? (
+                              <button aria-label={`View ${t.name}`} onClick={() => setSelTask(t.id)} className="nst-icon-btn w-7 h-7"><Eye size={14} /></button>
+                            ) : (
+                              <>
+                                <button aria-label={`Move ${t.name} up`} disabled={i === 0} onClick={() => moveTask(t.id, -1)} className="nst-icon-btn w-7 h-7 disabled:opacity-30"><ArrowUp size={13} /></button>
+                                <button aria-label={`Move ${t.name} down`} disabled={i === arr.length - 1} onClick={() => moveTask(t.id, 1)} className="nst-icon-btn w-7 h-7 disabled:opacity-30"><ArrowDown size={13} /></button>
+                                <button aria-label={`Edit ${t.name}`} onClick={() => setSelTask(t.id)} className="nst-icon-btn w-7 h-7"><ChevronRight size={14} /></button>
+                                <button aria-label={`Delete ${t.name}`} onClick={() => removeTask(t.id)} className="nst-icon-btn w-7 h-7 text-crit-500"><Trash2 size={13} /></button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -485,12 +518,14 @@ export default function WorkflowBuilder() {
               </div>
             ) : (
               <CardBody className="py-12 text-center">
-                <div className="text-[14px] font-semibold mb-1">No tasks in {stage.name} yet</div>
+                <div className="text-[14px] font-semibold mb-1">No tasks in {stage.name}{readOnly ? '' : ' yet'}</div>
                 <p className="text-[13px] text-ink-3 mb-4 max-w-[52ch] mx-auto">{KIND_HINT[stage.kind]}</p>
-                <div className="flex gap-2 justify-center">
-                  <Button variant="primary" onClick={() => addTask(stage)}><Plus size={14} />Add task</Button>
-                  {taskCount === 0 && <Button onClick={loadTemplate}><RotateCcw size={14} />Start from the {VENDOR_LABEL[wf.vendor]} template</Button>}
-                </div>
+                {!readOnly && (
+                  <div className="flex gap-2 justify-center">
+                    <Button variant="primary" onClick={() => addTask(stage)}><Plus size={14} />Add task</Button>
+                    {taskCount === 0 && <Button onClick={loadTemplate}><RotateCcw size={14} />Start from the {VENDOR_LABEL[wf.vendor]} template</Button>}
+                  </div>
+                )}
               </CardBody>
             )}
           </Card>
@@ -549,8 +584,8 @@ export default function WorkflowBuilder() {
    groups: identity, set command + rules, rollback, behaviour.
    ------------------------------------------------------------------ */
 
-function TaskEditor({ task, stage, known, onChange, onDelete, onDone }: {
-  task: WorkflowTaskDef; stage: WorkflowStage; known: string[]
+function TaskEditor({ task, stage, known, readOnly, onChange, onDelete, onDone }: {
+  task: WorkflowTaskDef; stage: WorkflowStage; known: string[]; readOnly?: boolean
   onChange: (p: Partial<WorkflowTaskDef>) => void; onDelete: () => void; onDone: () => void
 }) {
   const used = paramsIn(task.setCommand)
@@ -565,17 +600,17 @@ function TaskEditor({ task, stage, known, onChange, onDelete, onDone }: {
           <div className="text-[16px] font-semibold mt-0.5">{task.name || 'New task'}</div>
         </div>
         <div className="flex gap-2">
-          <Button variant="danger" size="sm" onClick={onDelete}><Trash2 size={13} />Delete task</Button>
-          <Button variant="primary" size="sm" onClick={onDone}><Check size={14} />Done</Button>
+          {!readOnly && <Button variant="danger" size="sm" onClick={onDelete}><Trash2 size={13} />Delete task</Button>}
+          <Button variant="primary" size="sm" onClick={onDone}><Check size={14} />{readOnly ? 'Close' : 'Done'}</Button>
         </div>
       </div>
       <CardBody className="flex flex-col gap-5">
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Name" required hint="Short, unique inside the stage">
-            <TextInput value={task.name} maxLength={100} placeholder="e.g. Check interface configuration" onChange={(e) => onChange({ name: e.target.value, displayName: task.displayName === task.name ? e.target.value : task.displayName })} />
+            <TextInput value={task.name} maxLength={100} disabled={readOnly} placeholder="e.g. Check interface configuration" onChange={(e) => onChange({ name: e.target.value, displayName: task.displayName === task.name ? e.target.value : task.displayName })} />
           </Field>
           <Field label="Display name" required hint={`${task.displayName.length} / 100`}>
-            <TextInput value={task.displayName} maxLength={100} onChange={(e) => onChange({ displayName: e.target.value })} />
+            <TextInput value={task.displayName} maxLength={100} disabled={readOnly} onChange={(e) => onChange({ displayName: e.target.value })} />
           </Field>
         </div>
 
@@ -585,7 +620,7 @@ function TaskEditor({ task, stage, known, onChange, onDelete, onDone }: {
             <span className="nst-input-label">Set command <span className="text-crit-500">*</span></span>
             <span className="text-[11.5px] text-ink-3">Sent to the device as typed. One command per line.</span>
           </div>
-          <CommandBox value={task.setCommand} onChange={(v) => onChange({ setCommand: v })} placeholder={stage.kind === 'Configuration' ? 'set interfaces ${Interface} unit ${Vlan-ID} vlan-id ${Vlan-ID}' : 'show configuration interfaces ${Interface} | display set'} known={known} />
+          <CommandBox value={task.setCommand} onChange={(v) => onChange({ setCommand: v })} placeholder={stage.kind === 'Configuration' ? 'set interfaces ${Interface} unit ${Vlan-ID} vlan-id ${Vlan-ID}' : 'show configuration interfaces ${Interface} | display set'} known={known} readOnly={readOnly} />
           {used.length > 0 && (
             <div className="flex gap-1.5 flex-wrap mt-2" aria-label="Parameters in this command">
               {used.map((p) => (
@@ -595,20 +630,20 @@ function TaskEditor({ task, stage, known, onChange, onDelete, onDone }: {
               ))}
             </div>
           )}
-          <Rules label="Output is accepted when" rules={task.validations} onChange={setRules} />
+          <Rules label="Output is accepted when" rules={task.validations} onChange={setRules} readOnly={readOnly} />
         </section>
 
         {/* rollback */}
         <section aria-label="Rollback" className={`vw-card-section p-4 ${task.rollbackEnabled ? '' : 'bg-plane'}`}>
-          <Toggle checked={task.rollbackEnabled} onChange={(v) => onChange({ rollbackEnabled: v, rollbackBreaker: v ? task.rollbackBreaker : false, rollbackValidations: v && !task.rollbackValidations.length ? [newRule('And', 'Not contains', 'error')] : task.rollbackValidations })}
+          <Toggle checked={task.rollbackEnabled} disabled={readOnly} onChange={(v) => onChange({ rollbackEnabled: v, rollbackBreaker: v ? task.rollbackBreaker : false, rollbackValidations: v && !task.rollbackValidations.length ? [newRule('And', 'Not contains', 'error')] : task.rollbackValidations })}
             label="Rollback enabled" hint={stage.kind === 'Configuration' ? 'This task changes the device — give it a command that undoes the change.' : 'Read-only tasks rarely need a rollback.'} />
           {task.rollbackEnabled && (
             <div className="mt-3">
               <span className="nst-input-label block mb-1.5">Rollback command <span className="text-crit-500">*</span></span>
-              <CommandBox value={task.inverseCommand ?? ''} onChange={(v) => onChange({ inverseCommand: v })} placeholder="delete interfaces ${Interface} unit ${Vlan-ID}" known={known} />
-              <Rules label="Rollback is accepted when" rules={task.rollbackValidations} onChange={setRb} />
+              <CommandBox value={task.inverseCommand ?? ''} onChange={(v) => onChange({ inverseCommand: v })} placeholder="delete interfaces ${Interface} unit ${Vlan-ID}" known={known} readOnly={readOnly} />
+              <Rules label="Rollback is accepted when" rules={task.rollbackValidations} onChange={setRb} readOnly={readOnly} />
               <div className="mt-3">
-                <Toggle checked={task.rollbackBreaker} onChange={(v) => onChange({ rollbackBreaker: v })} label="Rollback breaker" hint="When the rollback pass reaches this task it stops here — earlier tasks are left as they are." />
+                <Toggle checked={task.rollbackBreaker} disabled={readOnly} onChange={(v) => onChange({ rollbackBreaker: v })} label="Rollback breaker" hint="When the rollback pass reaches this task it stops here — earlier tasks are left as they are." />
               </div>
             </div>
           )}
@@ -618,16 +653,16 @@ function TaskEditor({ task, stage, known, onChange, onDelete, onDone }: {
         <section aria-label="Behaviour">
           <div className="nst-input-label mb-2">Behaviour</div>
           <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
-            <Toggle checked={task.skipAllowed} onChange={(v) => onChange({ skipAllowed: v })} label="Can be skipped" hint="An engineer may skip this task during a run without failing it." />
-            <Toggle checked={task.manualCompleteAllowed} onChange={(v) => onChange({ manualCompleteAllowed: v })} label="Manual completion" hint="The run pauses here until an engineer marks it complete." />
-            <Toggle checked={task.retryAllowed} onChange={(v) => onChange({ retryAllowed: v })} label="Retry on failure" hint="Re-run the command before failing the task — useful for checks that need the device to converge." />
+            <Toggle checked={task.skipAllowed} disabled={readOnly} onChange={(v) => onChange({ skipAllowed: v })} label="Can be skipped" hint="An engineer may skip this task during a run without failing it." />
+            <Toggle checked={task.manualCompleteAllowed} disabled={readOnly} onChange={(v) => onChange({ manualCompleteAllowed: v })} label="Manual completion" hint="The run pauses here until an engineer marks it complete." />
+            <Toggle checked={task.retryAllowed} disabled={readOnly} onChange={(v) => onChange({ retryAllowed: v })} label="Retry on failure" hint="Re-run the command before failing the task — useful for checks that need the device to converge." />
             <div className="grid grid-cols-2 gap-3">
               <Field label="Timeout (ms)" hint={task.timeoutMs === undefined ? 'Platform default' : `${(task.timeoutMs / 1000).toFixed(0)} s`}>
-                <TextInput type="number" min={1000} step={1000} value={task.timeoutMs ?? ''} placeholder="50000" className="font-mono"
+                <TextInput type="number" min={1000} step={1000} value={task.timeoutMs ?? ''} placeholder="50000" className="font-mono" disabled={readOnly}
                   onChange={(e) => onChange({ timeoutMs: e.target.value === '' ? undefined : Number(e.target.value) })} />
               </Field>
               <Field label="Delay before (ms)" hint={task.delayMs ? `${(task.delayMs / 1000).toFixed(0)} s` : 'None'}>
-                <TextInput type="number" min={0} step={500} value={task.delayMs ?? ''} placeholder="0" className="font-mono"
+                <TextInput type="number" min={0} step={500} value={task.delayMs ?? ''} placeholder="0" className="font-mono" disabled={readOnly}
                   onChange={(e) => onChange({ delayMs: e.target.value === '' ? undefined : Number(e.target.value) })} />
               </Field>
             </div>
@@ -639,7 +674,7 @@ function TaskEditor({ task, stage, known, onChange, onDelete, onDone }: {
 }
 
 /** Mono textarea that highlights `${Parameter}` placeholders behind the text. */
-function CommandBox({ value, onChange, placeholder, known }: { value: string; onChange: (v: string) => void; placeholder?: string; known: string[] }) {
+function CommandBox({ value, onChange, placeholder, known, readOnly }: { value: string; onChange: (v: string) => void; placeholder?: string; known: string[]; readOnly?: boolean }) {
   const lines = Math.min(10, Math.max(3, value.split('\n').length + 1))
   const parts = value.split(/(\$\{[^}]+\})/g)
   return (
@@ -651,9 +686,9 @@ function CommandBox({ value, onChange, placeholder, known }: { value: string; on
         {'\n'}
       </div>
       <textarea
-        value={value} placeholder={placeholder} spellCheck={false}
+        value={value} placeholder={placeholder} spellCheck={false} disabled={readOnly}
         onChange={(e) => onChange(e.target.value)}
-        className="nst-textarea relative !font-mono !text-[12.5px] !leading-[20px] !p-2 w-full bg-transparent"
+        className="nst-textarea relative !font-mono !text-[12.5px] !leading-[20px] !p-2 w-full bg-transparent disabled:opacity-100"
         style={{ minHeight: `${lines * 20 + 16}px` }}
       />
     </div>
@@ -661,35 +696,39 @@ function CommandBox({ value, onChange, placeholder, known }: { value: string; on
 }
 
 /** Validation rules, top to bottom, each joined to the one above with And / Or. */
-function Rules({ label, rules, onChange }: { label: string; rules: ValidationRule[]; onChange: (r: ValidationRule[]) => void }) {
+function Rules({ label, rules, onChange, readOnly }: { label: string; rules: ValidationRule[]; onChange: (r: ValidationRule[]) => void; readOnly?: boolean }) {
   const upd = (id: string, p: Partial<ValidationRule>) => onChange(rules.map((r) => (r.id === id ? { ...r, ...p } : r)))
   return (
     <div className="mt-3">
       <div className="flex items-center justify-between gap-3 mb-1.5">
         <span className="text-[12px] font-medium text-ink-2">{label}</span>
-        <button type="button" onClick={() => onChange([...rules, newRule('And', 'Contains', '')])} className="nst-btn nst-btn--xs nst-btn--ghost text-brand-600"><Plus size={13} />Add rule</button>
+        {!readOnly && (
+          <button type="button" onClick={() => onChange([...rules, newRule('And', 'Contains', '')])} className="nst-btn nst-btn--xs nst-btn--ghost text-brand-600"><Plus size={13} />Add rule</button>
+        )}
       </div>
       {rules.length === 0 && <Note tone="warn">No rule — the task would pass on the transport exit code alone. Add at least one.</Note>}
       <div className="flex flex-col gap-1.5" aria-label={label}>
         {rules.map((r, i) => (
-          <div key={r.id} className="grid grid-cols-[84px_1fr_150px_32px] gap-2 items-center">
+          <div key={r.id} className={`grid gap-2 items-center ${readOnly ? 'grid-cols-[84px_1fr_150px]' : 'grid-cols-[84px_1fr_150px_32px]'}`}>
             {i === 0 ? <span className="text-[11.5px] text-ink-3 text-right pr-1">output</span> : (
               <div className="flex rounded-[var(--vw-radius-sm)] border border-line overflow-hidden h-[32px]" role="radiogroup" aria-label={`Join for rule ${i + 1}`}>
                 {(['And', 'Or'] as const).map((j) => (
-                  <button key={j} type="button" role="radio" aria-checked={r.join === j} onClick={() => upd(r.id, { join: j })}
-                    className={`flex-1 text-[12px] font-medium ${r.join === j ? 'bg-ink-1 text-white' : 'bg-white text-ink-2 hover:bg-plane'}`}>{j}</button>
+                  <button key={j} type="button" role="radio" aria-checked={r.join === j} disabled={readOnly} onClick={() => upd(r.id, { join: j })}
+                    className={`flex-1 text-[12px] font-medium disabled:opacity-100 ${r.join === j ? 'bg-ink-1 text-white' : 'bg-white text-ink-2 hover:bg-plane'}`}>{j}</button>
                 ))}
               </div>
             )}
-            <input aria-label={`Rule ${i + 1} text`} value={r.text} disabled={r.type === 'Not empty'} placeholder={r.type === 'Not empty' ? '(no text needed)' : 'text to look for, e.g. error'}
+            <input aria-label={`Rule ${i + 1} text`} value={r.text} disabled={r.type === 'Not empty' || readOnly} placeholder={r.type === 'Not empty' ? '(no text needed)' : 'text to look for, e.g. error'}
               onChange={(e) => upd(r.id, { text: e.target.value })} className="nst-input w-full !h-[32px] font-mono text-[12px]" />
             <div className="relative">
-              <select aria-label={`Rule ${i + 1} type`} value={r.type} onChange={(e) => upd(r.id, { type: e.target.value as ValidationType })} className="nst-input w-full !h-[32px] appearance-none pr-7 text-[12.5px]">
+              <select aria-label={`Rule ${i + 1} type`} value={r.type} disabled={readOnly} onChange={(e) => upd(r.id, { type: e.target.value as ValidationType })} className="nst-input w-full !h-[32px] appearance-none pr-7 text-[12.5px]">
                 {VALIDATION_TYPES.map((t) => <option key={t}>{t}</option>)}
               </select>
               <ChevronRight size={13} className="absolute right-2 top-1/2 -translate-y-1/2 rotate-90 text-ink-3 pointer-events-none" />
             </div>
-            <button type="button" aria-label={`Remove rule ${i + 1}`} onClick={() => onChange(rules.filter((x) => x.id !== r.id))} className="nst-icon-btn w-8 h-8 text-crit-500"><Trash2 size={13} /></button>
+            {!readOnly && (
+              <button type="button" aria-label={`Remove rule ${i + 1}`} onClick={() => onChange(rules.filter((x) => x.id !== r.id))} className="nst-icon-btn w-8 h-8 text-crit-500"><Trash2 size={13} /></button>
+            )}
           </div>
         ))}
       </div>

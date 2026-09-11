@@ -70,12 +70,10 @@ export default function OrderDetail() {
      Back from a row dropped the user on the charts rather than the list they
      came from, and dropped their filters with it. The list passes its own
      query string across in navigation state when it opens a row, so Back
-     replays that exact selection; anything that reaches this screen by some
-     other route still gets `?view=listing`, because a row detail is only ever
-     opened from a row. */
+     replays that exact selection. */
   const listBase = loc.pathname.startsWith('/execution') ? '/execution' : '/requests'
   const fromList = (loc.state as { fromList?: string } | null)?.fromList
-  const listPath = `${listBase}${fromList || '?view=listing'}`
+  const listPath = `${listBase}${fromList || ''}`
   const listLabel = listBase === '/execution' ? 'Provisioning Execution' : 'Provisioning Requests'
   const order = useStore((s) => s.orders.find((o) => o.id === id))
   const allRuns = useStore((s) => s.runs)

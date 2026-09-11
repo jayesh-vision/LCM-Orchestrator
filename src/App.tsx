@@ -19,14 +19,11 @@ import NotFound from '@/pages/NotFound'
  * The Execution queue is folded into Provisioning Requests, but its links
  * are not: dashboards, Change & Cease and old bookmarks still say
  * /execution?state=… — send them to the unified screen with their filters
- * intact. Those links expect to land on a grid of orders, so default the
- * view to Listing unless the link asked for something else.
+ * intact.
  */
 function ExecutionRedirect() {
   const { search } = useLocation()
-  const p = new URLSearchParams(search)
-  if (!p.has('view')) p.set('view', 'listing')
-  return <Navigate to={`/requests?${p}`} replace />
+  return <Navigate to={`/requests${search}`} replace />
 }
 
 export default function App() {

@@ -76,7 +76,7 @@ export default function Workflows() {
   }
   const pickDomain = (d: Domain) => setDomainScoped(domain === d ? 'All' : d)
   const anyFilter = domain !== 'All' || cat !== 'All' || st !== 'All' || intentId !== 'All' || vendor !== 'All'
-  const { ref: resultsRef } = useScrollToResultsOnDrillIn(anyFilter ? `d=${domain}|c=${cat}|s=${st}|i=${intentId}|v=${vendor}` : '')
+  const { ref: resultsRef, scrollToResults } = useScrollToResultsOnDrillIn(anyFilter ? `d=${domain}|c=${cat}|s=${st}|i=${intentId}|v=${vendor}` : '')
 
   const n = {
     state: (s: WorkflowState) => workflows.filter((w) => w.state === s).length,
@@ -204,7 +204,7 @@ export default function Workflows() {
           progress={(n.state('Active') / Math.max(1, workflows.length)) * 100}
           note={`${n.state('Active')} active · ${n.state('Draft')} draft`}
           info="Every workflow definition in the library, in any state. A workflow is the executable recipe — tasks, assertions and acceptance criteria — that provisioning runs for one intent on one vendor and model."
-          drillLabel="every workflow, unfiltered" onClick={clear} />
+          drillLabel="every workflow, unfiltered" onClick={() => { clear(); scrollToResults() }} />
         <Stat label="Active" icon={CheckCircle2} value={n.state('Active')} tone="good"
           progress={(n.state('Active') / Math.max(1, workflows.length)) * 100}
           note="Only Active workflows can be executed"
