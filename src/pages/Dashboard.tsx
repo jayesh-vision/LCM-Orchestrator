@@ -240,7 +240,7 @@ export default function Dashboard() {
         <Card className="vw-flex vw-flex-col">
           <CardHead title="Templates & coverage" sub="Can we actually provision what's being asked for?"
             info="Workflow templates are the executable recipes — CLI or VNF-lifecycle commands — bound to one category, vendor and model. An order can only run once an Active template exists for its intent, on its vendor. Click a row to open Workflows filtered to it." />
-          <CardBody className="vw-flex vw-flex-col vw-gap-sm flex-1">
+          <CardBody className="vw-flex vw-flex-col vw-gap-sm vw-justify-between flex-1">
             {templateRows.map((k) => (
               <StatRow key={k.label} label={k.label} icon={k.icon} value={k.value} tone={k.tone}
                 progress={k.progress} note={k.sub} onClick={() => nav(k.go)} drillLabel={`${k.label}. Open Workflows`} />
@@ -421,7 +421,7 @@ export default function Dashboard() {
           <CardHead title="Running now" sub={running.length ? `${running.length} on a device right now` : 'Nothing on a device'}
             info="Orders whose workflow is executing on a device at this moment, with live task progress. Click one to open its execution detail."
             right={running.length > 0 && <Button size="sm" onClick={() => nav('/execution?state=In progress')}>All</Button>} />
-          <CardBody className="vw-flex vw-flex-col vw-gap-sm flex-1 min-h-0 max-h-[360px] overflow-y-auto">
+          <CardBody className="vw-flex vw-flex-col vw-gap-sm flex-1 min-h-0 overflow-y-auto">
             {running.length === 0 && (
               <div className="py-6 text-center">
                 <p className="vw-card-description mb-3">No configuration is being pushed right now.</p>
