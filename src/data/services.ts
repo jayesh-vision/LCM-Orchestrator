@@ -83,6 +83,11 @@ function attributes(intentId: string, conformance: Conformance, bandwidth: numbe
       { name: 'Wavelength channel', intent: `${1529 + (vlan % 40)}.${10 + (vlan % 90)}nm`, onDevice: dev(`${1529 + (vlan % 40)}.${10 + (vlan % 90)}nm`), source: 'Reserved', verifiedAt: verified, verdict: verdict(false) },
       { name: 'OTN FEC lock', intent: 'locked', onDevice: dev(drift ? 'unlocked' : 'locked'), source: 'Manual', verifiedAt: verified, verdict: verdict(drift) },
     )
+  } else if (intentId === 'INT-GPON-RESI' || intentId === 'INT-XGSPON-BIZ') {
+    base.splice(1, 0,
+      { name: 'PON port', intent: `PON 1/1/${1 + (vlan % 4)}`, onDevice: dev(`PON 1/1/${1 + (vlan % 4)}`), source: 'Reserved', verifiedAt: verified, verdict: verdict(false) },
+      { name: 'ONT Rx power', intent: 'within -8 to -27 dBm', onDevice: dev(drift ? 'out of range' : 'within -8 to -27 dBm'), source: 'Manual', verifiedAt: verified, verdict: verdict(drift) },
+    )
   } else if (intentId === 'INT-RAN-CU') {
     base.splice(1, 0,
       { name: 'PLMN', intent: '404-01', onDevice: dev('404-01'), source: 'Order', verifiedAt: verified, verdict: verdict(false) },
@@ -154,7 +159,7 @@ const RADIO_CONF_MIX: [Conformance, number][] = [
   ['Conformant', 92], ['Drifted', 12], ['Never proven', 13], ['Ghost', 3],
 ]
 
-/* Fiber domain — additive batch. Sums to 80. */
+/* DWDM (Transport domain) — additive batch. Sums to 80. */
 const FIBER_STATE_MIX: [ServiceState, number][] = [
   ['Live', 68], ['Activating', 2], ['Degraded', 4], ['Suspended', 2], ['Ceased', 4],
 ]
@@ -171,6 +176,17 @@ const RAN_CONF_MIX: [Conformance, number][] = [
 ]
 const RAN_INTENT_MIX: [string, number][] = [
   ['INT-RAN-CU', 42], ['INT-RAN-DU', 68],
+]
+
+/* Fiber domain, GPON category — additive batch. Sums to 125. */
+const GPON_STATE_MIX: [ServiceState, number][] = [
+  ['Live', 106], ['Activating', 4], ['Degraded', 6], ['Suspended', 4], ['Ceased', 5],
+]
+const GPON_CONF_MIX: [Conformance, number][] = [
+  ['Conformant', 96], ['Drifted', 12], ['Never proven', 14], ['Ghost', 3],
+]
+const GPON_INTENT_MIX: [string, number][] = [
+  ['INT-GPON-RESI', 90], ['INT-XGSPON-BIZ', 35],
 ]
 
 export function buildServices(): Service[] {
@@ -369,7 +385,7 @@ export function buildServices(): Service[] {
     })
   }
 
-  /* Fiber domain — additive: 80 more services, two-ended DWDM circuits. */
+  /* DWDM (Transport domain) — additive: 80 more services, two-ended circuits. */
   const fStates = shuffle(expand(FIBER_STATE_MIX))
   const fConfs = shuffle(expand(FIBER_CONF_MIX))
   for (let i = 0; i < 80; i += 1) {
@@ -467,6 +483,59 @@ export function buildServices(): Service[] {
         ? intent.acceptance.map((a) => ({
           criterion: a.claim, layer: a.layer, expected: a.expected,
           actual: a.layer === 'service' ? `${(bandwidth * (0.95 + rnd() * 0.05)).toFixed(1)} UEs / cell` : 'running / healthy',
+          passed: true,
+        }))
+        : undefined,
+    })
+  }
+
+  /* Fiber domain, GPON category — additive: 125 more services, single-ended
+     (the ONT is the endpoint, the OLT it binds to is a param, not a far end). */
+  const gStates = shuffle(expand(GPON_STATE_MIX))
+  const gConfs = shuffle(expand(GPON_CONF_MIX))
+  const gIntents = shuffle(expand(GPON_INTENT_MIX))
+  for (let i = 0; i < 125; i += 1) {
+    const intentId = gIntents[i]
+    const intent = intentById(intentId)
+    let state = gStates[i]
+    let conformance = gConfs[i]
+    if (state === 'Ceased') conformance = 'Not checked'
+    if (state === 'Activating' && conformance === 'Drifted') conformance = 'Not checked'
+
+    const acct = pick(ACCOUNTS)
+    const vlan = between(100, 900)
+    const eps: Endpoint[] = [makeEndpoint('A', 600000 + i, intent.category)]
+    const bandwidth = pick([100, 300, 500, 1000])
+    const ageDays = between(3, 800)
+    const liveSince = new Date(now - ageDays * 86400000)
+    liveSince.setHours(between(0, 23), between(0, 59), 0, 0)
+    if (liveSince.getTime() > now) liveSince.setTime(now - between(5, 180) * 60000)
+    const proven = conformance === 'Never proven' || conformance === 'Ghost'
+      ? undefined
+      : new Date(now - between(1, 40) * 3600000).toISOString()
+    const years = Math.floor(ageDays / 365)
+    const months = Math.floor((ageDays % 365) / 30)
+
+    out.push({
+      id: `SVC-GPN-${pad(600000 + i * 3, 6)}`,
+      name: `${acct.name.split(' ')[0]} ${pick(SITES).city} ${intent.type === 'XGS-PON' ? 'XGS-PON' : 'GPON'} FTTH`,
+      category: intent.category, type: intent.type, intentId,
+      accountId: acct.id, accountName: acct.name,
+      state, operState: OPER_FOR[state], conformance,
+      endpoints: eps,
+      attributes: attributes(intentId, conformance, bandwidth, vlan),
+      resources: [],
+      history: history(`g${i}`, liveSince, conformance),
+      bandwidthMbps: bandwidth,
+      monthlyValueInr: between(699, 3499),
+      liveSince: liveSince.toISOString(),
+      lastProvenAt: proven,
+      ageLabel: years > 0 ? `${years} y ${months} m` : `${Math.max(1, months)} m`,
+      driftCount: conformance === 'Drifted' ? between(1, 2) : 0,
+      acceptanceEvidence: conformance === 'Conformant'
+        ? intent.acceptance.map((a) => ({
+          criterion: a.claim, layer: a.layer, expected: a.expected,
+          actual: a.layer === 'service' ? `${(bandwidth * (0.9 + rnd() * 0.1)).toFixed(1)} Mbps` : 'Online / within budget',
           passed: true,
         }))
         : undefined,

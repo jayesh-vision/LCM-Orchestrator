@@ -1,7 +1,10 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
-import { Cable, CheckCircle2, Clock, Copy, Cpu, Download, Eye, Grid3x3, ListChecks, Pencil, Plus, RadioTower, Router, Send, ShieldCheck, Trash2, Network as SwitchIcon, Wifi, XCircle } from 'lucide-react'
+import {
+  Cable, CheckCircle2, Clock, Copy, Cpu, Download, Eye, Grid3x3, Home, ListChecks, Pencil, Plus,
+  RadioTower, Router, Send, ShieldCheck, Trash2, Network as SwitchIcon, Wifi, XCircle,
+} from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { Category, Domain, Vendor, Workflow, WorkflowState } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
@@ -10,16 +13,19 @@ import {
   FilterBanner, Kebab, Mono, Note, Stat, type Column,
 } from '@/components/ui'
 import { CoverageMatrix, type CoverageCol } from '@/components/charts'
-import { CPE_VENDORS, OPTICAL_VENDORS, RADIO_VENDORS, ROUTER_VENDORS, SWITCH_VENDORS, VNF_VENDORS } from '@/data/catalog'
+import {
+  CPE_VENDORS, ONT_VENDORS, OPTICAL_VENDORS,
+  RADIO_VENDORS, ROUTER_VENDORS, SWITCH_VENDORS, VNF_VENDORS,
+} from '@/data/catalog'
 import { VENDOR_LABEL } from '@/data/workflows'
 import { CATEGORY_TONE, DOMAIN_TONE, WORKFLOW_TONE } from '@/lib/format'
 
 const STATES: WorkflowState[] = ['Draft', 'Assigned', 'Awaiting approval', 'Active', 'Rejected', 'Retired']
-const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
+const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF', 'GPON']
 /* Router vendors first (they can carry any Transport intent), then Switch
    vendors (L2VPN only — a switch has no BGP/VRF to run an L3VPN or IBW
-   intent with). CPE/Radio/Optical vendors are each a disjoint estate,
-   scoped to their own domain only. */
+   intent with). CPE/Radio/Optical/ONT vendors are each a disjoint estate,
+   scoped to their own category only. */
 const VENDOR_COLS: Vendor[] = [...ROUTER_VENDORS, ...SWITCH_VENDORS]
 const VENDOR_COVER_COLS: CoverageCol[] = VENDOR_COLS.map((v) => ({
   key: v, label: VENDOR_LABEL[v], sub: SWITCH_VENDORS.includes(v) ? 'Switch' : 'Router',
@@ -29,15 +35,18 @@ const CPE_VENDOR_COVER_COLS: CoverageCol[] = CPE_VENDORS.map((v) => ({ key: v, l
 const RADIO_VENDOR_COVER_COLS: CoverageCol[] = RADIO_VENDORS.map((v) => ({ key: v, label: VENDOR_LABEL[v], sub: 'Radio', icon: RadioTower }))
 const FIBER_VENDOR_COVER_COLS: CoverageCol[] = OPTICAL_VENDORS.map((v) => ({ key: v, label: VENDOR_LABEL[v], sub: 'Optical', icon: Cable }))
 const VNF_VENDOR_COVER_COLS: CoverageCol[] = VNF_VENDORS.map((v) => ({ key: v, label: VENDOR_LABEL[v], sub: 'VNF', icon: Cpu }))
+const ONT_VENDOR_COVER_COLS: CoverageCol[] = ONT_VENDORS.map((v) => ({ key: v, label: VENDOR_LABEL[v], sub: 'ONT', icon: Home }))
 /* One vendor-column set per category — not per domain. Radio is the first
    domain where two categories (Microwave, RAN VNF) have disjoint vendor
    estates, so the coverage grid groups a domain's categories by their
    column signature and only surfaces a group switcher when a domain
-   resolves to more than one distinct signature. */
+   resolves to more than one distinct signature. Fiber has only one category
+   (GPON), so it never needs that switcher. */
 const CATEGORY_COVER_COLS: Record<Category, CoverageCol[]> = {
   L2VPN: VENDOR_COVER_COLS, L3VPN: VENDOR_COVER_COLS, IBW: VENDOR_COVER_COLS,
   Broadband: CPE_VENDOR_COVER_COLS, Microwave: RADIO_VENDOR_COVER_COLS, DWDM: FIBER_VENDOR_COVER_COLS,
   'RAN VNF': VNF_VENDOR_COVER_COLS,
+  GPON: ONT_VENDOR_COVER_COLS,
 }
 const colSetKey = (c: Category) => CATEGORY_COVER_COLS[c].map((x) => x.key).join(',')
 const domainCategoryGroups = (d: Domain): Category[][] => {
@@ -51,7 +60,9 @@ const domainCategoryGroups = (d: Domain): Category[][] => {
   })
   return groups
 }
-const ALL_VENDOR_COLS: Vendor[] = [...VENDOR_COLS, ...CPE_VENDORS, ...RADIO_VENDORS, ...OPTICAL_VENDORS, ...VNF_VENDORS]
+const ALL_VENDOR_COLS: Vendor[] = [
+  ...VENDOR_COLS, ...CPE_VENDORS, ...RADIO_VENDORS, ...OPTICAL_VENDORS, ...VNF_VENDORS, ...ONT_VENDORS,
+]
 
 export default function Workflows() {
   const workflows = useStore((s) => s.workflows)
@@ -119,7 +130,9 @@ export default function Workflows() {
     if (category === 'Microwave') return RADIO_VENDORS.includes(vendor)
     if (category === 'DWDM') return OPTICAL_VENDORS.includes(vendor)
     if (category === 'RAN VNF') return VNF_VENDORS.includes(vendor)
-    if (CPE_VENDORS.includes(vendor) || RADIO_VENDORS.includes(vendor) || OPTICAL_VENDORS.includes(vendor) || VNF_VENDORS.includes(vendor)) return false
+    if (category === 'GPON') return ONT_VENDORS.includes(vendor)
+    if (CPE_VENDORS.includes(vendor) || RADIO_VENDORS.includes(vendor) || OPTICAL_VENDORS.includes(vendor) || VNF_VENDORS.includes(vendor)
+      || ONT_VENDORS.includes(vendor)) return false
     if (category === 'L2VPN') return true
     return !SWITCH_VENDORS.includes(vendor)
   }
@@ -224,7 +237,7 @@ export default function Workflows() {
 
       <Card>
         <CardHead title="Coverage — intent by vendor" sub={`${coverageDomain} domain${coverageGroups.length > 1 ? ` — ${coverageGroup.join(' / ')}` : ''} — where an active workflow exists, and how much of the installed base rides on it`}
-          info="Each tile shows whether an Active workflow exists for that intent on that vendor: a green count = that many active workflows, amber Draft = authoring has started but nothing is approved, a dashed tile = nothing exists, so orders for that combination cannot run. A vendor column is marked Router, Switch or CPE — those are disjoint estates, so a column only ever lights up under the domain it belongs to; everywhere else shows a plain dash (—), not a gap, because that combination can never be built. Use the Domain chip above the grid to switch between Transport and Access. The bar on the right is the live services riding on that intent — the bigger the bar, the more revenue depends on that row's coverage. Click a tile to filter the list below, or the bar to open those services."
+          info="Each tile shows whether an Active workflow exists for that intent on that vendor: a green count = that many active workflows, amber Draft = authoring has started but nothing is approved, a dashed tile = nothing exists, so orders for that combination cannot run. Every vendor column is marked with its device class (Router, Switch, CPE, Radio, Optical, VNF, ONT) — those are disjoint estates, so a column only ever lights up under the category it belongs to; everywhere else shows a plain dash (—), not a gap, because that combination can never be built. Use the Domain chip above the grid to switch between Transport, Access, Radio and Fiber — a domain with more than one disjoint vendor estate (Radio's Microwave/RAN VNF) adds its own group switcher underneath. The bar on the right is the live services riding on that intent — the bigger the bar, the more revenue depends on that row's coverage. Click a tile to filter the list below, or the bar to open those services."
           right={<>
             <Badge tone="good">Built {built}</Badge>
             {draftCombos > 0 && <Badge tone="warn">Draft {draftCombos}</Badge>}

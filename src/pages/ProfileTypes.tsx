@@ -11,7 +11,7 @@ import {
 } from '@/components/ui'
 import { CATEGORY_TONE, DOMAIN_TONE, shortDate } from '@/lib/format'
 
-const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
+const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF', 'GPON']
 
 export default function ProfileTypes() {
   const profileTypes = useStore((s) => s.profileTypes)
@@ -100,7 +100,7 @@ export default function ProfileTypes() {
         <Stat label="Profile types" icon={Layers} value={profileTypes.length} note="Category → Type → Subtype combinations"
           info="The master hierarchy of service profiles. Each row is one Category → Type → Subtype combination that workflows are scoped to and provisioning requests select from."
           drillLabel="every profile type" onClick={() => { setCat('All'); }} />
-        <Stat label="Categories" icon={FolderTree} value={CATS.length} note="Across Transport and Access domains"
+        <Stat label="Categories" icon={FolderTree} value={CATS.length} note="Across Transport, Access, Radio and Fiber domains"
           info="The top level of the hierarchy — the broad service families the platform provisions. Every profile type belongs to exactly one category, and every category belongs to exactly one domain."
           drillLabel="L2VPN profile types" onClick={() => setCat('L2VPN')} />
         <Stat label="Distinct types" icon={Shapes} value={types} note="Functional classifications across all categories"

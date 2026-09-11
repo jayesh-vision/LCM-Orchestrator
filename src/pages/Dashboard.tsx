@@ -9,23 +9,28 @@ import type { Conformance, Domain, Order, OrderState } from '@/types'
 import { DOMAINS, domainOf } from '@/types'
 import { Badge, Button, Card, CardBody, CardHead, InfoTip, Mono, Progress, StatRow, type StatTone } from '@/components/ui'
 import { Donut, ColumnChart, SOFT, StackedBar, StackedTrendChart, TrendChart } from '@/components/charts'
-import { CPE_VENDORS, OPTICAL_VENDORS, RADIO_VENDORS, ROUTER_VENDORS, SWITCH_VENDORS, VNF_VENDORS } from '@/data/catalog'
+import {
+  CPE_VENDORS, ONT_VENDORS, OPTICAL_VENDORS,
+  RADIO_VENDORS, ROUTER_VENDORS, SWITCH_VENDORS, VNF_VENDORS,
+} from '@/data/catalog'
 import { CATEGORY_TONE, relTime } from '@/lib/format'
 import { CONFORMANCE_BLURB, CONFORMANCE_ORDER, conformanceBreakdown } from '@/lib/conformance'
 
 const DAY = 86400000
-const CATS = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF'] as const
+const CATS = [
+  'L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF', 'GPON',
+] as const
 const DOMAIN_ICON: Record<Domain, typeof Router> = { Transport: Router, Access: Wifi, Radio: RadioTower, Fiber: Cable }
 const DOMAIN_BLURB: Record<Domain, string> = {
-  Transport: 'L2VPN, L3VPN and IBW — router/switch CLI provisioning across 8 vendors.',
+  Transport: 'L2VPN, L3VPN, IBW and DWDM — router/switch CLI and optical wavelength provisioning across 8 vendors.',
   Access: 'Broadband CPE activation — the platform\'s newest domain, 3 CPE vendors.',
   Radio: 'Microwave point-to-point backhaul links and RAN CU/DU VNF instances.',
-  Fiber: 'DWDM wavelength circuits over optical transport — Ciena, Infinera, ECI.',
+  Fiber: 'GPON/XGS-PON FTTH access — OLT head-end to ONT, the platform\'s newest domain, 3 OLT/ONT vendors.',
 }
 /* A distinct hue per domain, independent of the badge/stat tone palettes —
-   the donut and its legend need four colours that read apart from each
-   other side by side, which good/warn/crit/plum (4 slots, 2 already
-   reserved for real status meaning) doesn't comfortably give. */
+   the donut and its legend need colours that read apart from each other
+   side by side, which good/warn/crit/plum (4 slots, 2 already reserved for
+   real status meaning) doesn't comfortably give. */
 const DOMAIN_COLOR: Record<Domain, string> = { Transport: SOFT.brand, Access: SOFT.warn, Radio: SOFT.purple, Fiber: SOFT.cyan }
 const DOMAIN_CHIP_CLS: Record<Domain, string> = {
   Transport: 'bg-[#1c81ef]/10 text-[#1c81ef]',
@@ -90,7 +95,10 @@ export default function Dashboard() {
   const activeWf = workflows.filter((w) => w.state === 'Active').length
   const awaitingWf = workflows.filter((w) => w.state === 'Assigned' || w.state === 'Awaiting approval').length
   const vendorsActive = new Set(workflows.filter((w) => w.state === 'Active').map((w) => w.vendor)).size
-  const allVendors = new Set([...ROUTER_VENDORS, ...SWITCH_VENDORS, ...CPE_VENDORS, ...RADIO_VENDORS, ...OPTICAL_VENDORS, ...VNF_VENDORS]).size
+  const allVendors = new Set([
+    ...ROUTER_VENDORS, ...SWITCH_VENDORS, ...CPE_VENDORS, ...RADIO_VENDORS, ...OPTICAL_VENDORS, ...VNF_VENDORS,
+    ...ONT_VENDORS,
+  ]).size
   const coverageGaps = intents.filter((i) => !workflows.some((w) => w.intentId === i.id && w.state === 'Active')).length
 
   /* ---- service health: does what's live still match its own intent? ---- */
@@ -360,7 +368,7 @@ export default function Dashboard() {
       {/* ---------------- by domain ---------------- */}
       <Card>
         <CardHead title="Provisioning by domain" sub="Every request belongs to exactly one domain — click a slice or a row to open it"
-          info="Requests split by network domain — Transport (router/switch), Access (CPE), Radio (microwave backhaul and RAN CU/DU) and Fiber (DWDM). Click a slice of the donut or a row on the right to open that domain's requests." />
+          info="Requests split by network domain — Transport (router/switch and DWDM wavelength circuits), Access (CPE), Radio (microwave backhaul and RAN CU/DU) and Fiber (GPON/XGS-PON FTTH, OLT to ONT). Click a slice of the donut or a row on the right to open that domain's requests." />
         <CardBody className="vw-flex vw-items-center vw-gap-6 vw-wrap lg:flex-nowrap">
           <div className="shrink-0 w-full flex justify-center lg:w-auto lg:justify-start">
             <Donut size={168} total={orders.length}

@@ -41,26 +41,37 @@ const PARAM_ORIGIN: Record<string, { badge: string; hint: string; locked?: boole
 }
 
 const DOMAIN_HINT: Record<Domain, string> = {
-  Transport: 'Router/switch network services.',
+  Transport: 'Router/switch network services, plus DWDM wavelength circuit provisioning over optical transport.',
   Access: 'Customer-premises device provisioning.',
   Radio: 'Point-to-point microwave backhaul link provisioning.',
-  Fiber: 'DWDM wavelength circuit provisioning over optical transport.',
+  Fiber: 'GPON/XGS-PON FTTH access provisioning, from the OLT head-end to the ONT.',
 }
-/* Radio's other category, RAN VNF, has its own subtype vocab — and CU vs DU
-   don't even share one with each other — so it's handled separately below
-   rather than folded into this domain-level map. */
+/* Radio's other category, RAN VNF, and Transport's other category, DWDM,
+   each have their own subtype vocab that shares nothing with the rest of
+   their domain — CU vs DU don't even share one with each other — so both
+   are handled separately below rather than folded into this domain-level
+   map. Fiber has only one category (GPON), so its subtypes live directly
+   in this map like Access and Radio's. */
 const DOMAIN_SUBTYPES: Record<Domain, string[]> = {
   Transport: ['Tagged', 'Untagged', 'BGP', 'Static', 'OSPF', 'VRF', 'Other'],
   Access: ['FTTH', 'DSL', 'Other'],
   Radio: ['All-IP', 'Hybrid', 'E-band'],
-  Fiber: ['Unprotected', 'Protected'],
+  Fiber: ['Residential', 'Business'],
 }
+const DWDM_SUBTYPES = ['Unprotected', 'Protected']
 const DOMAIN_PORT_LABEL: Record<Domain, string> = {
-  Transport: 'Router port', Access: 'CPE port', Radio: 'Radio port', Fiber: 'Optical port',
+  Transport: 'Router port', Access: 'CPE port', Radio: 'Radio port', Fiber: 'ONT port',
 }
 function subtypeOptions(domain: Domain, category: Category, type: string): string[] {
   if (category === 'RAN VNF') return type === 'DU' ? ['Indoor', 'Outdoor'] : ['Standalone', 'Non-Standalone']
+  if (category === 'DWDM') return DWDM_SUBTYPES
   return DOMAIN_SUBTYPES[domain]
+}
+/** DWDM rides Transport's shared vocabulary everywhere except the endpoint
+ *  port label — its devices are optical transponders, not routers. */
+function portLabelFor(domain: Domain, category: Category): string {
+  if (category === 'DWDM') return 'Optical port'
+  return DOMAIN_PORT_LABEL[domain]
 }
 
 /** Re-key an index-keyed map after the endpoint at `removed` is dropped. */
@@ -538,7 +549,7 @@ export default function NewServiceWizard() {
                               {SITES.map((s) => <option key={s.code} value={s.code}>{s.code} — {s.city}</option>)}
                             </Select>
                           </Field>
-                          <Field label={DOMAIN_PORT_LABEL[domain]} required>
+                          <Field label={portLabelFor(domain, category)} required>
                             <Select value={e.port} onChange={(ev) => {
                               const next = [...eps]; next[i] = { ...e, port: ev.target.value }; setEps(next)
                             }}>

@@ -82,8 +82,9 @@ export const DEVICE_MODELS: DeviceModel[] = [
   { vendor: 'CERAGON', model: 'IP-20C', kind: 'Radio', os: 'CeraOS 10.9', osRange: '10.4 – 10.9', ports: ['RF-1', 'GE-1', 'GE-2'] },
   { vendor: 'AVIAT', model: 'WTM 4000', kind: 'Radio', os: 'Aviat OS 6.1', osRange: '5.8 – 6.1', ports: ['RF-1', 'ETH-1'] },
   { vendor: 'NEC', model: 'iPASOLINK VR', kind: 'Radio', os: 'NEC OS 4.3', osRange: '4.0 – 4.3', ports: ['RF-1', 'GE-1'] },
-  /* Fiber domain — DWDM transponders/ROADMs carrying wavelength circuits.
-     A disjoint estate again; an optical port has no VLAN/BGP vocabulary. */
+  /* DWDM (Transport domain) — optical transponders/ROADMs carrying
+     wavelength circuits. A disjoint estate again; an optical port has no
+     VLAN/BGP vocabulary. */
   { vendor: 'CIENA', model: '6500-D8', kind: 'Optical', os: 'SAOS 10.2', osRange: '9.8 – 10.2', ports: ['TRANSPONDER-1', 'TRANSPONDER-2', 'LINE-1'] },
   { vendor: 'INFINERA', model: 'GX G30', kind: 'Optical', os: 'GX OS 6.4', osRange: '6.0 – 6.4', ports: ['CLIENT-1', 'CLIENT-2', 'LINE-1'] },
   { vendor: 'ECI', model: 'Apollo ODM', kind: 'Optical', os: 'ECI NPT 5.1', osRange: '4.8 – 5.1', ports: ['TRANSPONDER-1', 'LINE-1'] },
@@ -95,6 +96,20 @@ export const DEVICE_MODELS: DeviceModel[] = [
   { vendor: 'MAVENIR', model: 'OpenRAN vRAN 4.2', kind: 'VNF', os: 'Mavenir CNF 4.2', osRange: '4.0 – 4.2', ports: ['F1', 'E1', 'NG', 'Xn'] },
   { vendor: 'SAMSUNG', model: 'vRAN CU/DU 3.0', kind: 'VNF', os: 'Samsung vRAN 3.0', osRange: '2.8 – 3.0', ports: ['F1', 'E1', 'NG'] },
   { vendor: 'RADISYS', model: 'Engage vRAN', kind: 'VNF', os: 'Radisys CNF 2.5', osRange: '2.2 – 2.5', ports: ['F1', 'E1', 'NG'] },
+  /* Fiber domain, GPON category — the OLT head-end. Not an endpoint itself
+     (the ONT below is), but its own device class: a PON port on one of these
+     chassis is what an ONT's fibre actually terminates on. */
+  { vendor: 'NOKIA', model: 'ISAM FX-16', kind: 'OLT', os: 'Nokia ISAM 24.3', osRange: '23.6 – 24.3', ports: ['PON 1/1/1', 'PON 1/1/2', 'PON 1/1/3', 'PON 1/1/4'] },
+  { vendor: 'HUAWEI', model: 'MA5800-X7', kind: 'OLT', os: 'Huawei VRP 8.230', osRange: '8.190 – 8.230', ports: ['GPON 0/1/0', 'GPON 0/1/1', 'GPON 0/2/0'] },
+  { vendor: 'ZTE', model: 'ZXA10 C300', kind: 'OLT', os: 'ZTE ZXROS 4.1', osRange: '3.9 – 4.1', ports: ['GPON-1/1', 'GPON-1/2', 'GPON-2/1'] },
+  /* Fiber domain, GPON category — the ONT/ONU at the customer premises. This
+     is the endpoint device on a GPON order, same convention as Broadband's
+     CPE: single-ended, no far end to configure. Distinct models from the
+     Access-domain CPE above — a GPON ONT speaks PON framing, not just
+     Ethernet/WiFi, and is bound to a specific OLT PON port. */
+  { vendor: 'NOKIA', model: 'G-240W-F', kind: 'ONT', os: 'Nokia ONT FW 3.62', osRange: '3.40 – 3.62', ports: ['PON', 'LAN1', 'LAN2', 'WAN'] },
+  { vendor: 'HUAWEI', model: 'HG8245Q2', kind: 'ONT', os: 'Huawei ONT FW 5.1', osRange: '4.8 – 5.1', ports: ['PON', 'LAN1', 'LAN2', 'WAN'] },
+  { vendor: 'ZTE', model: 'F660 v9', kind: 'ONT', os: 'ZTE ONT FW 2.4', osRange: '2.1 – 2.4', ports: ['PON', 'LAN1', 'LAN2', 'WAN'] },
 ]
 
 /** Only Router-class devices run BGP/VRF, so only these can serve L3VPN/IBW. */
@@ -105,16 +120,24 @@ export const SWITCH_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => 
 export const CPE_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'CPE').map((d) => d.vendor))]
 /** Radio-class devices are the Radio domain's estate — microwave backhaul only. */
 export const RADIO_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'Radio').map((d) => d.vendor))]
-/** Optical-class devices are the Fiber domain's estate — DWDM wavelength circuits only. */
+/** Optical-class devices are DWDM's estate — wavelength circuits only. */
 export const OPTICAL_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'Optical').map((d) => d.vendor))]
 /** VNF-class functions are the RAN VNF category's estate — CU/DU only, no physical device. */
 export const VNF_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'VNF').map((d) => d.vendor))]
+/** OLT-class chassis are the GPON category's head-end estate. */
+export const OLT_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'OLT').map((d) => d.vendor))]
+/** ONT-class terminals are GPON's endpoint device — the customer premises box a request actually binds to. */
+export const ONT_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'ONT').map((d) => d.vendor))]
 /** The device estate eligible for a given service category. */
 export const modelsForCategory = (category: Category): DeviceModel[] => {
   if (category === 'Broadband') return DEVICE_MODELS.filter((d) => d.kind === 'CPE')
   if (category === 'Microwave') return DEVICE_MODELS.filter((d) => d.kind === 'Radio')
   if (category === 'RAN VNF') return DEVICE_MODELS.filter((d) => d.kind === 'VNF')
   if (category === 'DWDM') return DEVICE_MODELS.filter((d) => d.kind === 'Optical')
+  /* GPON's endpoint device is the ONT — the OLT is the head-end it binds to
+     (an `olt_id` intent param), not a second endpoint, same as how a
+     Broadband order never models the BNG it terminates on. */
+  if (category === 'GPON') return DEVICE_MODELS.filter((d) => d.kind === 'ONT')
   if (category === 'L2VPN') return DEVICE_MODELS.filter((d) => d.kind === 'Router' || d.kind === 'Switch')
   return DEVICE_MODELS.filter((d) => d.kind === 'Router')
 }
@@ -224,7 +247,7 @@ const duAcceptance: AcceptanceCriterion[] = [
   { id: 'AC-4', claim: 'Measured cell throughput is within ±10% of the planned capacity for the bandwidth', layer: 'service', expected: 'within tolerance band' },
 ]
 
-/* ---------- Fiber domain: DWDM wavelength circuit provisioning ---------- */
+/* ---------- DWDM (Transport domain): wavelength circuit provisioning ---------- */
 
 const dwdmParams: IntentParam[] = [
   { name: 'wavelength_channel', type: 'string', constraint: 'pool-allocated · ITU-T 100GHz grid', modifiable: 'no', fromPool: 'Wavelength', required: true },
@@ -238,6 +261,30 @@ const dwdmAcceptance: AcceptanceCriterion[] = [
   { id: 'AC-2', claim: 'Received optical power is within the span loss budget', layer: 'device', expected: 'Rx power within ±2 dB of plan' },
   { id: 'AC-3', claim: 'OTN frame achieves sync with no uncorrected errors', layer: 'network', expected: 'FEC locked, 0 uncorrectable errors' },
   { id: 'AC-4', claim: 'Measured throughput is within ±2% of the ordered capacity', layer: 'service', expected: 'within tolerance band' },
+]
+
+/* ---------- Fiber domain, GPON category: GPON/XGS-PON FTTH access ---------- */
+/* Single-ended, same shape as Broadband's CPE activation — the ONT is the
+   endpoint, the OLT it binds to is an identifying param, not a second
+   endpoint (a subscriber's fibre has no "far end" to configure). */
+
+const gponParams: IntentParam[] = [
+  { name: 'olt_id', type: 'string', constraint: 'OLT chassis identifier, e.g. OLT-BLR-014', modifiable: 'no', required: true },
+  { name: 'pon_port', type: 'string', constraint: 'pool-allocated · PON port + ONU-ID slot on that OLT', modifiable: 'no', fromPool: 'PON Port', required: true },
+  { name: 'ont_serial', type: 'string', constraint: 'pool-allocated · pre-provisioned ONT stock', modifiable: 'no', fromPool: 'ONT Serial', required: true },
+  { name: 'vlan', type: 'integer', constraint: '2–4094 · from pool', modifiable: 'no', fromPool: 'VLAN', min: 2, max: 4094, required: true },
+  { name: 'tx_power_dbm', type: 'integer', constraint: 'OLT Tx, typically +1.5 to +5 dBm', modifiable: 'no', min: -5, max: 5, default: 3, required: false },
+  { name: 'rx_power_dbm', type: 'integer', constraint: 'ONT Rx, must fall within -8 to -27 dBm per GPON budget', modifiable: 'no', min: -27, max: -8, default: -18, required: false },
+  { name: 'bandwidth_profile', type: 'enum', constraint: 'DBA profile — committed/max rate pairing', modifiable: 'hitless', options: ['100M/50M', '300M/150M', '1G/500M'], default: '300M/150M', required: true },
+  { name: 'bandwidth_mbps', type: 'integer', constraint: '10–1000', modifiable: 'hitless', min: 10, max: 1000, default: 300, required: true },
+  { name: 'service_address', type: 'string', constraint: 'customer premises physical address', modifiable: 'no', required: true },
+]
+
+const gponAcceptance: AcceptanceCriterion[] = [
+  { id: 'AC-1', claim: 'ONT registers on the assigned PON port with the bound serial', layer: 'device', expected: 'serial matches, state=Online' },
+  { id: 'AC-2', claim: 'Received optical power at the ONT is within the GPON Rx budget', layer: 'device', expected: 'Rx power within -8 to -27 dBm' },
+  { id: 'AC-3', claim: 'WAN interface obtains an address inside the assigned VLAN', layer: 'network', expected: 'DHCP/PPPoE bound, vlan matches' },
+  { id: 'AC-4', claim: 'Measured downstream throughput is within ±10% of the bandwidth profile', layer: 'service', expected: 'within tolerance band' },
 ]
 
 const l3Params: IntentParam[] = [
@@ -307,8 +354,8 @@ export const INTENTS: ServiceIntent[] = [
     topology: 'Two-ended', endpointArity: 'exactly 2', params: radioParams,
     pools: ['Frequency Channel'], acceptance: radioAcceptance, version: 1, liveServices: 140,
   },
-  /* Fiber domain — DWDM wavelength circuits. Two-ended: a lambda always
-     terminates on a transponder at each end. */
+  /* DWDM (Transport domain) — wavelength circuits. Two-ended: a lambda
+     always terminates on a transponder at each end. */
   {
     id: 'INT-FIBER-WAVELENGTH', name: 'DWDM Wavelength Circuit', category: 'DWDM', type: 'Wavelength Circuit',
     topology: 'Two-ended', endpointArity: 'exactly 2', params: dwdmParams,
@@ -325,6 +372,18 @@ export const INTENTS: ServiceIntent[] = [
     id: 'INT-RAN-DU', name: 'RAN DU Provisioning', category: 'RAN VNF', type: 'DU',
     topology: 'Single-ended', endpointArity: 'exactly 1', params: duParams,
     pools: ['PCI'], acceptance: duAcceptance, version: 1, liveServices: 68,
+  },
+  /* Fiber domain, GPON category — single-ended, same shape as Broadband:
+     the ONT is the endpoint, the OLT it binds to is a param. */
+  {
+    id: 'INT-GPON-RESI', name: 'GPON Residential Internet Access (FTTH)', category: 'GPON', type: 'GPON',
+    topology: 'Single-ended', endpointArity: 'exactly 1', params: gponParams,
+    pools: ['VLAN', 'ONT Serial', 'PON Port'], acceptance: gponAcceptance, version: 1, liveServices: 90,
+  },
+  {
+    id: 'INT-XGSPON-BIZ', name: 'XGS-PON Business Internet Access', category: 'GPON', type: 'XGS-PON',
+    topology: 'Single-ended', endpointArity: 'exactly 1', params: gponParams,
+    pools: ['VLAN', 'ONT Serial', 'PON Port'], acceptance: gponAcceptance, version: 1, liveServices: 35,
   },
 ]
 
@@ -375,7 +434,7 @@ const PROFILE_ROWS: Array<[Category, string, string, string, string]> = [
   ['Microwave', 'Point-to-Point', 'All-IP', 'Microwave PtP profile for all-IP Ethernet backhaul links.', 'Jayesh'],
   ['Microwave', 'Point-to-Point', 'Hybrid', 'Microwave PtP profile for hybrid TDM/Ethernet backhaul links.', 'Jayesh'],
   ['Microwave', 'Point-to-Point', 'E-band', 'Microwave PtP profile for E-band high-capacity short-haul links.', 'Jayesh'],
-  // DWDM (Fiber domain)
+  // DWDM (Transport domain)
   ['DWDM', 'Wavelength Circuit', 'Unprotected', 'DWDM wavelength profile for unprotected point-to-point lambda circuits.', 'Jayesh'],
   ['DWDM', 'Wavelength Circuit', 'Protected', 'DWDM wavelength profile for 1+1 protected lambda circuits.', 'Jayesh'],
   // RAN VNF (Radio domain)
@@ -383,6 +442,11 @@ const PROFILE_ROWS: Array<[Category, string, string, string, string]> = [
   ['RAN VNF', 'CU', 'Non-Standalone', 'RAN CU profile for 5G Non-Standalone (NSA) deployments anchored on LTE.', 'Jayesh'],
   ['RAN VNF', 'DU', 'Indoor', 'RAN DU profile for indoor small-cell deployments.', 'Jayesh'],
   ['RAN VNF', 'DU', 'Outdoor', 'RAN DU profile for outdoor macro-cell deployments.', 'Jayesh'],
+  // GPON (Fiber domain)
+  ['GPON', 'GPON', 'Residential', 'GPON profile for residential FTTH internet access.', 'Jayesh'],
+  ['GPON', 'GPON', 'Business', 'GPON profile for business-grade FTTH internet access.', 'Jayesh'],
+  ['GPON', 'XGS-PON', 'Residential', 'XGS-PON profile for 10G-symmetric residential FTTH.', 'Jayesh'],
+  ['GPON', 'XGS-PON', 'Business', 'XGS-PON profile for 10G-symmetric business FTTH.', 'Jayesh'],
 ]
 
 export const PROFILE_TYPES: ProfileType[] = PROFILE_ROWS.map(([category, type, subtype, description, creator], i) => ({
@@ -393,4 +457,6 @@ export const PROFILE_TYPES: ProfileType[] = PROFILE_ROWS.map(([category, type, s
 }))
 
 export const VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.map((d) => d.vendor))]
-export const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
+export const CATEGORIES: Category[] = [
+  'L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF', 'GPON',
+]

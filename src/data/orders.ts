@@ -103,7 +103,7 @@ export function bindEndpoints(
     })
   }
 
-  /* Fiber domain — a DWDM lambda has no VLAN/VRF vocabulary either;
+  /* DWDM (Transport domain) — a lambda has no VLAN/VRF vocabulary either;
      wavelength/framing/protection is its own vocabulary shared by both
      transponders on the same circuit. */
   if (category === 'DWDM') {
@@ -116,6 +116,24 @@ export function bindEndpoints(
         { name: 'Capacity', value: val('capacity_gbps') ?? String(bandwidth), source: 'user' },
       ]
       return { ...e, workflowId: wf?.id, params: dwdmParams }
+    })
+  }
+
+  /* Fiber domain, GPON category — an ONT has no VLAN/VRF vocabulary in the
+     Transport sense either; the OLT it binds to, the PON port and the ONT
+     serial are their own vocabulary, same shape as a CPE's WAN VLAN/serial. */
+  if (category === 'GPON') {
+    return eps.map((e) => {
+      const wf = find(e)
+      const gponParams: OrderParamValue[] = [
+        { name: 'OLT ID', value: val('olt_id') ?? `OLT-${e.siteCode.split('-')[1]}-${between(10, 99)}`, source: 'derived' },
+        { name: 'PON Port', value: val('pon_port') ?? `PON 1/1/${between(1, 4)}`, source: 'pool' },
+        { name: 'ONT Serial', value: val('ont_serial') ?? `ONT-${between(100000, 999999)}`, source: 'pool' },
+        { name: 'Vlan-ID', value: val('vlan') ?? String(between(100, 900)), source: 'pool' },
+        { name: 'Bandwidth Profile', value: val('bandwidth_profile') ?? '300M/150M', source: 'user' },
+        { name: 'Rx Power', value: val('rx_power_dbm') ?? '-18', source: 'user' },
+      ]
+      return { ...e, workflowId: wf?.id, params: gponParams }
     })
   }
 
@@ -550,7 +568,7 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
     })
   }
 
-  /* Fiber domain — additive: 12 more orders, two-ended DWDM circuits. */
+  /* DWDM (Transport domain) — additive: 12 more orders, two-ended circuits. */
   const FIBER_ORDER_MIX: [OrderState, number][] = [
     ['Draft', 1], ['Planned', 1], ['Validated', 2], ['Approved', 1],
     ['Queued', 1], ['In progress', 1], ['Ready', 4], ['Failed', 1],
@@ -736,6 +754,80 @@ export function buildOrders(services: Service[], workflows: Workflow[]): Order[]
           : [{ role: 'NOC lead' }],
       delta: orderIntent === 'Modify'
         ? [{ attribute: 'Max UE capacity', current: `${bandwidth}`, requested: `${bandwidth * 2}` }]
+        : undefined,
+      slaBreached: (state === 'Failed' || state === 'Reinstantiate') && ageDays > 10,
+      notes: undefined,
+    })
+  }
+
+  /* Fiber domain, GPON category — additive: 18 more orders, single-ended
+     (the ONT is the endpoint — no far end to configure). */
+  const GPON_ORDER_MIX: [OrderState, number][] = [
+    ['Draft', 2], ['Planned', 1], ['Validated', 3], ['Approved', 1],
+    ['Queued', 1], ['In progress', 1], ['Ready', 7], ['Failed', 2],
+  ]
+  const GPON_INTENT_MIX_O: [OrderIntent, number][] = [['Create', 14], ['Modify', 2], ['Suspend', 1], ['Cease', 1]]
+  const gStates = shuffle(expand(GPON_ORDER_MIX))
+  const gOrderIntents = shuffle(expand(GPON_INTENT_MIX_O))
+  const gponLive = services.filter((s) => s.state === 'Live' && (s.intentId === 'INT-GPON-RESI' || s.intentId === 'INT-XGSPON-BIZ'))
+  for (let i = 0; i < 18; i += 1) {
+    const state = gStates[i]
+    const orderIntent = gOrderIntents[i]
+    const existing = orderIntent === 'Create' ? undefined : gponLive[i % Math.max(1, gponLive.length)]
+    const intentId = existing ? existing.intentId : pick(['INT-GPON-RESI', 'INT-XGSPON-BIZ'])
+    const intent = intentById(intentId)
+    const acct = existing ? ACCOUNTS.find((a) => a.id === existing.accountId)! : pick(ACCOUNTS)
+    const wf = active.find((w) => w.intentId === intentId) ?? active[0]
+
+    const eps = existing?.endpoints ?? [endpointFor('A', 100000 + i, intent.category)]
+    const bandwidth = existing?.bandwidthMbps ?? pick([100, 300, 500, 1000])
+    const params: OrderParamValue[] = intent.params.map((p) => ({
+      name: p.name,
+      value: p.name === 'bandwidth_mbps' ? String(bandwidth)
+        : p.fromPool === 'PON Port' ? `PON 1/1/${between(1, 4)}`
+          : p.fromPool === 'ONT Serial' ? `ONT-${between(100000, 999999)}`
+            : p.fromPool === 'VLAN' ? String(between(100, 900))
+              : p.name === 'olt_id' ? `OLT-${between(10, 99)}`
+                : p.default !== undefined ? String(p.default) : 'value',
+      source: p.fromPool ? 'pool' : p.default !== undefined ? 'template' : 'user',
+    }))
+    const boundEps = bindEndpoints(eps, intent.category, intent.type, '', workflows, params, bandwidth)
+
+    const ageDays = between(0, 25)
+    const created = new Date(now - ageDays * 86400000)
+    created.setHours(between(8, 20), between(0, 59), 0, 0)
+    if (created.getTime() > now) created.setTime(now - between(5, 180) * 60000)
+    const decided = new Date(created.getTime() + Math.max(60000, Math.round((now - created.getTime()) * 0.25)))
+
+    out.push({
+      id: `ORD-2026-${pad(10000 - i * 2, 6)}`,
+      code: `NS-${pad(1000 + i, 6)}`,
+      name: intent.name,
+      intent: orderIntent, intentId,
+      category: intent.category,
+      type: intent.type,
+      subtype: pick(['Residential', 'Business']),
+      accountId: acct.id, accountName: acct.name,
+      serviceId: existing?.id,
+      state,
+      workflowId: state === 'Draft' ? undefined : (boundEps[0]?.workflowId ?? wf?.id),
+      endpoints: boundEps,
+      params,
+      createdAt: created.toISOString(),
+      updatedAt: state === 'Draft' ? created.toISOString()
+        : new Date(Math.min(now, Math.max(decided.getTime(),
+          created.getTime() + between(1, Math.max(1, ageDays * 24)) * 3600000))).toISOString(),
+      ageDays,
+      owner: pick(OWNERS),
+      waitingOn: WAITING[state],
+      runIds: [],
+      approvals: ['Ready', 'Approved', 'In progress', 'Queued', 'Reinstantiate', 'Failed'].includes(state)
+        ? [{ role: 'NOC lead', by: 'Ravi K.', at: decided.toISOString(), decision: 'Approved' }]
+        : state === 'Rejected'
+          ? [{ role: 'NOC lead', by: 'Ravi K.', at: decided.toISOString(), decision: 'Rejected', comment: 'ONT stock unavailable at the requested exchange.' }]
+          : [{ role: 'NOC lead' }],
+      delta: orderIntent === 'Modify'
+        ? [{ attribute: 'Bandwidth profile', current: `${bandwidth} Mbps`, requested: `${bandwidth * 2} Mbps` }]
         : undefined,
       slaBreached: (state === 'Failed' || state === 'Reinstantiate') && ageDays > 10,
       notes: undefined,

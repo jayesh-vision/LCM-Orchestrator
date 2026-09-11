@@ -3,24 +3,32 @@
    ============================================================ */
 
 /** The provisioning domain a service belongs to. Sits above Category — Transport's
- *  categories are L2VPN/L3VPN/IBW; each other domain brings its own category set. */
+ *  categories are L2VPN/L3VPN/IBW/DWDM; each other domain brings its own category
+ *  set. Fiber is the GPON/XGS-PON FTTH access estate — an OLT head-end and an
+ *  ONT at the customer premises — which is a different thing from Transport's
+ *  DWDM: DWDM multiplexes wavelengths across the core/metro optical transport
+ *  network between routers, where Fiber terminates on customer-facing PON
+ *  equipment. */
 export type Domain = 'Transport' | 'Access' | 'Radio' | 'Fiber'
 export const DOMAINS: Domain[] = ['Transport', 'Access', 'Radio', 'Fiber']
 
-export type Category = 'L2VPN' | 'L3VPN' | 'IBW' | 'Broadband' | 'Microwave' | 'DWDM' | 'RAN VNF'
+export type Category =
+  | 'L2VPN' | 'L3VPN' | 'IBW' | 'Broadband' | 'Microwave' | 'DWDM' | 'RAN VNF' | 'GPON'
 /** Which categories exist under each domain — drives every domain→category cascade in the UI.
  *  A domain can carry more than one category with a disjoint vendor estate
- *  (Radio's Microwave links vs its RAN VNF category) — see CATEGORY_VENDOR_KIND
- *  in catalog.ts, which is what actually drives vendor eligibility. */
+ *  (Radio's Microwave links vs its RAN VNF category) — see
+ *  CATEGORY_VENDOR_KIND in catalog.ts, which is what actually drives vendor
+ *  eligibility. */
 export const CATEGORIES_BY_DOMAIN: Record<Domain, Category[]> = {
-  Transport: ['L2VPN', 'L3VPN', 'IBW'],
+  Transport: ['L2VPN', 'L3VPN', 'IBW', 'DWDM'],
   Access: ['Broadband'],
   Radio: ['Microwave', 'RAN VNF'],
-  Fiber: ['DWDM'],
+  Fiber: ['GPON'],
 }
 const CATEGORY_DOMAIN: Record<Category, Domain> = {
-  L2VPN: 'Transport', L3VPN: 'Transport', IBW: 'Transport',
-  Broadband: 'Access', Microwave: 'Radio', 'RAN VNF': 'Radio', DWDM: 'Fiber',
+  L2VPN: 'Transport', L3VPN: 'Transport', IBW: 'Transport', DWDM: 'Transport',
+  Broadband: 'Access', Microwave: 'Radio', 'RAN VNF': 'Radio',
+  GPON: 'Fiber',
 }
 export const domainOf = (category: Category): Domain => CATEGORY_DOMAIN[category]
 
@@ -84,7 +92,11 @@ export interface ValidationRule {
 
 /* Each vendor estate is disjoint, never bound to another category's workflow:
    Transport CISCO..DLINK, Access HUAWEI..ADTRAN, Radio(Microwave) CERAGON..NEC,
-   Fiber CIENA..ECI, Radio(RAN VNF) MAVENIR..RADISYS. */
+   Transport(DWDM) CIENA..ECI, Radio(RAN VNF) MAVENIR..RADISYS, Fiber(GPON)
+   NOKIA/HUAWEI/ZTE OLTs + ONTs. Some vendor names repeat across kinds (Nokia
+   sells both routers and OLTs) — that is realistic and never a conflict,
+   because eligibility always resolves through DeviceKind, never through the
+   vendor name alone. */
 export type Vendor =
   | 'CISCO' | 'JUNIPER' | 'NOKIA' | 'ADVA' | 'TEJAS' | 'TECHROUTE' | 'EDGECORE' | 'DLINK'
   | 'HUAWEI' | 'ZTE' | 'ADTRAN'
@@ -98,15 +110,17 @@ export type Vendor =
  *  domain's device class. Radio is a microwave backhaul unit; Optical is a
  *  DWDM transponder/ROADM. VNF is a virtualized RAN network function (CU/DU)
  *  — no physical device at all, provisioned as a lifecycle-managed instance
- *  rather than a CLI-configured box; each kind is only ever eligible for its
+ *  rather than a CLI-configured box. OLT/ONT are the GPON head-end and
+ *  customer-facing fiber terminal. Each kind is only ever eligible for its
  *  own category's intent. */
-export type DeviceKind = 'Router' | 'Switch' | 'CPE' | 'Radio' | 'Optical' | 'VNF'
+export type DeviceKind = 'Router' | 'Switch' | 'CPE' | 'Radio' | 'Optical' | 'VNF' | 'OLT' | 'ONT'
 
 export type WorkflowState = 'Draft' | 'Assigned' | 'Awaiting approval' | 'Active' | 'Rejected' | 'Retired'
 
 export type PoolKind =
   | 'VLAN' | 'RD/RT' | 'Pseudowire ID' | 'IP block' | 'Sub-interface' | 'ASN slot' | 'CPE Serial'
   | 'Frequency Channel' | 'Wavelength' | 'PCI'
+  | 'ONT Serial' | 'PON Port'
 
 export type AssertionForm =
   | 'exists' | 'absent' | 'equals' | 'in_range' | 'count' | 'matches' | 'unchanged'

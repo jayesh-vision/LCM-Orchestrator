@@ -489,6 +489,41 @@ function ranDuProvisioning(): StageSeed[] {
   ]
 }
 
+/* ---- GPON | GPON/XGS-PON | * | NOKIA · HUAWEI · ZTE
+   (Pre-Validation 3 · Service configuration 3 · Post-Validation 3). Fiber
+   domain — bind the ONT serial to its PON port on the OLT, push the WAN
+   VLAN and bandwidth profile, then prove optical power and throughput. One
+   template covers every ONT vendor. */
+function gponProvisioning(): StageSeed[] {
+  const OLT = '${OLT ID}', PORT = '${PON Port}', SN = '${ONT Serial}', VLAN = '${Vlan-ID}', PROFILE = '${Bandwidth Profile}', RXP = '${Rx Power}'
+  return [
+    { name: 'Pre-Validation', kind: 'Pre validation', tasks: [
+      { name: 'Check PON port capacity', set: `show pon-port ${PORT} olt ${OLT} onu-count`, rules: [rule('full', 'Not contains'), rule('error')] },
+      { name: 'Check ONT serial not already bound', set: `show ont-registry serial ${SN}`, rules: [rule('bound', 'Not contains')] },
+      { name: 'Check WAN VLAN availability', set: `show vlan ${VLAN}`, rules: [rule('in use', 'Not contains')] },
+    ] },
+    { name: 'Service configuration', kind: 'Configuration', tasks: [
+      { name: 'Provision ONT on PON port',
+        set: `interface ${PORT} olt ${OLT}\n ont add serial ${SN}\n ont vlan ${VLAN}\nexit`,
+        rollback: `interface ${PORT} olt ${OLT}\n ont delete serial ${SN}\nexit`, timeoutMs: 90000, breaker: true },
+      { name: 'Set bandwidth profile',
+        set: `ont serial ${SN}\n dba-profile ${PROFILE}\nexit`,
+        rules: [rule('error'), rule('invalid')],
+        rollback: `ont serial ${SN}\n no dba-profile\nexit` },
+      { name: 'Commit WAN service',
+        set: `ont serial ${SN}\n wan-service vlan ${VLAN}\n commit`,
+        rules: [rule('commit complete', 'Contains'), rule('error')],
+        rollback: `ont serial ${SN}\n no wan-service\nexit`, timeoutMs: 90000, breaker: true },
+    ] },
+    { name: 'Post-Validation', kind: 'Post validation', tasks: [
+      { name: 'Verify ONT online', set: `show ont-registry serial ${SN}`, rules: [rule('state=Online', 'Contains'), rule('offline')], retry: true, timeoutMs: 90000 },
+      { name: 'Verify received optical power', set: `show ont optical-power serial ${SN}`, rules: [rule('within budget', 'Contains'), rule(RXP + ' out of range')], retry: true },
+      { name: 'Verify WAN reachability', set: 'ping 8.8.8.8 source wan count 5', rules: [rule('Success rate is 100 percent', 'Contains')], retry: true },
+    ] },
+  ]
+}
+
+
 /* -------------------------------------------------------------- picker */
 
 /** The platform workflow for a profile + vendor. `role` only affects naming; both ends run the same sequence. */
@@ -498,9 +533,10 @@ export function templateFor(category: Category, vendor: Vendor, type: string, _r
       : category === 'Microwave' ? radioPtpProvisioning()
         : category === 'RAN VNF' ? (type === 'DU' ? ranDuProvisioning() : ranCuProvisioning())
           : category === 'DWDM' ? dwdmWavelengthProvisioning()
-            : category === 'L2VPN' ? (vendor === 'JUNIPER' ? l2vpnJuniper(subtype) : l2vpnCisco(subtype))
-              : category === 'L3VPN' ? (vendor === 'JUNIPER' ? (/hub/i.test(type) ? l3vpnHubSpokeJuniper() : l3vpnMeshJuniper()) : l3vpnCisco(type))
-                : (vendor === 'JUNIPER' ? (/bgp|ospf|vrf/i.test(type) ? ibwBgpJuniper() : ibwStaticJuniper()) : ibwCisco(type))
+            : category === 'GPON' ? gponProvisioning()
+              : category === 'L2VPN' ? (vendor === 'JUNIPER' ? l2vpnJuniper(subtype) : l2vpnCisco(subtype))
+                : category === 'L3VPN' ? (vendor === 'JUNIPER' ? (/hub/i.test(type) ? l3vpnHubSpokeJuniper() : l3vpnMeshJuniper()) : l3vpnCisco(type))
+                  : (vendor === 'JUNIPER' ? (/bgp|ospf|vrf/i.test(type) ? ibwBgpJuniper() : ibwStaticJuniper()) : ibwCisco(type))
   return materialise(seeds)
 }
 
@@ -578,4 +614,5 @@ export const KNOWN_PARAMS: Record<Category, string[]> = {
   Microwave: ['Frequency Channel', 'Frequency Band', 'Channel Bandwidth', 'Modulation', 'TX Power', 'Capacity'],
   DWDM: ['Wavelength Channel', 'OTN Framing', 'Protection', 'Capacity'],
   'RAN VNF': ['PLMN', 'gNB ID', 'AMF IP', 'F1 IP', 'Max UE Capacity', 'CU F1 IP', 'PCI', 'Bandwidth', 'TX Power'],
+  GPON: ['OLT ID', 'PON Port', 'ONT Serial', 'Vlan-ID', 'Bandwidth Profile', 'Rx Power'],
 }

@@ -47,6 +47,8 @@ function demandFor(intentId: string, endpointCount: number, seq: number): PoolKi
     out.push('Frequency Channel')
   } else if (intentId.startsWith('INT-FIBER')) {
     out.push('Wavelength')
+  } else if (intentId === 'INT-GPON-RESI' || intentId === 'INT-XGSPON-BIZ') {
+    out.push('VLAN', 'ONT Serial', 'PON Port')
   } else if (intentId === 'INT-RAN-CU') {
     out.push('IP block')
   } else if (intentId === 'INT-RAN-DU') {
@@ -81,6 +83,8 @@ const SEEDS: PoolSeed[] = [
   /* The C-band grid is 96 channels. It cannot be widened by ordering more. */
   { id: 'POOL-WL-001', kind: 'Wavelength', scope: 'ITU-T 100GHz grid · C-band 1529–1569nm', label: (n) => `${1529 + Math.floor(n / 2)}.${(n % 2) * 50 + 12}nm`, headroom: 0.08, cap: 96 },
   { id: 'POOL-PCI-001', kind: 'PCI', scope: '3GPP TS 38.211 · mod-3 / mod-30 collision-free plan', label: (n) => String(n), headroom: 0.6, cap: 504 },
+  { id: 'POOL-ONTSN-001', kind: 'ONT Serial', scope: 'pre-provisioned stock · Nokia/Huawei/ZTE', label: (n) => `ONT-${100000 + n}`, headroom: 0.3 },
+  { id: 'POOL-PONPORT-001', kind: 'PON Port', scope: 'GPON OLT estate · PON port + ONU-ID slot', label: (n) => `PON 1/1/${1 + (n % 8)}:${1 + Math.floor(n / 8)}`, headroom: 0.25 },
 ]
 
 /**

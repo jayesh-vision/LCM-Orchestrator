@@ -95,7 +95,11 @@ export default function WorkflowBuilder() {
   /* A Switch has no BGP/VRF, so it can only ever carry L2VPN — the vendor
      list narrows to what the current category can actually run on. */
   const categoryVendors = [...new Set(modelsForCategory(wf.category).map((d) => d.vendor))]
-  const vendorModels = DEVICE_MODELS.filter((d) => d.vendor === wf.vendor)
+  /* Scoped to this category's own device kind, not just the vendor name —
+     Nokia now sells both routers and GPON OLTs/ONTs under the same vendor
+     literal, so vendor alone would offer a model this workflow's category
+     can never bind to. */
+  const vendorModels = modelsForCategory(wf.category).filter((d) => d.vendor === wf.vendor)
   const siblings = workflows.filter((w) => w.id !== wf.id && w.category === wf.category && w.type === wf.type && w.subtype === wf.subtype && w.vendor === wf.vendor && w.endpointRole === wf.endpointRole)
   const suggested = composeName(wf, siblings.length + 1)
   useEffect(() => { if (autoName) setWf((w) => (w.name === suggested ? w : { ...w, name: suggested })) }, [autoName, suggested])

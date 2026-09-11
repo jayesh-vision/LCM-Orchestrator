@@ -41,9 +41,10 @@ export const WORKFLOW_TONE: Record<WorkflowState, Tone> = {
 
 export const CATEGORY_TONE: Record<string, Tone> = {
   L2VPN: 'info', L3VPN: 'plum', IBW: 'teal', Broadband: 'good', Microwave: 'warn', DWDM: 'crit', 'RAN VNF': 'plum',
+  GPON: 'good',
 }
 
-/** Domain badge tone — one per Domain. With 7 tones and now 4 domains + 7
+/** Domain badge tone — one per Domain. With 7 tones and now 4 domains + 8
  *  categories, full disjointness from CATEGORY_TONE no longer fits the
  *  palette; each chip is text-labelled, so a colour repeating across an
  *  unrelated domain and category isn't ambiguous in context. */

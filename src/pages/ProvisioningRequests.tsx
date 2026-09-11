@@ -17,7 +17,7 @@ import { VENDOR_LABEL } from '@/data/workflows'
 import { ageLabel, CATEGORY_TONE, clockTime, INTENT_TONE, ORDER_INTENTS, ORDER_TONE, relTime } from '@/lib/format'
 import { byRaised, orderTrace } from '@/lib/traceability'
 
-const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF']
+const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF', 'GPON']
 
 const STATE_ORDER: OrderState[] = [
   'Draft', 'Planned', 'Validated', 'Invalid', 'Approved', 'Rejected',
