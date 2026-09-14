@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { CalendarClock, CheckCircle2, Download, Eye, FileText, Hourglass, Plus, RotateCcw, XCircle } from 'lucide-react'
-import { useQueryState } from '@/lib/useQueryState'
+import { useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
 import { useStore } from '@/store/useStore'
 import type { ReportDef } from '@/types'
 import {
@@ -24,6 +24,14 @@ export default function Reports() {
   const [q, setQ] = useQueryState('q', '')
   const [state, setState] = useQueryState<ReportDef['state'] | 'All'>('state', 'All')
   const [open, setOpen] = useState<ReportDef | null>(null)
+  /* The four KPI cards drill into the grid below, which sits past the fold —
+     without this a click silently filtered the table off-screen and read as
+     the card doing nothing. Called directly from each card's onClick rather
+     than left to fire on selection change alone, so every click moves the
+     page, including a click back to "All" that lands on the same value it
+     started from. */
+  const { ref: resultsRef, scrollToResults } = useScrollToResultsOnDrillIn(state === 'All' ? '' : state)
+  const drillTo = (next: ReportDef['state'] | 'All') => { setState(next); scrollToResults() }
 
   const filtered = useMemo(() => reports.filter((r) => {
     if (state !== 'All' && r.state !== state) return false
@@ -73,16 +81,16 @@ export default function Reports() {
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
         <Stat label="Report definitions" icon={FileText} value={reports.length} note={`${reports.filter((r) => r.cadence.includes('demand')).length} on demand`}
           info="Every report the platform can produce — some generated on a schedule, some on demand. Each definition answers one operational question from live data."
-          drillLabel="every report definition" onClick={() => setState('All')} />
+          drillLabel="every report definition" onClick={() => drillTo('All')} />
         <Stat label="Current" icon={CheckCircle2} value={n('Current')} tone="good" note="Source data has not moved since generation"
           info="Reports whose source data has not changed since the file was generated — what you download is still true right now."
-          drillLabel="current reports" onClick={() => setState('Current')} />
+          drillLabel="current reports" onClick={() => drillTo('Current')} />
         <Stat label="Stale" icon={Hourglass} value={n('Stale')} tone="warn" note="Valid as a dated statement, wrong as a current one"
           info="Reports generated before the underlying data last changed. Still valid as a statement about that moment, but regenerate before using one to describe the present."
-          drillLabel="stale reports" onClick={() => setState('Stale')} />
+          drillLabel="stale reports" onClick={() => drillTo('Stale')} />
         <Stat label="Failed" icon={XCircle} value={n('Failed')} tone={n('Failed') ? 'crit' : undefined} note="Retry available"
           info="Reports whose last generation attempt errored — no fresh file was produced. Retry from the row's actions."
-          drillLabel="failed reports" onClick={() => setState('Failed')} />
+          drillLabel="failed reports" onClick={() => drillTo('Failed')} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
@@ -155,6 +163,7 @@ export default function Reports() {
         </Card>
       </div>
 
+      <div ref={resultsRef}>
       <DataTable
         rows={filtered} total={reports.length} columns={columns} pageSize={10} minWidth={1220}
         onRowClick={(r) => setOpen(r)}
@@ -176,6 +185,7 @@ export default function Reports() {
           ],
         }}
       />
+      </div>
 
       <Drawer
         open={!!open} onClose={() => setOpen(null)}
