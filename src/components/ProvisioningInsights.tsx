@@ -490,6 +490,7 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
             </div>
           </CardBody>
         </Card>
+        {intentCard}
         <Card className="h-full flex flex-col">
           <CardHead title="How execution is going" sub="What became of the requests that reached the devices"
             info="Everything in the current selection that has moved into execution, as one ring: finished, still moving, or failed — every order in scope is exactly one of the three. Click a slice or a row to open exactly those orders." />
@@ -509,7 +510,6 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
             </div>
           </CardBody>
         </Card>
-        {intentCard}
         {spotlightCard}
       </div>
 
