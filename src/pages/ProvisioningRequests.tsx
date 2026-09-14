@@ -14,7 +14,7 @@ import {
 } from '@/components/ui'
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { VENDOR_LABEL } from '@/data/workflows'
-import { ageLabel, CATEGORY_TONE, clockTime, INTENT_TONE, ORDER_INTENTS, ORDER_TONE, relTime } from '@/lib/format'
+import { CATEGORY_TONE, clockTime, INTENT_TONE, ORDER_INTENTS, ORDER_TONE, relTime } from '@/lib/format'
 import { byRaised, orderTrace } from '@/lib/traceability'
 
 const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF', 'GPON']
@@ -226,17 +226,6 @@ export default function ProvisioningRequests() {
         : (<><CellMain><Mono className="whitespace-nowrap">{r.endpoints.map((e) => e.siteCode).slice(0, 2).join(' ↔ ')}</Mono></CellMain>
           <CellSub>{r.endpoints.length > 2 ? `+${r.endpoints.length - 2} more sites` : r.endpoints.map((e) => e.port).join(' · ')}</CellSub></>)),
     },
-    {
-      /* Execution attempts. A dash rather than 0 for rows that haven't
-         reached the device yet — nothing was attempted, not zero-of-many. */
-      key: 'runs', header: 'Runs', align: 'center', width: '70px',
-      sortValue: (r) => new Set(runsForOrder(r.id).map((x) => x.attempt)).size,
-      render: (r) => {
-        const n = new Set(runsForOrder(r.id).map((x) => x.attempt)).size
-        return n ? n : <span className="text-ink-3">—</span>
-      },
-    },
-    { key: 'age', header: 'Age', align: 'right', width: '74px', sortValue: (r) => r.ageDays, render: (r) => ageLabel(r.ageDays) },
     stampColumn<Order>((r) => r.createdAt, (r) => r.updatedAt),
     {
       /* Dynamic per lifecycle stage: approve/reject on a Validated request,
