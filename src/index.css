@@ -107,6 +107,9 @@
      path makes the offset unit-free), and a visited node lights up as the
      token reaches it. */
   @keyframes lcm-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+  /* A proportion bar opening from the left on first paint. */
+  @keyframes lcm-grow { from { transform: scaleX(0); } to { transform: none; } }
+  .anim-grow { animation: lcm-grow .7s cubic-bezier(.2,.8,.2,1) both; transform-origin: left; }
   @keyframes lcm-light { from { opacity: .25; transform: scale(.9); } to { opacity: 1; transform: none; } }
 }
 

@@ -1,9 +1,9 @@
-import { useMemo, type ComponentType, type ReactNode } from 'react'
+import { useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import { AlertTriangle, ArrowUpRight, Boxes, Gauge, Globe, Server, Timer } from 'lucide-react'
 import type { Category, Order, OrderIntent, OrderState, Run, Vendor } from '@/types'
 import { domainOf } from '@/types'
 import { Badge, Card, CardBody, CardHead, type StatTone } from '@/components/ui'
-import { BarList, ColumnChart, Donut, DonutLegend, SOFT, StackedBar, TrendChart } from '@/components/charts'
+import { BarList, ColumnChart, Donut, SOFT, StackedBar, TrendChart } from '@/components/charts'
 import { VENDOR_LABEL } from '@/data/workflows'
 import { CATEGORY_TONE, dur } from '@/lib/format'
 
@@ -101,6 +101,129 @@ const INTENT_META: { intent: OrderIntent; color: string }[] = [
   { intent: 'Cease', color: SOFT.crit },
   { intent: 'Re-prove', color: SOFT.cyan },
 ]
+
+/* Cell colours for the intent waffle. Create keeps the pastel the other
+   rings use for it; the maintenance intents step up one weight so a handful
+   of cells still reads against eighty-odd blue ones. Checked with the
+   dataviz palette validator: every adjacent pair clears the normal-vision
+   floor, and the one CVD-tight pair (Resume/Cease) is carried by the legend
+   counts and the grid gaps as well as by colour. */
+const WAFFLE_COLOR: Record<OrderIntent, string> = {
+  Create: SOFT.brand, Modify: '#c084fc', Suspend: '#fbbf24', Resume: '#34d399', Cease: '#f87171', 'Re-prove': '#22d3ee',
+}
+
+/**
+ * Split `cells` units across the series by largest remainder, so the shares
+ * sum exactly and anything present at all gets at least one cell — a 1%
+ * intent that rounded to nothing would otherwise vanish from a chart whose
+ * whole point is that these small ones exist.
+ */
+function allocateCells(series: { intent: OrderIntent; value: number }[], total: number, cells: number): OrderIntent[] {
+  if (!total) return []
+  const raw = series.map((s) => ({ ...s, exact: (s.value / total) * cells }))
+  const got = raw.map((s) => Math.floor(s.exact))
+  let left = cells - got.reduce((a, b) => a + b, 0)
+  raw.map((s, i) => ({ i, rem: s.exact - got[i] })).sort((a, b) => b.rem - a.rem).forEach(({ i }) => { if (left > 0) { got[i] += 1; left -= 1 } })
+  raw.forEach((s, i) => {
+    if (s.value > 0 && got[i] === 0) {
+      const big = got.indexOf(Math.max(...got))
+      got[big] -= 1; got[i] += 1
+    }
+  })
+  return raw.flatMap((s, i) => Array<OrderIntent>(got[i]).fill(s.intent))
+}
+
+/**
+ * Building or maintaining, as a unit chart rather than a third ring.
+ *
+ * The story is one number — what share of the queue is Create — so that
+ * number leads, with its complement beside it and a split bar between them.
+ * Under it a 10×10 waffle, one cell per percent, shows the same split as
+ * mass: a hundred cells make the small intents visible as a few distinct
+ * squares instead of slivers on a ring. Hover a cell or a legend row to
+ * isolate that intent; click either to open exactly those requests.
+ */
+function IntentWaffle({ counts, total, onDrill }:
+{ counts: Map<OrderIntent, number>; total: number; onDrill: (patch: Patch) => void }) {
+  const [hot, setHot] = useState<OrderIntent | null>(null)
+  const count = (i: OrderIntent) => counts.get(i) ?? 0
+  const pct = (n: number) => (total ? Math.round((n / total) * 100) : 0)
+  const build = count('Create')
+  const buildPct = pct(build)
+  const cells = useMemo(
+    () => allocateCells(INTENT_META.map((m) => ({ intent: m.intent, value: count(m.intent) })), total, 100),
+    [counts, total], // eslint-disable-line react-hooks/exhaustive-deps
+  )
+  const verdict = !total ? 'Nothing in scope'
+    : buildPct >= 60 ? 'Mostly growing the estate'
+      : buildPct <= 40 ? 'Mostly changing services already live'
+        : 'An even mix of new builds and changes'
+  const drill = (intent: OrderIntent) => (count(intent) > 0 ? () => onDrill({ intent, state: null }) : undefined)
+  const dim = (intent: OrderIntent) => (hot !== null && hot !== intent ? 'opacity-25' : '')
+  const maintain = INTENT_META.filter((m) => m.intent !== 'Create')
+
+  return (
+    <div className="w-full flex flex-col gap-3">
+      {/* the number, and its complement */}
+      <div className="flex items-end justify-between gap-3">
+        <button type="button" onClick={drill('Create')} disabled={!build} aria-label={`${build} create requests. Open them`}
+          onMouseEnter={() => setHot('Create')} onMouseLeave={() => setHot(null)}
+          className="text-left rounded-md -mx-1.5 px-1.5 py-0.5 hover:bg-plane transition-colors disabled:hover:bg-transparent">
+          <div className="text-[28px] font-semibold tnum leading-none tracking-[-.5px]">{buildPct}%</div>
+          <div className="text-[12px] text-ink-2 mt-1.5">building</div>
+        </button>
+        <div className="text-right rounded-md -mx-1.5 px-1.5 py-0.5">
+          <div className="text-[28px] font-semibold tnum leading-none tracking-[-.5px] text-ink-2">{total ? 100 - buildPct : 0}%</div>
+          <div className="text-[12px] text-ink-2 mt-1.5">maintaining</div>
+        </div>
+      </div>
+
+      {/* one bar, every intent a segment, animated open on first paint */}
+      <div className="h-2 rounded-full bg-line-soft overflow-hidden">
+        <div className="h-full flex gap-[2px] anim-grow">
+          {INTENT_META.filter((m) => count(m.intent) > 0).map((m) => (
+            <span key={m.intent} title={`${m.intent} · ${count(m.intent)}`}
+              onMouseEnter={() => setHot(m.intent)} onMouseLeave={() => setHot(null)}
+              className={`h-full rounded-full transition-opacity ${dim(m.intent)}`}
+              style={{ width: `${(count(m.intent) / total) * 100}%`, background: WAFFLE_COLOR[m.intent] }} />
+          ))}
+        </div>
+      </div>
+      <p className="m-0 -mt-1 text-[12px] text-ink-3 text-center">{verdict}</p>
+
+      {/* the waffle: 100 cells, one per percent */}
+      <div className="grid grid-cols-10 gap-[3px] mx-auto" style={{ width: 10 * 16 + 9 * 3 }} aria-hidden>
+        {cells.map((intent, i) => (
+          <span key={i} title={`${intent} · ${count(intent)} (${pct(count(intent))}%)`}
+            onMouseEnter={() => setHot(intent)} onMouseLeave={() => setHot(null)} onClick={drill(intent)}
+            className={`h-[16px] rounded-[3px] anim-in transition-opacity ${dim(intent)} ${count(intent) ? 'cursor-pointer' : ''}`}
+            style={{ background: WAFFLE_COLOR[intent], animationDelay: `${i * 6}ms` }} />
+        ))}
+        {!total && Array.from({ length: 100 }, (_, i) => <span key={i} className="h-[16px] rounded-[3px] bg-line-soft" />)}
+      </div>
+
+      {/* legend: what each colour is, with the count — the accessible way in */}
+      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12px]">
+        {[INTENT_META[0], ...maintain].map((m) => {
+          const n = count(m.intent)
+          return (
+            <button key={m.intent} type="button" onClick={drill(m.intent)} disabled={!n}
+              aria-label={`${n} ${m.intent.toLowerCase()} requests${n ? '. Open them' : ''}`}
+              onMouseEnter={() => setHot(m.intent)} onMouseLeave={() => setHot(null)}
+              className={`flex items-center justify-between gap-1.5 rounded px-1.5 py-1 text-left transition-colors hover:bg-plane
+                ${hot === m.intent ? 'bg-plane' : ''} ${n ? '' : 'opacity-45 cursor-default'}`}>
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="w-2.5 h-2.5 rounded-[3px] shrink-0" style={{ background: WAFFLE_COLOR[m.intent] }} />
+                <span className="truncate text-ink-2">{m.intent}</span>
+              </span>
+              <span className="tnum font-semibold text-ink-1 shrink-0">{n}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 /** Icon-chip tone tokens for Problem spotlight's metric grid — a small local
  * map, since these cells use an icon + coloured value neither Stat nor
@@ -258,26 +381,19 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
   const execInProgress = ecnt('In progress', 'Queued', 'Approved')
   const execFailed = ecnt(...EXEC_FAIL)
 
-  /* What the work is, rather than how much of it there is: every request in
-     scope falls into exactly one of these six, so a ring fits it without a
-     residual slice. Whether this queue is mostly Create or mostly Modify is
-     the difference between an estate still being built and one being
-     maintained. `justify-center` (rather than pt-1/top-aligned) is what
-     keeps this card free of trailing white space: the donut + legend block
-     is shorter than the Requests/Execution cards' donut + 3-row list, so
-     top-aligning it left a visible gap under the legend — centering spreads
-     any leftover room evenly above and below instead. */
-  const intentSegments = INTENT_META.map(({ intent, color }) => ({
-    label: intent, value: byIntent.get(intent) ?? 0, fill: 'brand' as const, color,
-    onClick: (byIntent.get(intent) ?? 0) > 0 ? () => onDrill({ intent, state: null }) : undefined,
-  }))
+  /* What the work is, rather than how much of it there is. Whether this
+     queue is mostly Create or mostly Modify is the difference between an
+     estate still being built and one being maintained — one number, which
+     is why this card leads with it and draws the split as a unit chart
+     instead of a third ring beside the two that already sit to its left.
+     `justify-center` keeps the block free of trailing white space against
+     the taller Requests/Execution cards. */
   const intentCard = (
     <Card className="h-full flex flex-col">
       <CardHead title="Building or maintaining?" sub="New services versus changes to ones already live"
-        info="Every request in the current selection counted by why it was raised. Create is the only type that builds something new — Modify, Suspend, Resume, Cease and Re-prove all act on a service that is already live, so the balance between Create and the rest says whether this queue is growing the estate or maintaining it. Click a slice or a row to open just those." />
-      <CardBody className="flex-1 min-h-0 flex flex-col items-center justify-center gap-4">
-        <Donut size={128} total={total} segments={intentSegments} />
-        <DonutLegend segments={intentSegments} columns={2} />
+        info="Every request in the current selection counted by why it was raised. Create is the only type that builds something new — Modify, Suspend, Resume, Cease and Re-prove all act on a service that is already live, so the balance between Create and the rest says whether this queue is growing the estate or maintaining it. Each cell of the grid is one percent of the selection. Hover a cell or a row to isolate that type; click to open just those." />
+      <CardBody className="flex-1 min-h-0 flex flex-col justify-center">
+        <IntentWaffle counts={byIntent} total={total} onDrill={onDrill} />
       </CardBody>
     </Card>
   )
