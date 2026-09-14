@@ -1,17 +1,60 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import { CalendarClock, CheckCircle2, Download, Eye, FileText, Hourglass, Plus, RotateCcw, XCircle } from 'lucide-react'
 import { useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
 import { useStore } from '@/store/useStore'
 import type { ReportDef } from '@/types'
 import {
   Badge, Button, Card, CardBody, CardHead, CellMain, CellSub, Chip, DataTable,
-  Drawer, KV, Kebab, Mono, Note, Stat, type Column,
+  Drawer, InfoTip, KV, Kebab, Mono, Note, type Column,
 } from '@/components/ui'
 import { TrendLine } from '@/components/charts'
 import { relTime, shortDate } from '@/lib/format'
 import { downloadReportCsv, type ReportContext } from '@/lib/reportExport'
 
 const STATE_TONE = { Current: 'good', Stale: 'warn', Running: 'info', Failed: 'crit' } as const
+
+const KPI_TONE: Record<'brand' | 'good' | 'warn' | 'crit', { value: string; iconBg: string; iconFg: string; ring: string }> = {
+  brand: { value: 'text-ink-1', iconBg: 'bg-brand-50', iconFg: 'text-brand-600', ring: 'ring-brand-200/60' },
+  good: { value: 'text-good-700', iconBg: 'bg-good-50', iconFg: 'text-good-700', ring: 'ring-good-200/70' },
+  warn: { value: 'text-warn-700', iconBg: 'bg-warn-50', iconFg: 'text-warn-700', ring: 'ring-warn-200/70' },
+  crit: { value: 'text-crit-500', iconBg: 'bg-crit-50', iconFg: 'text-crit-500', ring: 'ring-crit-200/70' },
+}
+
+/**
+ * Icon + heading on the left, the count on the right — one line, not the
+ * shared Stat's stacked label-then-value (which would cost a second line
+ * here, and would change on every other screen that uses Stat if it were
+ * edited instead). This row's own compact tile.
+ */
+function KpiTile({ label, icon: Icon, value, tone = 'brand', info, onClick, drillLabel }: {
+  label: string
+  icon: ComponentType<{ size?: number; className?: string }>
+  value: ReactNode
+  tone?: 'brand' | 'good' | 'warn' | 'crit'
+  info?: ReactNode
+  onClick?: () => void
+  drillLabel?: string
+}) {
+  const c = KPI_TONE[tone]
+  return (
+    <button
+      type="button" onClick={onClick}
+      aria-label={drillLabel ? `${label}: ${value}. Open ${drillLabel}` : `${label}: ${value}`}
+      className="vw-card-section vw-card--clickable group flex items-center justify-between gap-3 text-left w-full"
+    >
+      <span className="flex items-center gap-2.5 min-w-0">
+        <span className={`w-10 h-10 rounded-xl grid place-items-center shrink-0 ring-1 ring-inset ${c.iconBg} ${c.iconFg} ${c.ring}`} aria-hidden>
+          <Icon size={18} />
+        </span>
+        <span className="vw-card-metric-label flex items-center gap-1 min-w-0">
+          <span className="truncate">{label}</span>
+          {info && <InfoTip>{info}</InfoTip>}
+        </span>
+      </span>
+      <span className={`vw-card-metric-xxl tnum shrink-0 ${c.value}`}>{value}</span>
+    </button>
+  )
+}
 
 export default function Reports() {
   const reports = useStore((s) => s.reports)
@@ -78,20 +121,21 @@ export default function Reports() {
   return (
     <>
 
-      {/* One line of icon + heading, one line of count — a glance row, not
-         a report in miniature. Click anywhere on a tile to filter the grid
+      {/* Icon, heading and count all on one line — the count moved to the
+         right rather than stacked under the label, so the tile costs one
+         row instead of two. Click anywhere on a tile to filter the grid
          below to that state and jump to it. */}
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
-        <Stat label="Report definitions" icon={FileText} value={reports.length}
+        <KpiTile label="Report definitions" icon={FileText} value={reports.length}
           info="Every report the platform can produce — some generated on a schedule, some on demand. Each definition answers one operational question from live data."
           drillLabel="every report definition" onClick={() => drillTo('All')} />
-        <Stat label="Current" icon={CheckCircle2} value={n('Current')} tone="good"
+        <KpiTile label="Current" icon={CheckCircle2} value={n('Current')} tone="good"
           info="Reports whose source data has not changed since the file was generated — what you download is still true right now."
           drillLabel="current reports" onClick={() => drillTo('Current')} />
-        <Stat label="Stale" icon={Hourglass} value={n('Stale')} tone="warn"
+        <KpiTile label="Stale" icon={Hourglass} value={n('Stale')} tone="warn"
           info="Reports generated before the underlying data last changed. Still valid as a statement about that moment, but regenerate before using one to describe the present."
           drillLabel="stale reports" onClick={() => drillTo('Stale')} />
-        <Stat label="Failed" icon={XCircle} value={n('Failed')} tone={n('Failed') ? 'crit' : undefined}
+        <KpiTile label="Failed" icon={XCircle} value={n('Failed')} tone={n('Failed') ? 'crit' : 'brand'}
           info="Reports whose last generation attempt errored — no fresh file was produced. Retry from the row's actions."
           drillLabel="failed reports" onClick={() => drillTo('Failed')} />
       </div>
