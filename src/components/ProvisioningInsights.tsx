@@ -140,8 +140,12 @@ function allocateCells(series: { intent: OrderIntent; value: number }[], total: 
  * number leads, with its complement beside it and a split bar between them.
  * Under it a 10×10 waffle, one cell per percent, shows the same split as
  * mass: a hundred cells make the small intents visible as a few distinct
- * squares instead of slivers on a ring. Hover a cell or a legend row to
- * isolate that intent; click either to open exactly those requests.
+ * squares instead of slivers on a ring. No separate legend underneath —
+ * that pushed this card taller than "Where requests are waiting" and
+ * "How execution is going" either side of it and left them with trailing
+ * white space; colour is named on hover (cell, or bar segment) instead,
+ * and the two named numbers (building/maintaining) plus the bar carry the
+ * headline story without it. Click a cell or the bar to open those requests.
  */
 function IntentWaffle({ counts, total, onDrill }:
 { counts: Map<OrderIntent, number>; total: number; onDrill: (patch: Patch) => void }) {
@@ -160,7 +164,6 @@ function IntentWaffle({ counts, total, onDrill }:
         : 'An even mix of new builds and changes'
   const drill = (intent: OrderIntent) => (count(intent) > 0 ? () => onDrill({ intent, state: null }) : undefined)
   const dim = (intent: OrderIntent) => (hot !== null && hot !== intent ? 'opacity-25' : '')
-  const maintain = INTENT_META.filter((m) => m.intent !== 'Create')
 
   return (
     <div className="w-full flex flex-col gap-3">
@@ -200,26 +203,6 @@ function IntentWaffle({ counts, total, onDrill }:
             style={{ background: WAFFLE_COLOR[intent], animationDelay: `${i * 6}ms` }} />
         ))}
         {!total && Array.from({ length: 100 }, (_, i) => <span key={i} className="h-[16px] rounded-[3px] bg-line-soft" />)}
-      </div>
-
-      {/* legend: what each colour is, with the count — the accessible way in */}
-      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12px]">
-        {[INTENT_META[0], ...maintain].map((m) => {
-          const n = count(m.intent)
-          return (
-            <button key={m.intent} type="button" onClick={drill(m.intent)} disabled={!n}
-              aria-label={`${n} ${m.intent.toLowerCase()} requests${n ? '. Open them' : ''}`}
-              onMouseEnter={() => setHot(m.intent)} onMouseLeave={() => setHot(null)}
-              className={`flex items-center justify-between gap-1.5 rounded px-1.5 py-1 text-left transition-colors hover:bg-plane
-                ${hot === m.intent ? 'bg-plane' : ''} ${n ? '' : 'opacity-45 cursor-default'}`}>
-              <span className="flex items-center gap-1.5 min-w-0">
-                <span className="w-2.5 h-2.5 rounded-[3px] shrink-0" style={{ background: WAFFLE_COLOR[m.intent] }} />
-                <span className="truncate text-ink-2">{m.intent}</span>
-              </span>
-              <span className="tnum font-semibold text-ink-1 shrink-0">{n}</span>
-            </button>
-          )
-        })}
       </div>
     </div>
   )
@@ -391,7 +374,7 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
   const intentCard = (
     <Card className="h-full flex flex-col">
       <CardHead title="Building or maintaining?" sub="New services versus changes to ones already live"
-        info="Every request in the current selection counted by why it was raised. Create is the only type that builds something new — Modify, Suspend, Resume, Cease and Re-prove all act on a service that is already live, so the balance between Create and the rest says whether this queue is growing the estate or maintaining it. Each cell of the grid is one percent of the selection. Hover a cell or a row to isolate that type; click to open just those." />
+        info="Every request in the current selection counted by why it was raised. Create is the only type that builds something new — Modify, Suspend, Resume, Cease and Re-prove all act on a service that is already live, so the balance between Create and the rest says whether this queue is growing the estate or maintaining it. Each cell of the grid is one percent of the selection, coloured by type — hover a cell or the bar above it to see which and isolate it; click to open just those." />
       <CardBody className="flex-1 min-h-0 flex flex-col justify-center">
         <IntentWaffle counts={byIntent} total={total} onDrill={onDrill} />
       </CardBody>
