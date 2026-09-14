@@ -190,7 +190,7 @@ export default function ProvisioningRequests() {
          Create builds a new service; everything else acts on one that is
          already carrying traffic — which is the distinction someone scanning
          this list is actually trying to make. */
-      key: 'intent', header: 'Request type', width: '132px',
+      key: 'intent', header: 'Request type', width: '132px', align: 'center',
       sortValue: (r) => r.intent,
       render: (r) => (
         <>
