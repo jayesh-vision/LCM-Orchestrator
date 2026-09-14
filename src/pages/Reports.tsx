@@ -97,7 +97,12 @@ export default function Reports() {
         <Card>
           <CardHead title={featured.name} sub={featured.question}
             right={<Button size="sm" onClick={() => { downloadReportCsv(featured, ctx); pushToast(featured.state === 'Current' ? 'good' : 'warn', featured.state === 'Current' ? `${featured.name} downloaded.` : `${featured.name} downloaded with a stale-data banner.`) }}><Download size={14} />Download</Button>} />
-          <CardBody>
+          {/* Stat+trend, the run table, and the closing note are three
+             distinct sections of one card — an explicit gap between each
+             rather than relying on one-off margins, so a section never ends
+             up flush against the next (the note used to butt straight
+             against the table's bottom border with no breathing room). */}
+          <CardBody className="flex flex-col gap-4">
             <div className="flex items-end gap-7 flex-wrap">
               <div>
                 <div className="text-[12px] text-ink-3 font-medium">Current</div>
@@ -112,7 +117,7 @@ export default function Reports() {
                 />
               </div>
             </div>
-            <div className="border border-line rounded-lg overflow-hidden mt-4">
+            <div className="border border-line rounded-lg overflow-hidden">
               <table className="w-full text-[12.5px]">
                 <thead><tr className="bg-plane">
                   {['Run', 'Snapshot', 'Value', 'Change'].map((h) => (
