@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
 import {
-  BarChart3, CheckCircle2, ClipboardCheck, Eye, ListChecks, PlayCircle, Plus,
+  BarChart3, CheckCircle2, ClipboardCheck, Eye, GitBranch, ListChecks, PlayCircle, Plus,
   ShieldCheck, Workflow, XCircle,
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
@@ -238,6 +238,7 @@ export default function ProvisioningRequests() {
           ...(!PRE_EXECUTION.includes(r.state)
             ? [{ label: 'Verify details', icon: ClipboardCheck, onClick: () => setVerify(r) }]
             : []),
+          { label: 'BPMN journey', icon: GitBranch, onClick: () => nav(`/requests/${r.id}?tab=journey`, fromList) },
           { label: 'Life cycle operation', icon: Workflow, onClick: () => nav(`/requests/${r.id}?tab=lifecycle`, fromList) },
           { label: 'View jobs', icon: ListChecks, onClick: () => nav(`/requests/${r.id}?tab=runs`, fromList) },
           ...(r.state === 'Validated'

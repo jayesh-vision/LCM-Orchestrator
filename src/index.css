@@ -103,6 +103,11 @@
   .anim-drawer { animation: lcm-slide-in .22s cubic-bezier(.32,.72,0,1) both; }
   @keyframes lcm-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
   .anim-pulse { animation: lcm-pulse 1.4s ease-in-out infinite; }
+  /* BPMN journey: a taken sequence flow draws itself in (pathLength=1 on the
+     path makes the offset unit-free), and a visited node lights up as the
+     token reaches it. */
+  @keyframes lcm-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+  @keyframes lcm-light { from { opacity: .25; transform: scale(.9); } to { opacity: 1; transform: none; } }
 }
 
 /* ============================================================

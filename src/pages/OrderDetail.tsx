@@ -10,6 +10,7 @@ import {
   Mono, Note, Progress, Tabs, type Tone,
 } from '@/components/ui'
 import { CATEGORY_TONE, clockTime, dateTime, dur, ORDER_TONE, relTime, RUN_TONE, TASK_TONE, shortDate } from '@/lib/format'
+import BpmnJourney from '@/components/BpmnJourney'
 
 /* Stage kind → chip tone, as the platform colours its stage nodes. */
 const STAGE_KIND_TONE: Record<StageKind, Tone> = { 'Pre validation': 'teal', Configuration: 'info', 'Post validation': 'warn' }
@@ -30,6 +31,17 @@ function attemptReason(group: Run[], r: Run): string {
 }
 
 type Delta = { attribute: string; current: string; requested: string }[]
+
+/** A run's tasks grouped back into the stages its workflow defines, in order. */
+function stagesOf(run: Run): { name: string; kind: StageKind; tasks: RunTask[] }[] {
+  const out: { name: string; kind: StageKind; tasks: RunTask[] }[] = []
+  run.tasks.forEach((t) => {
+    const last = out[out.length - 1]
+    if (last && last.name === t.stage) last.tasks.push(t)
+    else out.push({ name: t.stage, kind: t.stageKind, tasks: [t] })
+  })
+  return out
+}
 
 /** What the change actually is, in one line: "Circuit capacity 400 Gbps → 800
  *  Gbps". A create has no delta because nothing existed to differ from. */
@@ -192,7 +204,7 @@ export default function OrderDetail() {
     return { startedAt, endedAt, elapsed, writes, outcome, decision: order?.approvals.find((a) => a.decision) }
   }, [runGroups, order, writeTaskIds]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const tab = (sp.get('tab') ?? 'service') as 'service' | 'lifecycle' | 'runs'
+  const tab = (sp.get('tab') ?? 'service') as 'service' | 'journey' | 'lifecycle' | 'runs'
   /* replace: true — switching tabs shouldn't push a browser-history entry, so
      the Back button (and the browser's own back button) never gets stuck
      cycling through tabs instead of leaving the screen. */
@@ -221,15 +233,7 @@ export default function OrderDetail() {
   const run: Run | undefined = runs[runIdx]
 
   /* The run's stages in the order its workflow defines them. */
-  const stages = useMemo(() => {
-    const out: { name: string; kind: StageKind; tasks: RunTask[] }[] = []
-    run?.tasks.forEach((t) => {
-      const last = out[out.length - 1]
-      if (last && last.name === t.stage) last.tasks.push(t)
-      else out.push({ name: t.stage, kind: t.stageKind, tasks: [t] })
-    })
-    return out
-  }, [run])
+  const stages = useMemo(() => (run ? stagesOf(run) : []), [run])
   const openStage = stages[Math.min(openStageIdx, Math.max(0, stages.length - 1))]
 
   if (!order) {
@@ -337,6 +341,10 @@ export default function OrderDetail() {
             onChange={setTab}
             tabs={[
               { id: 'service', label: 'Network service' },
+              /* The whole journey as one BPMN process — raised to landed,
+                 with the execution sub-process expanded per device and the
+                 point where a run broke marked as such. */
+              { id: 'journey', label: 'BPMN journey' },
               { id: 'lifecycle', label: 'Lifecycle operation' },
               /* Every run on the request, not the selected endpoint's share of
                  them. The tab body groups Source and Destination side by side,
@@ -622,6 +630,28 @@ export default function OrderDetail() {
             </CardBody>
           </Card>
         </div>
+      )}
+
+      {/* ---------------- BPMN journey ---------------- */}
+      {tab === 'journey' && (
+        <BpmnJourney
+          order={order} runs={allOrderRuns} workflows={workflows}
+          onOpenTask={setTaskDrawer}
+          /* Same jump the Runs table makes: select that endpoint, pick the
+             attempt, and land on the stage-and-task view of it. */
+          onOpenRun={(runId, endpointId) => {
+            const target = allOrderRuns.find((r) => r.id === runId)
+            const epKey = endpointId ?? target?.endpointId
+            if (epKey) setEpId(epKey)
+            const idx = allOrderRuns
+              .filter((r) => (epKey ? r.endpointId === epKey : !r.endpointId))
+              .sort((a, b) => b.attempt - a.attempt)
+              .findIndex((r) => r.id === runId)
+            setRunIdx(Math.max(0, idx))
+            setOpenStageIdx(target ? Math.max(0, stagesOf(target).findIndex((s) => s.tasks.some((t) => t.state === 'Failed' || t.state === 'Running'))) : 0)
+            setTab('lifecycle')
+          }}
+        />
       )}
 
       {/* ---------------- lifecycle operation ---------------- */}
