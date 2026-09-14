@@ -13,6 +13,38 @@ import { downloadReportCsv, type ReportContext } from '@/lib/reportExport'
 
 const STATE_TONE = { Current: 'good', Stale: 'warn', Running: 'info', Failed: 'crit' } as const
 
+/**
+ * What a bare count on a KPI card can't answer: which ones. Up to `max`
+ * reports as their own small clickable names — enough for a glance to be
+ * useful without the card's height tracking an unbounded list. Whatever
+ * doesn't fit folds into one "+N more" that drills to the full filtered
+ * grid instead, so nothing is ever actually hidden, just handed off.
+ */
+function ReportNames({ items, onOpen, onMore, max = 4, reason }:
+{ items: ReportDef[]; onOpen: (r: ReportDef) => void; onMore?: () => void; max?: number; reason?: boolean }) {
+  if (!items.length) return null
+  const shown = items.slice(0, max)
+  const extra = items.length - shown.length
+  return (
+    <div className="flex flex-col items-start gap-1 mt-2">
+      {shown.map((r) => (
+        <button
+          key={r.id} type="button" onClick={() => onOpen(r)}
+          className="text-left max-w-full rounded hover:bg-plane -mx-1 px-1 py-0.5 transition-colors"
+        >
+          <span className="block text-[11.5px] font-semibold text-ink-1 hover:text-brand-600 truncate">{r.name}</span>
+          {reason && r.failureReason && <span className="block text-[11px] text-ink-3 leading-snug">{r.failureReason}</span>}
+        </button>
+      ))}
+      {extra > 0 && (
+        <button type="button" onClick={onMore} className="text-[11px] text-brand-600 font-medium hover:underline -mx-1 px-1">
+          +{extra} more
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function Reports() {
   const reports = useStore((s) => s.reports)
   const services = useStore((s) => s.services)
@@ -40,7 +72,16 @@ export default function Reports() {
   }), [reports, state, q])
 
   const n = (s: ReportDef['state']) => reports.filter((r) => r.state === s).length
+  const byState = (s: ReportDef['state']) => reports.filter((r) => r.state === s)
   const featured = reports[0]
+  /* Cadence is a free-text field ("Weekly · Mon 06:00", "On demand · per
+     service") — the schedule shape people actually think in is just its
+     first word, so that's what the KPI card groups by. */
+  const cadenceMix = useMemo(() => {
+    const m = new Map<string, number>()
+    reports.forEach((r) => { const k = r.cadence.split(' ·')[0]; m.set(k, (m.get(k) ?? 0) + 1) })
+    return [...m.entries()].sort((a, b) => b[1] - a[1])
+  }, [reports])
 
   const columns: Column<ReportDef>[] = [
     {
@@ -78,19 +119,38 @@ export default function Reports() {
   return (
     <>
 
-      <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
-        <Stat label="Report definitions" icon={FileText} value={reports.length} note={`${reports.filter((r) => r.cadence.includes('demand')).length} on demand`}
+      <div className="grid gap-4 grid-cols-2 xl:grid-cols-4 items-stretch">
+        <Stat label="Report definitions" icon={FileText} value={reports.length}
+          note={<>
+            One definition, one operational question — by cadence
+            <div className="flex flex-col gap-1 mt-2">
+              {cadenceMix.map(([k, v]) => (
+                <span key={k} className="flex items-center justify-between gap-2 text-[11.5px]">
+                  <span className="text-ink-2">{k}</span>
+                  <span className="font-semibold text-ink-1 tnum">{v}</span>
+                </span>
+              ))}
+            </div>
+          </>}
           info="Every report the platform can produce — some generated on a schedule, some on demand. Each definition answers one operational question from live data."
           drillLabel="every report definition" onClick={() => drillTo('All')} />
-        <Stat label="Current" icon={CheckCircle2} value={n('Current')} tone="good" note="Source data has not moved since generation"
-          info="Reports whose source data has not changed since the file was generated — what you download is still true right now."
-          drillLabel="current reports" onClick={() => drillTo('Current')} />
-        <Stat label="Stale" icon={Hourglass} value={n('Stale')} tone="warn" note="Valid as a dated statement, wrong as a current one"
-          info="Reports generated before the underlying data last changed. Still valid as a statement about that moment, but regenerate before using one to describe the present."
-          drillLabel="stale reports" onClick={() => drillTo('Stale')} />
-        <Stat label="Failed" icon={XCircle} value={n('Failed')} tone={n('Failed') ? 'crit' : undefined} note="Retry available"
-          info="Reports whose last generation attempt errored — no fresh file was produced. Retry from the row's actions."
-          drillLabel="failed reports" onClick={() => drillTo('Failed')} />
+        <Stat label="Current" icon={CheckCircle2} value={n('Current')} tone="good"
+          note={<>
+            Download freely — nothing has moved since generation
+            <ReportNames items={byState('Current')} onOpen={setOpen} onMore={() => drillTo('Current')} />
+          </>}
+          info="Reports whose source data has not changed since the file was generated — what you download is still true right now." />
+        <Stat label="Stale" icon={Hourglass} value={n('Stale')} tone="warn"
+          note={<>
+            Valid as a dated statement, wrong as a current one
+            <ReportNames items={byState('Stale')} onOpen={setOpen} onMore={() => drillTo('Stale')} />
+          </>}
+          info="Reports generated before the underlying data last changed. Still valid as a statement about that moment, but regenerate before using one to describe the present." />
+        <Stat label="Failed" icon={XCircle} value={n('Failed')} tone={n('Failed') ? 'crit' : undefined}
+          note={n('Failed')
+            ? <ReportNames items={byState('Failed')} onOpen={setOpen} onMore={() => drillTo('Failed')} reason />
+            : 'Nothing to retry'}
+          info="Reports whose last generation attempt errored — no fresh file was produced. Retry from the row's actions." />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
