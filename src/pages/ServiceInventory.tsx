@@ -345,45 +345,29 @@ export default function ServiceInventory() {
               size={158}
               segments={confSegs.map(({ label, value, fill, onClick }) => ({ label, value, fill, onClick }))}
             />
-            <div className="flex-1 min-w-[280px] grid sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-              {confSegs.map((s) => {
-                /* Five verdicts spread across up to four columns now that this
-                   card spans the full page width — the last tile still spans
-                   the full row (whatever the current column count is) rather
-                   than leaving a gap or wrapping into a lonely last column. */
-                const wide = s.label === 'Not checked'
-                return (
-                  <button
-                    key={s.label} type="button" onClick={s.onClick}
-                    aria-label={`${s.label}: ${s.value}. Open the matching services`}
-                    className={`flex gap-2.5 border border-line rounded-lg px-3.5 py-2.5 text-left cursor-pointer
-                      transition-colors hover:bg-plane hover:border-brand-200
-                      focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100
-                      ${wide ? 'col-span-full items-center' : 'items-start'}`}
-                  >
-                    <i className="w-2.5 h-2.5 rounded-[3px] shrink-0 mt-1.5" style={{ background: FILL[s.fill] }} aria-hidden />
-                    {wide ? (
-                      <span className="min-w-0 flex-1 flex items-baseline gap-2.5 flex-wrap">
-                        <span className="text-[16px] font-semibold tnum text-ink-1 leading-tight shrink-0">
-                          {s.value.toLocaleString()}
-                          <span className="text-[11px] text-ink-3 font-medium ml-1.5">{Math.round((s.value / services.length) * 100)}%</span>
-                        </span>
-                        <span className="text-[12px] font-medium text-ink-2 shrink-0">{s.label}</span>
-                        <span className="text-[11px] text-ink-3 leading-snug">· {s.note}</span>
-                      </span>
-                    ) : (
-                      <span className="min-w-0">
-                        <span className="block text-[16px] font-semibold tnum text-ink-1 leading-tight">
-                          {s.value.toLocaleString()}
-                          <span className="text-[11px] text-ink-3 font-medium ml-1.5">{Math.round((s.value / services.length) * 100)}%</span>
-                        </span>
-                        <span className="block text-[12px] font-medium text-ink-2 mt-0.5">{s.label}</span>
-                        <span className="block text-[11px] text-ink-3 leading-snug">{s.note}</span>
-                      </span>
-                    )}
-                  </button>
-                )
-              })}
+            <div className="flex-1 min-w-[280px] grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+              {/* All five verdicts share one tile shape at every breakpoint —
+                 no special-cased "wide" tile for the odd one out, so nothing
+                 ever hangs alone as a stretched bar underneath the row. */}
+              {confSegs.map((s) => (
+                <button
+                  key={s.label} type="button" onClick={s.onClick}
+                  aria-label={`${s.label}: ${s.value}. Open the matching services`}
+                  className="flex items-start gap-2.5 border border-line rounded-lg px-3.5 py-2.5 text-left cursor-pointer
+                    transition-colors hover:bg-plane hover:border-brand-200
+                    focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
+                >
+                  <i className="w-2.5 h-2.5 rounded-[3px] shrink-0 mt-1.5" style={{ background: FILL[s.fill] }} aria-hidden />
+                  <span className="min-w-0">
+                    <span className="block text-[16px] font-semibold tnum text-ink-1 leading-tight">
+                      {s.value.toLocaleString()}
+                      <span className="text-[11px] text-ink-3 font-medium ml-1.5">{Math.round((s.value / services.length) * 100)}%</span>
+                    </span>
+                    <span className="block text-[12px] font-medium text-ink-2 mt-0.5">{s.label}</span>
+                    <span className="block text-[11px] text-ink-3 leading-snug">{s.note}</span>
+                  </span>
+                </button>
+              ))}
             </div>
           </CardBody>
         </Card>
