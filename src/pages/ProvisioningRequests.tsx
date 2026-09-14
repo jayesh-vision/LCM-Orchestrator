@@ -315,7 +315,6 @@ export default function ProvisioningRequests() {
                   options: [
                     ...STATE_ORDER.filter((st) => orders.some((o) => o.state === st))
                       .map((st) => ({ value: st, label: st, count: orders.filter((o) => o.state === st).length })),
-                    { value: 'Validated', label: 'Waiting for approval' },
                     { value: 'Approved,Queued', label: 'Ready to run' },
                     { value: 'Failed,Rejected,Invalid,Reinstantiate', label: 'Blocked' },
                   ],
