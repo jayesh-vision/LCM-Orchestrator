@@ -7,7 +7,7 @@ import {
   Badge, Button, Card, CardBody, CardHead, CellMain, CellSub, Chip, DataTable,
   Drawer, FilterBanner, Mono, Note, Stat, type Column,
 } from '@/components/ui'
-import { BarList, PoolGauge } from '@/components/charts'
+import { BarList, PoolGauge, SOFT } from '@/components/charts'
 
 const KINDS: PoolKind[] = ['VLAN', 'Pseudowire ID', 'RD/RT', 'IP block', 'ASN slot']
 
@@ -81,24 +81,24 @@ export default function ResourcePools() {
 
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
         <Stat label="Pools" icon={Database} value={pools.length}
-          progress={(totals.allocated / totals.total) * 100}
+          progress={(totals.allocated / totals.total) * 100} progressColor={SOFT.brand}
           note={`${totals.total.toLocaleString()} addressable values`}
           info="Each pool holds one kind of network value — VLAN IDs, IP blocks, route targets, pseudowire IDs — that provisioning allocates automatically when a service is built and releases when it is ceased."
           drillLabel="every pool, unfiltered" onClick={clear} />
         <Stat label="Allocated" icon={Gauge} value={totals.allocated.toLocaleString()}
-          progress={(totals.allocated / totals.total) * 100}
+          progress={(totals.allocated / totals.total) * 100} progressColor={SOFT.brand}
           info="Values currently held by live services across all pools. The bar shows how much of the total estate is in use."
           note={`${((totals.allocated / totals.total) * 100).toFixed(0)}% of the estate`}
           drillLabel="the pool with the least headroom"
           onClick={() => { const t = [...pools].sort((a, b) => freePct(a) - freePct(b))[0]; if (t) openPool(t) }} />
         <Stat label="Quarantined" icon={Hourglass} value={totals.quarantined} tone="warn"
-          progress={(totals.quarantined / totals.total) * 100}
+          progress={(totals.quarantined / totals.total) * 100} progressColor={SOFT.warn}
           note={`${((totals.quarantined / totals.total) * 100).toFixed(0)}% of the estate · held 30 days before reissue`}
           info="Values released by a ceased service but deliberately held back before reissue. Handing a route target or IP block straight to a new customer while stale configuration might still reference it can leak traffic between customers."
           drillLabel="the pool holding the most quarantined values"
           onClick={() => { const t = [...pools].sort((a, b) => b.quarantined - a.quarantined)[0]; if (t) openPool(t) }} />
         <Stat label="Pools under 10% free" icon={TriangleAlert} value={critical.length} tone={critical.length ? 'crit' : 'good'}
-          progress={(critical.length / pools.length) * 100}
+          progress={(critical.length / pools.length) * 100} progressColor={critical.length ? SOFT.crit : SOFT.good}
           info="Pools close to exhaustion. A new order that needs a value from one of these pools will fail validation before anything is configured — expand the range or reclaim values to restore headroom."
           note={critical.length ? [...new Set(critical.map((p) => p.kind))].join(' · ') : 'All pools have headroom'}
           drillLabel={critical.length ? 'the tightest pool' : 'all pools'}
@@ -123,6 +123,7 @@ export default function ResourcePools() {
                   value: Math.round(freePct(p)),
                   valueLabel: `${Math.round(freePct(p))}% free`,
                   tone: freePct(p) < 10 ? ('crit' as const) : freePct(p) < 25 ? ('warn' as const) : ('good' as const),
+                  color: freePct(p) < 10 ? SOFT.crit : freePct(p) < 25 ? SOFT.warn : SOFT.good,
                   drillLabel: `${p.kind} pool for ${p.scope}. Browse it`,
                   onClick: () => openPool(p),
                 }))}

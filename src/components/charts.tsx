@@ -434,12 +434,15 @@ export function PoolGauge({ allocated, quarantined, reserved, total }:
 { allocated: number; quarantined: number; reserved: number; total: number }) {
   const free = Math.max(0, total - allocated - quarantined - reserved)
   const pct = (n: number) => `${(n / total) * 100}%`
+  /* SOFT, not FILL — this bar is wide and solid the whole width of a table
+     cell, unlike a chip or thin line, and the raw 500-weight FILL tones
+     read as glaring across that much area. */
   return (
     <div>
       <div className="flex h-2.5 rounded-full overflow-hidden bg-line-soft gap-px">
-        <div style={{ width: pct(allocated), background: FILL.brand }} title={`Allocated ${allocated}`} />
+        <div style={{ width: pct(allocated), background: SOFT.brand }} title={`Allocated ${allocated}`} />
         <div style={{ width: pct(reserved), background: FILL.brandSoft }} title={`Reserved ${reserved}`} />
-        <div style={{ width: pct(quarantined), background: FILL.warn }} title={`Quarantined ${quarantined}`} />
+        <div style={{ width: pct(quarantined), background: SOFT.warn }} title={`Quarantined ${quarantined}`} />
         <div style={{ width: pct(free), background: 'var(--vw-color-slate-100)' }} title={`Free ${free}`} />
       </div>
       <div className="flex gap-x-4 gap-y-1 flex-wrap mt-2 text-[11.5px] text-ink-3">

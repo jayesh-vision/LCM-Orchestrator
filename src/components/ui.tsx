@@ -215,7 +215,7 @@ const STAT_TONE: Record<StatTone | 'brand', { value: string; iconBg: string; ico
   plum: { value: 'text-plum-700', iconBg: 'bg-plum-50', iconFg: 'text-plum-700', ring: 'ring-plum-200/70' },
 }
 
-export function Stat({ label, value, note, tone, delta, onClick, drillLabel, icon: Icon, progress, info }:
+export function Stat({ label, value, note, tone, delta, onClick, drillLabel, icon: Icon, progress, progressColor, info }:
 {
   label: string; value: ReactNode; note?: ReactNode; tone?: StatTone
   delta?: { text: string; tone: 'good' | 'bad' | 'flat' }
@@ -226,6 +226,8 @@ export function Stat({ label, value, note, tone, delta, onClick, drillLabel, ico
   icon?: ComponentType<{ size?: number; className?: string }>
   /** 0–100. Renders a thin share-of-total bar under the value in the card's tone. */
   progress?: number
+  /** Raw CSS color for that bar, e.g. a page's own soft palette; wins over the tone default. */
+  progressColor?: string
   /** One or two sentences explaining what the number means, behind a small ⓘ. */
   info?: ReactNode
 }) {
@@ -253,7 +255,7 @@ export function Stat({ label, value, note, tone, delta, onClick, drillLabel, ico
         )}
       </div>
       {progress !== undefined && (
-        <Progress value={progress} tone={tone ?? 'brand'} className="mt-3" />
+        <Progress value={progress} tone={tone ?? 'brand'} color={progressColor} className="mt-3" />
       )}
       {/* Anchored to the bottom so the note line sits at the same height on
          every card in a KPI row, whatever the value/delta/progress above it. */}
