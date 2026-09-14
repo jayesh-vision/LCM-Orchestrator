@@ -93,6 +93,14 @@ interface State {
   markAllNotificationsRead: () => void
 
   createOrder: (draft: WizardDraft) => Order
+  /** Draft-only: rename the request or move it to another account before it's ever submitted. */
+  updateOrderDraft: (id: string, patch: { name?: string; accountId?: string; accountName?: string }) => void
+  /** Draft-only: change one parameter's rendered value on one endpoint. */
+  updateOrderEndpointParam: (orderId: string, endpointId: string, paramName: string, value: string) => void
+  /** Draft → Planned → Validated/Invalid, the same automatic cycle a freshly
+   *  created request runs — triggered by hand for a request that sat in
+   *  Draft rather than firing the moment it was created. */
+  submitDraftForValidation: (id: string) => void
   setOrderState: (id: string, state: OrderState, note?: string) => void
   approveOrder: (id: string, by: string) => void
   rejectOrder: (id: string, by: string, comment: string) => void
@@ -277,6 +285,44 @@ export const useStore = create<State>((set, get) => ({
     }, 3200)
 
     return order
+  },
+
+  updateOrderDraft: (id, patch) =>
+    set((s) => ({
+      orders: s.orders.map((o) => (o.id === id && o.state === 'Draft'
+        ? { ...o, ...patch, updatedAt: new Date().toISOString() } : o)),
+    })),
+
+  updateOrderEndpointParam: (orderId, endpointId, paramName, value) =>
+    set((s) => ({
+      orders: s.orders.map((o) => (o.id === orderId && o.state === 'Draft'
+        ? {
+          ...o,
+          endpoints: o.endpoints.map((e) => (e.id === endpointId
+            ? { ...e, params: (e.params ?? []).map((p) => (p.name === paramName ? { ...p, value, source: 'user' as const } : p)) }
+            : e)),
+          updatedAt: new Date().toISOString(),
+        }
+        : o)),
+    })),
+
+  /* Mirrors the second half of createOrder's own timeline — Draft moves to
+     Planned the instant someone asks for it, then resolves to Validated or
+     Invalid a couple of seconds later, exactly as a freshly designed request
+     does. A seeded or previously-abandoned Draft gets the same cycle a new
+     one gets automatically; this is what lets someone act on it by hand. */
+  submitDraftForValidation: (id) => {
+    const order = get().orderById(id)
+    if (!order || order.state !== 'Draft') return
+    get().setOrderState(id, 'Planned')
+    get().pushToast('good', `${id} submitted. Pre-validation starting.`)
+    setTimeout(() => {
+      const ok = Math.random() > 0.12
+      get().setOrderState(id, ok ? 'Validated' : 'Invalid')
+      get().pushToast(ok ? 'good' : 'crit', ok
+        ? `${id} pre-validated. Awaiting approval.`
+        : `${id} failed pre-validation. Needs rework before it can be approved.`)
+    }, 2200)
   },
 
   setOrderState: (id, state, note) =>

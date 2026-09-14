@@ -1,13 +1,16 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, CheckCircle2, ChevronDown, GitBranch, PlayCircle, RotateCcw, Server, Square, XCircle } from 'lucide-react'
+import {
+  ArrowLeft, Check, CheckCircle2, ChevronDown, GitBranch, Pencil, PlayCircle, RotateCcw, Send, Server, Square, XCircle,
+} from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import { RUN_LOG_RETENTION_DAYS } from '@/data/orders'
+import { ACCOUNTS } from '@/data/catalog'
 import type { Endpoint, Run, RunTask, StageKind } from '@/types'
 import { endpointRole } from '@/types'
 import {
   Badge, Button, Card, CardBody, CardHead, CellSub, CodeBlock, Drawer, KV,
-  Mono, Note, Progress, Tabs, type Tone,
+  Mono, Note, Progress, Select, Tabs, TextInput, type Tone,
 } from '@/components/ui'
 import { CATEGORY_TONE, clockTime, dateTime, dur, ORDER_TONE, relTime, RUN_TONE, TASK_TONE, shortDate } from '@/lib/format'
 import BpmnJourney from '@/components/BpmnJourney'
@@ -94,6 +97,9 @@ export default function OrderDetail() {
   const startRun = useStore((s) => s.startRun)
   const abortRun = useStore((s) => s.abortRun)
   const retryOrder = useStore((s) => s.retryOrder)
+  const updateOrderDraft = useStore((s) => s.updateOrderDraft)
+  const updateOrderEndpointParam = useStore((s) => s.updateOrderEndpointParam)
+  const submitDraftForValidation = useStore((s) => s.submitDraftForValidation)
 
   const workflows = useStore((s) => s.workflows)
 
@@ -208,7 +214,11 @@ export default function OrderDetail() {
   /* replace: true — switching tabs shouldn't push a browser-history entry, so
      the Back button (and the browser's own back button) never gets stuck
      cycling through tabs instead of leaving the screen. */
-  const setTab = (t: string) => setSp({ tab: t === 'params' ? 'service' : t }, { replace: true })
+  const setTab = (t: string) => setSp((prev) => {
+    const next = new URLSearchParams(prev)
+    next.set('tab', t === 'params' ? 'service' : t)
+    return next
+  }, { replace: true })
 
   /**
    * Whether the change card is open.
@@ -260,6 +270,16 @@ export default function OrderDetail() {
   const canApprove = order.state === 'Validated'
   const canExecute = order.state === 'Approved'
   const isRunning = order.state === 'In progress'
+  /* A Draft hasn't been checked against anything yet — nothing has run
+     against it and no one has seen it — so it's the one state where the
+     request itself, not just its lifecycle, can still change. */
+  const isDraft = order.state === 'Draft'
+  const editMode = isDraft && sp.get('edit') === '1'
+  const setEditMode = (v: boolean) => setSp((prev) => {
+    const next = new URLSearchParams(prev)
+    if (v) next.set('edit', '1'); else next.delete('edit')
+    return next
+  }, { replace: true })
 
   /**
    * Why there is nothing to show, said once for both tabs that can hit it.
@@ -298,21 +318,58 @@ export default function OrderDetail() {
             <ArrowLeft size={14} />Back to {listLabel}
           </button>
           <div className="flex items-start justify-between gap-6 flex-wrap">
-            <div>
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
-                <h1 className="text-[21px] font-semibold tracking-[-.4px] m-0">{order.name}</h1>
+                {editMode ? (
+                  <TextInput
+                    value={order.name} onChange={(e) => updateOrderDraft(order.id, { name: e.target.value })}
+                    aria-label="Request name" className="!text-[16px] !font-semibold !h-9 max-w-[360px]"
+                  />
+                ) : (
+                  <h1 className="text-[21px] font-semibold tracking-[-.4px] m-0">{order.name}</h1>
+                )}
                 <Badge tone={ORDER_TONE[order.state]} dot>{order.state}</Badge>
                 <Badge tone={CATEGORY_TONE[order.category]}>{order.category}</Badge>
                 <Badge tone="none">{order.type} · {order.subtype}</Badge>
+                {editMode && <Badge tone="info">Editing</Badge>}
               </div>
-              <p className="text-[13px] text-ink-2 m-0">
-                <Mono className="font-semibold">{order.id}</Mono> · code <Mono>{order.code}</Mono> ·
-                {' '}{order.accountName} <Mono className="text-ink-3">{order.accountId}</Mono> ·
-                {' '}created {relTime(order.createdAt)}
-                {order.serviceId && <> · service <Link className="text-brand-600" to={`/inventory/${order.serviceId}`}><Mono>{order.serviceId}</Mono></Link></>}
-              </p>
+              {editMode ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[13px] text-ink-2"><Mono className="font-semibold">{order.id}</Mono> · code <Mono>{order.code}</Mono> · customer</span>
+                  <Select
+                    value={order.accountId} aria-label="Customer account"
+                    onChange={(e) => {
+                      const acc = ACCOUNTS.find((a) => a.id === e.target.value)
+                      if (acc) updateOrderDraft(order.id, { accountId: acc.id, accountName: acc.name })
+                    }}
+                    className="!h-8 !py-0 !text-[12.5px] w-[260px]"
+                  >
+                    {ACCOUNTS.map((a) => <option key={a.id} value={a.id}>{a.name} · {a.id}</option>)}
+                  </Select>
+                </div>
+              ) : (
+                <p className="text-[13px] text-ink-2 m-0">
+                  <Mono className="font-semibold">{order.id}</Mono> · code <Mono>{order.code}</Mono> ·
+                  {' '}{order.accountName} <Mono className="text-ink-3">{order.accountId}</Mono> ·
+                  {' '}created {relTime(order.createdAt)}
+                  {order.serviceId && <> · service <Link className="text-brand-600" to={`/inventory/${order.serviceId}`}><Mono>{order.serviceId}</Mono></Link></>}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              {isDraft && (
+                <>
+                  <Button onClick={() => setEditMode(!editMode)}>
+                    {editMode ? <><Check size={15} />Done editing</> : <><Pencil size={15} />Edit request</>}
+                  </Button>
+                  <Button
+                    variant="primary"
+                    onClick={() => { setEditMode(false); submitDraftForValidation(order.id) }}
+                  >
+                    <Send size={15} />Submit for validation
+                  </Button>
+                </>
+              )}
               {canApprove && (
                 <>
                   <Button variant="danger" onClick={() => rejectOrder(order.id, 'Ravi K.', 'Rejected from the request detail screen.')}>
@@ -539,7 +596,14 @@ export default function OrderDetail() {
 
       {/* ---------------- network service ---------------- */}
       {tab === 'service' && (
-        <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
+        <div className="flex flex-col gap-4">
+          {editMode && (
+            <Note tone="info">
+              Editing this request. Changes save as you type — pick an endpoint on the left and edit its parameters
+              on the right, or the name and customer above. <b>Submit for validation</b> when it's ready to move on.
+            </Note>
+          )}
+          <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
           {/* endpoints: Source first, then every Destination */}
           <Card className="h-full">
             <CardBody className="vw-flex vw-flex-col vw-gap-md">
@@ -609,16 +673,39 @@ export default function OrderDetail() {
                   ) : <span className="vw-value block text-ink-3">Not bound yet — assigned at design</span>}
 
                   <div className="vw-card-footer-divider">
-                    <div className="vw-card-title-sm mb-2">Parameters</div>
+                    <div className="vw-flex vw-items-center vw-justify-between vw-gap-sm mb-2">
+                      <div className="vw-card-title-sm">Parameters</div>
+                      {editMode && <span className="text-[11.5px] text-ink-3">Edits render into this endpoint's commands only</span>}
+                    </div>
                     <table className="nst-table border-0 rounded-none">
                       <thead><tr><th scope="col">Parameter name</th><th scope="col">Parameter value</th></tr></thead>
                       <tbody>
-                        {(ep.params ?? []).map((p) => (
-                          <tr key={p.name}>
-                            <td className="nst-table-td--primary">{p.name}</td>
-                            <td className="nst-table-td--primary truncate max-w-[520px]">{p.value}</td>
-                          </tr>
-                        ))}
+                        {(ep.params ?? []).map((p) => {
+                          /* Interface and Neighbor IP are read off the port picked for
+                             this endpoint, not typed — editing them here without
+                             re-picking the port would contradict what the request
+                             actually reserved, so they stay locked even in edit mode,
+                             same rule the wizard itself applies when it renders them. */
+                          const locked = p.source === 'derived'
+                          return (
+                            <tr key={p.name}>
+                              <td className="nst-table-td--primary whitespace-nowrap">{p.name}</td>
+                              <td className="nst-table-td--primary">
+                                {editMode && !locked ? (
+                                  <TextInput
+                                    value={p.value} aria-label={`${p.name} value`}
+                                    onChange={(e) => updateOrderEndpointParam(order.id, ep.id, p.name, e.target.value)}
+                                    className="!h-8 !py-1 font-mono !text-[12.5px] max-w-[420px]"
+                                  />
+                                ) : (
+                                  <span className={`truncate max-w-[520px] block ${editMode && locked ? 'text-ink-3' : ''}`} title={editMode && locked ? 'Set by the port chosen for this endpoint' : undefined}>
+                                    {p.value}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
                         {(ep.params ?? []).length === 0 && <tr><td colSpan={2} className="py-8 text-center text-ink-3">No parameters for this device yet.</td></tr>}
                       </tbody>
                     </table>
@@ -629,6 +716,7 @@ export default function OrderDetail() {
               )}
             </CardBody>
           </Card>
+          </div>
         </div>
       )}
 

@@ -2,15 +2,15 @@ import { useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
 import {
-  BarChart3, CheckCircle2, ClipboardCheck, Eye, GitBranch, ListChecks, PlayCircle, Plus,
-  ShieldCheck, Workflow, XCircle,
+  BarChart3, CheckCircle2, ClipboardCheck, Eye, GitBranch, ListChecks, Pencil, PlayCircle, Plus,
+  Send, ShieldCheck, Workflow, XCircle,
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { Category, Domain, Order, OrderIntent, OrderState, Vendor } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Button, CellMain, CellSub, Chip, DataTable, Drawer, Field,
-  FieldDropdown, FilterBanner, KV, Kebab, Modal, Mono, Note, Progress, SegmentedToggle, stampColumn, type Column,
+  FieldDropdown, FilterBanner, KV, Kebab, Modal, Mono, Note, SegmentedToggle, stampColumn, type Column,
 } from '@/components/ui'
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { VENDOR_LABEL } from '@/data/workflows'
@@ -39,11 +39,11 @@ const PRE_EXECUTION: OrderState[] = ['Draft', 'Planned', 'Validated', 'Invalid',
 export default function ProvisioningRequests() {
   const allOrders = useStore((s) => s.orders)
   const runs = useStore((s) => s.runs)
-  const runsForOrder = useStore((s) => s.runsForOrder)
   const approveOrder = useStore((s) => s.approveOrder)
   const rejectOrder = useStore((s) => s.rejectOrder)
   const startRun = useStore((s) => s.startRun)
   const retryOrder = useStore((s) => s.retryOrder)
+  const submitDraftForValidation = useStore((s) => s.submitDraftForValidation)
   const pushToast = useStore((st) => st.pushToast)
   const nav = useNavigate()
   const loc = useLocation()
@@ -161,24 +161,13 @@ export default function ProvisioningRequests() {
 
   const columns: Column<Order>[] = [
     {
-      /* One status cell for the whole lifecycle: the badge for every row,
-         plus what execution adds once it exists — live task progress while a
-         run is on a device, and the failed task's name when one failed. */
-      key: 'state', header: 'Status', width: '186px',
+      /* The badge alone — one status per row, nothing underneath it. Live
+         task progress and the failed task's name live in Lifecycle
+         operation, a click away, rather than doubling up the row height
+         here for the rows that happen to be running or failed. */
+      key: 'state', header: 'Status', width: '150px',
       sortValue: (r) => STATE_ORDER.indexOf(r.state),
-      render: (r) => {
-        const rr = runsForOrder(r.id)
-        const live = rr.find((x) => x.outcome === 'Running')
-        const done = live ? live.tasks.filter((t) => t.state === 'Passed').length : 0
-        return (
-          <>
-            <Badge tone={ORDER_TONE[r.state]} dot>{r.state}</Badge>
-            {live && (<><Progress value={(done / live.tasks.length) * 100} className="mt-2 w-28" />
-              <CellSub>task {done + 1} of {live.tasks.length}</CellSub></>)}
-            {r.state === 'Failed' && rr[0] && <CellSub>{rr[0].tasks.find((t) => t.state === 'Failed')?.name ?? 'see lifecycle log'}</CellSub>}
-          </>
-        )
-      },
+      render: (r) => <Badge tone={ORDER_TONE[r.state]} dot>{r.state}</Badge>,
     },
     {
       key: 'order', header: 'Request', width: '160px',
@@ -247,6 +236,15 @@ export default function ProvisioningRequests() {
             : []),
           ...(r.state === 'Approved' ? [{ label: 'Validate credentials & execute', icon: ShieldCheck, onClick: () => setCreds(r) }] : []),
           ...(r.state === 'Failed' ? [{ label: 'Retry', icon: PlayCircle, onClick: () => retryOrder(r.id) }] : []),
+          /* A Draft hasn't been checked against anything yet — it's still
+             editable, and nothing stops it moving into the same automatic
+             pre-validation cycle a request gets the moment it's created. */
+          ...(r.state === 'Draft'
+            ? [
+              { label: 'Edit request', icon: Pencil, onClick: () => nav(`/requests/${r.id}?tab=service&edit=1`, fromList) },
+              { label: 'Submit for validation', icon: Send, onClick: () => submitDraftForValidation(r.id) },
+            ]
+            : []),
         ]} />
       ),
     },
