@@ -124,17 +124,19 @@ export default function Workflows() {
      a CPE vendor only ever covers a Broadband intent — everything else is
      "not applicable", not a real gap, and must be excluded from the
      denominator or Coverage% would be permanently deflated by combinations
-     that can never be built. */
+     that can never be built. Checked by device-class membership for the
+     category at hand, not by exclusion from every other class — a vendor
+     like Nokia sells both Routers and ONTs, so it's a real member of more
+     than one list, and excluding it from Transport just for also being an
+     ONT_VENDOR would hide its genuine Router coverage. */
   const vendorApplicable = (category: Category, vendor: Vendor): boolean => {
     if (category === 'Broadband') return CPE_VENDORS.includes(vendor)
     if (category === 'Microwave') return RADIO_VENDORS.includes(vendor)
     if (category === 'DWDM') return OPTICAL_VENDORS.includes(vendor)
     if (category === 'RAN VNF') return VNF_VENDORS.includes(vendor)
     if (category === 'GPON') return ONT_VENDORS.includes(vendor)
-    if (CPE_VENDORS.includes(vendor) || RADIO_VENDORS.includes(vendor) || OPTICAL_VENDORS.includes(vendor) || VNF_VENDORS.includes(vendor)
-      || ONT_VENDORS.includes(vendor)) return false
-    if (category === 'L2VPN') return true
-    return !SWITCH_VENDORS.includes(vendor)
+    if (category === 'L2VPN') return ROUTER_VENDORS.includes(vendor) || SWITCH_VENDORS.includes(vendor)
+    return ROUTER_VENDORS.includes(vendor)
   }
   const applicablePairs = useMemo(() => intents.flatMap((i) => ALL_VENDOR_COLS
     .filter((v) => vendorApplicable(i.category, v))
