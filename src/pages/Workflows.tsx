@@ -72,14 +72,18 @@ export default function Workflows() {
   const nav = useNavigate()
 
   const [q, setQ] = useQueryState('q', '')
+  const [qname, setQname] = useQueryState('name', '')
+  const [qcode, setQcode] = useQueryState('code', '')
   const [domain, setDomain] = useQueryState<Domain | 'All'>('domain', 'All')
   const [cat, setCat] = useQueryState<Category | 'All'>('cat', 'All')
+  const [wtype, setWtype] = useQueryState('type', 'All')
+  const [wsubtype, setWsubtype] = useQueryState('subtype', 'All')
   const [st, setSt] = useQueryState<WorkflowState | 'All' | string>('state', 'All')
   const [intentId, setIntentId] = useQueryState('intent', 'All')
   const [vendor, setVendor] = useQueryState<Vendor | 'All'>('vendor', 'All')
   const stList = st === 'All' ? [] : st.split(',')
   const patch = useQueryPatch()
-  const clear = useClearQuery(['q', 'domain', 'cat', 'state', 'intent', 'vendor'])
+  const clear = useClearQuery(['q', 'name', 'code', 'domain', 'cat', 'type', 'subtype', 'state', 'intent', 'vendor'])
   const domainCats = domain === 'All' ? CATS : CATEGORIES_BY_DOMAIN[domain]
   const setDomainScoped = (next: Domain | 'All') => {
     setDomain(next)
@@ -97,6 +101,8 @@ export default function Workflows() {
   const filtered = useMemo(() => workflows.filter((w) => {
     if (domain !== 'All' && domainOf(w.category) !== domain) return false
     if (cat !== 'All' && w.category !== cat) return false
+    if (wtype !== 'All' && w.type !== wtype) return false
+    if (wsubtype !== 'All' && w.subtype !== wsubtype) return false
     if (stList.length && !stList.includes(w.state)) return false
     if (intentId !== 'All' && w.intentId !== intentId) return false
     if (vendor !== 'All' && w.vendor !== vendor) return false
@@ -104,8 +110,10 @@ export default function Workflows() {
       const t = q.toLowerCase()
       if (!(w.id.toLowerCase().includes(t) || w.name.toLowerCase().includes(t) || w.vendor.toLowerCase().includes(t) || w.model.toLowerCase().includes(t))) return false
     }
+    if (qname && !w.name.toLowerCase().includes(qname.toLowerCase())) return false
+    if (qcode && !w.id.toLowerCase().includes(qcode.toLowerCase())) return false
     return true
-  }), [workflows, domain, cat, st, intentId, vendor, q]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [workflows, domain, cat, wtype, wsubtype, st, intentId, vendor, q, qname, qcode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Coverage: which intent × vendor combinations actually have an active workflow. */
   const coverage = useMemo(() => {
@@ -207,10 +215,14 @@ export default function Workflows() {
         count={filtered.length} noun="workflows" onClear={clear}
         filters={[
           ...(cat !== 'All' ? [{ key: 'cat', label: 'Category', value: cat, onRemove: () => setCat('All') }] : []),
+          ...(wtype !== 'All' ? [{ key: 'type', label: 'Type', value: wtype, onRemove: () => setWtype('All') }] : []),
+          ...(wsubtype !== 'All' ? [{ key: 'subtype', label: 'Subtype', value: wsubtype, onRemove: () => setWsubtype('All') }] : []),
           ...(st !== 'All' ? [{ key: 'state', label: 'State', value: stList.join(' or '), onRemove: () => setSt('All') }] : []),
           ...(intentId !== 'All' ? [{ key: 'intent', label: 'Intent', value: intents.find((i) => i.id === intentId)?.name ?? intentId, onRemove: () => setIntentId('All') }] : []),
           ...(vendor !== 'All' ? [{ key: 'vendor', label: 'Vendor', value: vendor, onRemove: () => setVendor('All') }] : []),
           ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
+          ...(qname ? [{ key: 'name', label: 'Name', value: qname, onRemove: () => setQname('') }] : []),
+          ...(qcode ? [{ key: 'code', label: 'Code', value: qcode, onRemove: () => setQcode('') }] : []),
         ]}
       />
 
@@ -239,7 +251,7 @@ export default function Workflows() {
 
       <Card>
         <CardHead title="Coverage — intent by vendor" sub={`${coverageDomain} domain${coverageGroups.length > 1 ? ` — ${coverageGroup.join(' / ')}` : ''} — where an active workflow exists, and how much of the installed base rides on it`}
-          info="Each tile shows whether an Active workflow exists for that intent on that vendor: a green count = that many active workflows, amber Draft = authoring has started but nothing is approved, a dashed tile = nothing exists, so orders for that combination cannot run. Every vendor column is marked with its device class (Router, Switch, CPE, Radio, Optical, VNF, ONT) — those are disjoint estates, so a column only ever lights up under the category it belongs to; everywhere else shows a plain dash (—), not a gap, because that combination can never be built. Use the Domain chip above the grid to switch between Transport, Access, Radio and Fiber — a domain with more than one disjoint vendor estate (Radio's Microwave/RAN VNF) adds its own group switcher underneath. The bar on the right is the live services riding on that intent — the bigger the bar, the more revenue depends on that row's coverage. Click a tile to filter the list below, or the bar to open those services."
+          info="Each tile shows whether an Active workflow exists for that intent on that vendor: a green count = that many active workflows, amber Draft = authoring has started but nothing is approved, a plain dash (—) = nothing exists — click it to see what's missing. Every vendor column is marked with its device class (Router, Switch, CPE, Radio, Optical, VNF, ONT) — those are disjoint estates, so a column only ever lights up under the category it belongs to; outside that category the dash is fixed and not clickable, because that combination can never be built. Use the Domain chip above the grid to switch between Transport, Access, Radio and Fiber — a domain with more than one disjoint vendor estate (Radio's Microwave/RAN VNF) adds its own group switcher underneath. The bar on the right is the live services riding on that intent — the bigger the bar, the more revenue depends on that row's coverage. Click a tile to filter the list below, or the bar to open those services."
           right={<>
             <Badge tone="good">Built {built}</Badge>
             {draftCombos > 0 && <Badge tone="warn">Draft {draftCombos}</Badge>}
@@ -299,13 +311,20 @@ export default function Workflows() {
               options: DOMAINS.map((d) => ({ value: d, label: d, count: workflows.filter((w) => domainOf(w.category) === d).length })) },
             { key: 'state', label: 'Status', value: st, onChange: (v) => setSt(v),
               options: STATES.filter((x) => n.state(x) > 0).map((x) => ({ value: x, label: x, count: n.state(x) })) },
-            { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
+            { key: 'cat', label: 'Category', value: cat, onChange: (v) => patch({ cat: v === 'All' ? null : v, type: null, subtype: null }),
               options: domainCats.map((c) => ({ value: c, label: c, count: n.cat(c) })) },
+            { key: 'type', label: 'Type', value: wtype, onChange: (v) => patch({ type: v === 'All' ? null : v, subtype: null }),
+              options: [...new Set(workflows.filter((w) => cat === 'All' || w.category === cat).map((w) => w.type))].sort()
+                .map((t) => ({ value: t, label: t, count: workflows.filter((w) => (cat === 'All' || w.category === cat) && w.type === t).length })) },
+            { key: 'subtype', label: 'Subtype', value: wsubtype, onChange: setWsubtype,
+              options: [...new Set(workflows.filter((w) => (cat === 'All' || w.category === cat) && (wtype === 'All' || w.type === wtype)).map((w) => w.subtype))].sort()
+                .map((s) => ({ value: s, label: s, count: workflows.filter((w) => (cat === 'All' || w.category === cat) && (wtype === 'All' || w.type === wtype) && w.subtype === s).length })) },
             { key: 'vendor', label: 'Vendor', value: vendor, onChange: (v) => setVendor(v as Vendor | 'All'),
               options: ALL_VENDOR_COLS.map((v) => ({ value: v, label: VENDOR_LABEL[v], count: workflows.filter((w) => w.vendor === v).length })) },
             { key: 'intent', label: 'Intent', value: intentId, onChange: setIntentId,
               options: intents.map((i) => ({ value: i.id, label: i.name, count: workflows.filter((w) => w.intentId === i.id).length })) },
-            { key: 'q', label: 'Name / Code / Vendor', type: 'text', value: q, onChange: setQ },
+            { key: 'name', label: 'Name', type: 'text', value: qname, onChange: setQname },
+            { key: 'code', label: 'Code', type: 'text', value: qcode, onChange: setQcode },
           ],
           onResetFilters: clear,
           onRefresh: () => pushToast('info', 'Workflow list refreshed.'),

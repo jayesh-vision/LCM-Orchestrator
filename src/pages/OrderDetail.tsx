@@ -980,15 +980,15 @@ export default function OrderDetail() {
 
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2">Command</div>
-              <CodeBlock>{taskDrawer.command}</CodeBlock>
+              <CodeBlock copyable>{taskDrawer.command}</CodeBlock>
             </div>
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2">Request</div>
-              <CodeBlock>{taskDrawer.requestPayload}</CodeBlock>
+              <CodeBlock copyable>{taskDrawer.requestPayload}</CodeBlock>
             </div>
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2">Response</div>
-              <CodeBlock>{taskDrawer.responsePayload || '— not yet executed —'}</CodeBlock>
+              <CodeBlock copyable={!!taskDrawer.responsePayload}>{taskDrawer.responsePayload || '— not yet executed —'}</CodeBlock>
             </div>
 
             {taskDrawer.failureReason && <Note tone="crit"><b>Why it failed.</b> {taskDrawer.failureReason}</Note>}

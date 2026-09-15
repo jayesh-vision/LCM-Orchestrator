@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, Filter, Info, MoreVertical, RefreshCcw, Search, X } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Filter, Info, MoreVertical, RefreshCcw, Search, X } from 'lucide-react'
 /* format.ts only imports `Tone` back from here as a type, so this pair is a
    type-level cycle that erases at build time, not a runtime one. */
 import { dateTime, relTime } from '@/lib/format'
@@ -490,34 +490,52 @@ export type IconType = ComponentType<{ size?: number; className?: string; 'aria-
 export interface MenuItem { label: string; onClick: () => void; icon?: IconType; danger?: boolean }
 
 /* NST registry: .nst-action-menu / .nst-action-menu-item / .nst-action-menu-icon.
-   Row actions carry an icon each, as the platform's own grid does. */
+   Row actions carry an icon each, as the platform's own grid does.
+   The menu renders in a portal, positioned from the trigger's own
+   bounding rect — a table card clips overflow for its horizontal
+   scroller, which would otherwise cut off the dropdown for any row
+   near the bottom (worst on a short, lightly-filtered list, where
+   almost every row is "near the bottom"). */
 export function Kebab({ items, align = 'right', variant = 'inline' }: { items: MenuItem[]; align?: 'right' | 'left'; variant?: 'inline' | 'icon-btn' }) {
-  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ top: number; left?: number; right?: number } | null>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const open = !!pos
   useEffect(() => {
     if (!open) return
-    const h = () => setOpen(false)
+    const h = () => setPos(null)
     window.addEventListener('click', h)
     return () => window.removeEventListener('click', h)
   }, [open])
+  const toggle = () => {
+    if (open) { setPos(null); return }
+    const r = btnRef.current?.getBoundingClientRect()
+    if (!r) return
+    setPos({
+      top: r.bottom + 4,
+      left: align === 'left' ? r.left : undefined,
+      right: align === 'right' ? window.innerWidth - r.right : undefined,
+    })
+  }
   return (
-    <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
-      <button onClick={() => setOpen((v) => !v)} aria-label={variant === 'icon-btn' ? 'More actions' : 'Row actions'} aria-expanded={open}
+    <div className="inline-block" onClick={(e) => e.stopPropagation()}>
+      <button ref={btnRef} onClick={toggle} aria-label={variant === 'icon-btn' ? 'More actions' : 'Row actions'} aria-expanded={open}
         className={variant === 'icon-btn' ? `nst-icon-btn ${open ? 'is-active' : ''}` : 'nst-table-kebab w-8 h-8 rounded-[var(--vw-radius-sm)] hover:bg-plane'}>
         <MoreVertical size={16} />
       </button>
-      {open && (
-        <div className={`nst-action-menu top-9 min-w-[220px] anim-in ${align === 'right' ? 'right-0' : 'left-0'}`} role="menu">
+      {pos && createPortal(
+        <div className="nst-action-menu min-w-[220px] anim-in" style={{ position: 'fixed', top: pos.top, left: pos.left, right: pos.right }} role="menu">
           {items.map((it) => (
             <button
               key={it.label} role="menuitem"
-              onClick={() => { setOpen(false); it.onClick() }}
+              onClick={() => { setPos(null); it.onClick() }}
               className={`nst-action-menu-item w-full text-left gap-2.5 whitespace-nowrap ${it.danger ? 'nst-action-menu-item--danger' : ''}`}
             >
               {it.icon && <it.icon size={18} className="nst-action-menu-icon" aria-hidden />}
               {it.label}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
@@ -627,9 +645,8 @@ export function FilterPopover({ fields, onReset, onClose }:
                           {options.map((o) => (
                             <button key={o.value} role="option" aria-selected={draft[field.key] === o.value}
                               onClick={() => { setDraft((d) => ({ ...d, [field.key]: o.value })); setListOpen(false) }}
-                              className={`w-full text-left px-2.5 py-2 rounded-[var(--vw-radius-xs)] vw-value text-[13px] vw-flex vw-items-center vw-justify-between hover:bg-plane ${draft[field.key] === o.value ? 'bg-plane' : ''}`}>
+                              className={`w-full text-left px-2.5 py-2 rounded-[var(--vw-radius-xs)] vw-value text-[13px] hover:bg-plane ${draft[field.key] === o.value ? 'bg-plane' : ''}`}>
                               {o.label}
-                              {o.count !== undefined && <span className="vw-label tnum">{o.count}</span>}
                             </button>
                           ))}
                           {options.length === 0 && <div className="px-3 py-2.5 vw-label">No matches</div>}
@@ -701,9 +718,8 @@ export function FieldDropdown({ label, value, onChange, options, width = 220 }:
               {filtered.map((o) => (
                 <button key={o.value} role="option" aria-selected={value === o.value}
                   onClick={() => { onChange(o.value); setOpen(false) }}
-                  className={`w-full text-left px-2.5 py-2 rounded-[var(--vw-radius-xs)] vw-value text-[13px] vw-flex vw-items-center vw-justify-between hover:bg-plane ${value === o.value ? 'bg-plane font-medium' : ''}`}>
+                  className={`w-full text-left px-2.5 py-2 rounded-[var(--vw-radius-xs)] vw-value text-[13px] hover:bg-plane ${value === o.value ? 'bg-plane font-medium' : ''}`}>
                   {o.label}
-                  {o.count !== undefined && <span className="vw-label tnum">{o.count}</span>}
                 </button>
               ))}
               {filtered.length === 0 && <div className="px-3 py-2.5 vw-label">No matches</div>}
@@ -1020,10 +1036,35 @@ export function KV({ items }: { items: [ReactNode, ReactNode][] }) {
 }
 
 /* ------------------------------------------------------------------ code */
-export function CodeBlock({ children, className = '' }: { children: ReactNode; className?: string }) {
+export function CodeBlock({ children, className = '', copyable = false }: { children: ReactNode; className?: string; copyable?: boolean }) {
+  const [copied, setCopied] = useState(false)
+  const text = typeof children === 'string' ? children : undefined
+  const copy = async () => {
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      /* Clipboard access can be denied outside a secure/focused context —
+         leave the button as-is rather than claim a copy that didn't happen. */
+    }
+  }
   return (
-    <pre className={`bg-[var(--vw-color-gray-900)] text-[var(--vw-color-gray-200)] rounded-[var(--vw-radius-sm)] px-4 py-3.5 m-0 overflow-x-auto whitespace-pre font-mono text-[11.5px] leading-[1.7] ${className}`}>
-      {children}
-    </pre>
+    <div className="relative group">
+      <pre className={`bg-[var(--vw-color-gray-900)] text-[var(--vw-color-gray-200)] rounded-[var(--vw-radius-sm)] px-4 py-3.5 m-0 overflow-x-auto whitespace-pre font-mono text-[11.5px] leading-[1.7] ${className}`}>
+        {children}
+      </pre>
+      {copyable && text && (
+        <button
+          type="button" onClick={copy} aria-label="Copy to clipboard"
+          className="absolute top-2 right-2 vw-flex vw-items-center vw-gap-xs px-2 py-1 rounded-[var(--vw-radius-sm)] text-[11px]
+            bg-white/10 text-[var(--vw-color-gray-200)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity hover:bg-white/20"
+        >
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      )}
+    </div>
   )
 }

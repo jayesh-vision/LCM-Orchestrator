@@ -263,9 +263,13 @@ export default function ProvisioningRequests() {
          toolbar below, which already shows the selected value — no need to
          say it twice up here. */}
       <FilterBanner
-        count={filtered.length} noun="requests" onClear={clear}
+        count={view === 'insights' ? scoped.length : filtered.length} noun="requests" onClear={clear}
         filters={[
-          ...(state !== 'All' ? [{ key: 'state', label: 'Status', value: stateList.join(' or '), onRemove: () => setState('All') }] : []),
+          /* Insights breaks requests down BY status and ignores the status
+             filter entirely (see `scoped` above) — showing "Status: X" as an
+             active filter here would claim a narrowing that isn't actually
+             applied to what's on screen. */
+          ...(state !== 'All' && view !== 'insights' ? [{ key: 'state', label: 'Status', value: stateList.join(' or '), onRemove: () => setState('All') }] : []),
           ...(history === 'on' ? [{ key: 'history', label: 'Scope', value: 'Including completed history', onRemove: () => setHistory('off') }] : []),
           ...(intent !== 'All' ? [{ key: 'intent', label: 'Request type', value: intent, onRemove: () => setIntent('All') }] : []),
           ...(customer ? [{ key: 'customer', label: 'Customer', value: customer, onRemove: () => setCustomer('') }] : []),

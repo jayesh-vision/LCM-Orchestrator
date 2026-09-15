@@ -258,8 +258,11 @@ export default function AppShell() {
       </div>
 
       {/* -------- toasts -------- */}
-      <div className="fixed bottom-5 right-5 z-[60] flex flex-col gap-2 w-[350px]">
-        {toasts.map((t) => {
+      {/* Anchored top-right — newest first, closest to the anchor edge, so a
+         fresh notification lands where attention already is instead of
+         arriving off-screen at the bottom of the viewport. */}
+      <div className="fixed top-[70px] right-5 z-[60] flex flex-col gap-2 w-[350px]">
+        {[...toasts].reverse().map((t) => {
           const Icon = t.tone === 'crit' ? AlertTriangle : t.tone === 'good' ? CheckCircle2 : t.tone === 'warn' ? AlertTriangle : Info
           const c = t.tone === 'crit' ? 'text-crit-500' : t.tone === 'good' ? 'text-good-500' : t.tone === 'warn' ? 'text-warn-700' : 'text-brand-500'
           return (

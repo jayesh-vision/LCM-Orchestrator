@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, CircleAlert, Eye, FolderTree, Layers, Pencil, Plus, Shapes, Workflow as WorkflowIcon } from 'lucide-react'
-import { useQueryState } from '@/lib/useQueryState'
+import { useQueryPatch, useQueryState } from '@/lib/useQueryState'
 import { useStore } from '@/store/useStore'
 import type { Category, Domain, ProfileType } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
@@ -22,9 +22,12 @@ export default function ProfileTypes() {
   const nav = useNavigate()
   const pushToast = useStore((st) => st.pushToast)
   const [q, setQ] = useQueryState('q', '')
+  const [qsubtype, setQsubtype] = useQueryState('subtype', '')
   const [domain, setDomain] = useQueryState<Domain | 'All'>('domain', 'All')
   const [cat, setCat] = useQueryState<Category | 'All'>('cat', 'All')
   const [ptype, setPtype] = useQueryState('type', 'All')
+  const [usedFilter, setUsedFilter] = useQueryState<'All' | 'unused'>('used', 'All')
+  const patch = useQueryPatch()
   const domainCats = domain === 'All' ? CATS : CATEGORIES_BY_DOMAIN[domain]
   const setDomainScoped = (next: Domain | 'All') => {
     setDomain(next)
@@ -42,17 +45,6 @@ export default function ProfileTypes() {
     setEdit(p)
   }
 
-  const filtered = useMemo(() => profileTypes.filter((p) => {
-    if (domain !== 'All' && domainOf(p.category) !== domain) return false
-    if (cat !== 'All' && p.category !== cat) return false
-    if (ptype !== 'All' && p.type !== ptype) return false
-    if (q) {
-      const t = q.toLowerCase()
-      if (!(p.category.toLowerCase().includes(t) || p.type.toLowerCase().includes(t) || p.subtype.toLowerCase().includes(t))) return false
-    }
-    return true
-  }), [profileTypes, domain, cat, ptype, q])
-
   const usage = useMemo(() => {
     const m = new Map<string, number>()
     workflows.forEach((w) => {
@@ -61,6 +53,19 @@ export default function ProfileTypes() {
     })
     return m
   }, [workflows])
+
+  const filtered = useMemo(() => profileTypes.filter((p) => {
+    if (domain !== 'All' && domainOf(p.category) !== domain) return false
+    if (cat !== 'All' && p.category !== cat) return false
+    if (ptype !== 'All' && p.type !== ptype) return false
+    if (usedFilter === 'unused' && (usage.get(`${p.category}|${p.type}|${p.subtype}`) ?? 0) > 0) return false
+    if (q) {
+      const t = q.toLowerCase()
+      if (!(p.category.toLowerCase().includes(t) || p.type.toLowerCase().includes(t) || p.subtype.toLowerCase().includes(t))) return false
+    }
+    if (qsubtype && !p.subtype.toLowerCase().includes(qsubtype.toLowerCase())) return false
+    return true
+  }), [profileTypes, domain, cat, ptype, usedFilter, usage, q, qsubtype])
 
   const types = useMemo(() => new Set(profileTypes.map((p) => `${p.category}|${p.type}`)).size, [profileTypes])
   const unused = useMemo(
@@ -102,14 +107,14 @@ export default function ProfileTypes() {
           drillLabel="every profile type" onClick={() => { setCat('All'); }} />
         <Stat label="Categories" icon={FolderTree} value={CATS.length} note="Across Transport, Access, Radio and Fiber domains"
           info="The top level of the hierarchy — the broad service families the platform provisions. Every profile type belongs to exactly one category, and every category belongs to exactly one domain."
-          drillLabel="L2VPN profile types" onClick={() => setCat('L2VPN')} />
+          drillLabel="every category" onClick={() => patch({ domain: null, cat: null, type: null })} />
         <Stat label="Distinct types" icon={Shapes} value={types} note="Functional classifications across all categories"
           info="The middle level of the hierarchy — functional classifications such as Hub & Spoke or Point-to-point. One type can carry several subtypes."
-          drillLabel="the workflows that consume these types" onClick={() => nav('/workflows')} />
+          drillLabel="every distinct type" onClick={() => patch({ domain: null, cat: null, type: null })} />
         <Stat label="Unused" icon={CircleAlert} value={unused} tone={unused > 0 ? 'warn' : 'good'}
           note={unused > 0 ? 'No workflow references these yet' : 'Every profile is referenced by a workflow'}
           info="Profile types no workflow references yet. An order that selects one of these cannot be fulfilled until a workflow is mapped to it — either build the workflow or retire the profile."
-          drillLabel="the workflow coverage matrix" onClick={() => nav('/workflows')} />
+          drillLabel="every unused profile type" onClick={() => patch({ domain: null, cat: null, type: null, used: 'unused' })} />
       </div>
 
       <DataTable
@@ -126,9 +131,11 @@ export default function ProfileTypes() {
               options: domainCats.map((c) => ({ value: c, label: c, count: profileTypes.filter((p) => p.category === c).length })) },
             { key: 'type', label: 'Type', value: ptype, onChange: setPtype,
               options: [...new Set(profileTypes.map((p) => p.type))].sort().map((t) => ({ value: t, label: t, count: profileTypes.filter((p) => p.type === t).length })) },
-            { key: 'q', label: 'Category / Type / Subtype', type: 'text', value: q, onChange: setQ },
+            { key: 'subtype', label: 'Subtype', type: 'text', value: qsubtype, onChange: setQsubtype },
+            { key: 'used', label: 'Usage', value: usedFilter, onChange: (v) => setUsedFilter(v as 'All' | 'unused'),
+              options: [{ value: 'unused', label: 'Unused only', count: unused }] },
           ],
-          onResetFilters: () => { setDomain('All'); setCat('All'); setPtype('All'); setQ('') },
+          onResetFilters: () => { setDomain('All'); setCat('All'); setPtype('All'); setUsedFilter('All'); setQ(''); setQsubtype('') },
           onRefresh: () => pushToast('info', 'Profile types refreshed.'),
           actions: [
             { label: 'Create profile template', icon: Plus, onClick: () => setOpen(true) },
@@ -221,7 +228,7 @@ export default function ProfileTypes() {
               {count > 0 ? (
                 <button
                   type="button"
-                  onClick={() => { setView(null); nav(`/workflows?cat=${encodeURIComponent(view.category)}&q=${encodeURIComponent(view.type)}`) }}
+                  onClick={() => { setView(null); nav(`/workflows?cat=${encodeURIComponent(view.category)}&type=${encodeURIComponent(view.type)}&subtype=${encodeURIComponent(view.subtype)}`) }}
                   className="vw-card-child vw-card--clickable w-full text-left"
                   aria-label={`${count} workflows use this profile. Open them in Workflows`}
                 >

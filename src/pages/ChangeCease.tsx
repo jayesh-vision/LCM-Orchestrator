@@ -32,6 +32,8 @@ export default function ChangeCease() {
   const [intent, setIntent] = useQueryState<OrderIntent | 'All'>('intent', 'All')
   const [cstate, setCstate] = useQueryState('state', 'All')
   const [q, setQ] = useQueryState('q', '')
+  const [qservice, setQservice] = useQueryState('service', '')
+  const [qcustomer, setQcustomer] = useQueryState('customer', '')
   const pushToast = useStore((st) => st.pushToast)
   const [open, setOpen] = useState(false)
   const [newIntent, setNewIntent] = useState<OrderIntent>('Modify')
@@ -47,8 +49,13 @@ export default function ChangeCease() {
       const t = q.toLowerCase()
       if (!(o.name.toLowerCase().includes(t) || o.accountName.toLowerCase().includes(t) || o.id.toLowerCase().includes(t) || (o.serviceId ?? '').toLowerCase().includes(t))) return false
     }
+    if (qservice) {
+      const t = qservice.toLowerCase()
+      if (!(o.name.toLowerCase().includes(t) || (o.serviceId ?? '').toLowerCase().includes(t))) return false
+    }
+    if (qcustomer && !o.accountName.toLowerCase().includes(qcustomer.toLowerCase())) return false
     return true
-  }), [changes, intent, cstate, q])
+  }), [changes, intent, cstate, q, qservice, qcustomer])
   const liveServices = useMemo(() => services.filter((s) => s.state === 'Live' || s.state === 'Suspended').slice(0, 60), [services])
   const n = (i: OrderIntent) => changes.filter((o) => o.intent === i).length
 
@@ -136,9 +143,10 @@ export default function ChangeCease() {
               options: INTENTS.filter((i) => n(i) > 0).map((i) => ({ value: i, label: i, count: n(i) })) },
             { key: 'state', label: 'Status', value: cstate, onChange: setCstate,
               options: [...new Set(changes.map((c) => c.state))].map((st) => ({ value: st, label: st, count: changes.filter((c) => c.state === st).length })) },
-            { key: 'q', label: 'Service / Customer', type: 'text', value: q, onChange: setQ },
+            { key: 'service', label: 'Service', type: 'text', value: qservice, onChange: setQservice },
+            { key: 'customer', label: 'Customer', type: 'text', value: qcustomer, onChange: setQcustomer },
           ],
-          onResetFilters: () => { setIntent('All'); setCstate('All'); setQ('') },
+          onResetFilters: () => { setIntent('All'); setCstate('All'); setQ(''); setQservice(''); setQcustomer('') },
           onRefresh: () => pushToast('info', 'Change orders refreshed.'),
           actions: [
             { label: 'Raise a change', icon: Plus, onClick: () => setOpen(true) },

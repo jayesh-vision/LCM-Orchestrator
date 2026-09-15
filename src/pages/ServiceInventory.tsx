@@ -68,6 +68,8 @@ export default function ServiceInventory() {
   const [ceaseTarget, setCeaseTarget] = useState<Service | null>(null)
 
   const [q, setQ] = useQueryState('q', '')
+  const [qservice, setQservice] = useQueryState('service', '')
+  const [qcustomer, setQcustomer] = useQueryState('customer', '')
   const [state, setState] = useQueryState<ServiceState | 'All'>('state', 'All')
   const [conf, setConf] = useQueryState<Conformance | 'All'>('conf', 'All')
   const [domain, setDomain] = useQueryState<Domain | 'All'>('domain', 'All')
@@ -75,7 +77,7 @@ export default function ServiceInventory() {
   const [intent, setIntent] = useQueryState('intent', 'All')
   const [origin, setOrigin] = useQueryState<ServiceOrigin | 'All'>('origin', 'All')
   const patch = useQueryPatch()
-  const clear = useClearQuery(['q', 'state', 'conf', 'domain', 'cat', 'intent', 'origin'])
+  const clear = useClearQuery(['q', 'service', 'customer', 'state', 'conf', 'domain', 'cat', 'intent', 'origin'])
   const domainCats = domain === 'All' ? CATS : CATEGORIES_BY_DOMAIN[domain]
   const setDomainScoped = (next: Domain | 'All') => {
     setDomain(next)
@@ -152,12 +154,16 @@ export default function ServiceInventory() {
     if (q) {
       const t = q.toLowerCase()
       if (!(s.id.toLowerCase().includes(t) || s.name.toLowerCase().includes(t)
-        || s.accountName.toLowerCase().includes(t)
-        || s.endpoints.some((e) => e.siteCode.toLowerCase().includes(t)))) return false
+        || s.accountName.toLowerCase().includes(t))) return false
     }
+    if (qservice) {
+      const t = qservice.toLowerCase()
+      if (!(s.id.toLowerCase().includes(t) || s.name.toLowerCase().includes(t))) return false
+    }
+    if (qcustomer && !s.accountName.toLowerCase().includes(qcustomer.toLowerCase())) return false
     return true
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [services, state, conf, cat, intent, origin, q, originOf])
+  }), [services, state, conf, cat, intent, origin, q, qservice, qcustomer, originOf])
 
   /* Services the platform can account for — provisioned through a request in
      the system, holding pool resources, with the evidence that proved them —
@@ -308,6 +314,8 @@ export default function ServiceInventory() {
           ...(intent !== 'All' ? [{ key: 'intent', label: 'Intent', value: intentName, onRemove: () => setIntent('All') }] : []),
           ...(origin !== 'All' ? [{ key: 'origin', label: 'Origin', value: ORIGIN_LABEL[origin], onRemove: () => setOrigin('All') }] : []),
           ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
+          ...(qservice ? [{ key: 'service', label: 'Service', value: qservice, onRemove: () => setQservice('') }] : []),
+          ...(qcustomer ? [{ key: 'customer', label: 'Customer', value: qcustomer, onRemove: () => setQcustomer('') }] : []),
         ]}
       />
 
@@ -406,7 +414,7 @@ export default function ServiceInventory() {
         rows={ranked} total={services.length} columns={columns} pageSize={12}
         onRowClick={(r) => nav(`/inventory/${r.id}`)}
         toolbar={{
-          search: { value: q, onChange: setQ, placeholder: 'Service, Customer, Site' },
+          search: { value: q, onChange: setQ, placeholder: 'Service, Customer' },
           /* The three facets worth one click rather than a trip through the
              filter icon, matching Provisioning Requests. Conformance is not
              among them because the summary cards and the donut above already
@@ -427,7 +435,8 @@ export default function ServiceInventory() {
                 .map((o) => ({ value: o, label: ORIGIN_LABEL[o], count: services.filter((x) => origins(x.id) === o).length })) },
             { key: 'intent', label: 'Intent', value: intent, onChange: setIntent,
               options: intents.map((i) => ({ value: i.id, label: i.name, count: services.filter((x) => x.intentId === i.id).length })) },
-            { key: 'q', label: 'Service / Customer / Site', type: 'text', value: q, onChange: setQ },
+            { key: 'service', label: 'Service', type: 'text', value: qservice, onChange: setQservice },
+            { key: 'customer', label: 'Customer', type: 'text', value: qcustomer, onChange: setQcustomer },
           ],
           onResetFilters: clear,
           onRefresh: () => pushToast('info', 'Inventory refreshed.'),

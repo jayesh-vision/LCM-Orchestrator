@@ -322,8 +322,6 @@ export function CoverageMatrix({ rows, cols, cell, onCellClick, onTrailingClick,
   const tile: Record<string, { box: string; big: string; sub: string }> = {
     built: { box: 'bg-good-50 border-good-200', big: 'text-good-700', sub: 'text-good-700/75' },
     draft: { box: 'bg-warn-50 border-warn-200', big: 'text-warn-700', sub: 'text-warn-700/75' },
-    gap: { box: 'bg-plane border-dashed border-line', big: 'text-ink-3', sub: 'text-ink-3' },
-    na: { box: 'bg-transparent border-transparent', big: 'text-line', sub: 'text-line' },
   }
 
   /* A shadow on the frozen Intent column only once there's something
@@ -364,17 +362,36 @@ export function CoverageMatrix({ rows, cols, cell, onCellClick, onTrailingClick,
                 </div>
                 {cols.map((c) => {
                   const v = cell(r.key, c.key)
-                  const t = tile[v.state]
-                  if (v.state === 'na') {
+                  /* A dashed "no workflow" card next to an uncaptioned "—" for
+                     "not applicable" reads as two different things when both
+                     mean "nothing here" — one just happens to be actionable.
+                     Render both as the same plain dash in the same light,
+                     legible gray — `text-line` (a border tone) was too faint
+                     to read as a dash at all next to a normal-weight one. */
+                  if (v.state === 'na' || v.state === 'gap') {
+                    const label = v.state === 'na' ? 'not applicable' : 'no workflow'
+                    const dash = <span className="text-[13px] text-ink-3">—</span>
+                    if (v.state === 'gap' && onCellClick) {
+                      return (
+                        <button
+                          key={c.key} role="cell" type="button" onClick={() => onCellClick(r.key, c.key)}
+                          aria-label={`${r.label} on ${c.label}: ${label}. Open the matching workflows`}
+                          className="flex items-center justify-center py-1.5 cursor-pointer rounded-lg transition-[filter] hover:brightness-[.97]
+                            focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
+                        >
+                          {dash}
+                        </button>
+                      )
+                    }
                     return (
-                      <div key={c.key} role="cell" className="flex items-center justify-center text-[13px] text-line" aria-label={`${r.label} on ${c.label}: not applicable`}>
-                        —
+                      <div key={c.key} role="cell" className="flex items-center justify-center" aria-label={`${r.label} on ${c.label}: ${label}`}>
+                        {dash}
                       </div>
                     )
                   }
-                  const big = v.state === 'built' ? v.count : v.state === 'draft' ? 'Draft' : '—'
-                  const sub = v.state === 'built' ? (v.count === 1 ? 'active workflow' : 'active workflows')
-                    : v.state === 'draft' ? 'not approved yet' : 'no workflow'
+                  const t = tile[v.state]
+                  const big = v.state === 'built' ? v.count : 'Draft'
+                  const sub = v.state === 'built' ? (v.count === 1 ? 'active workflow' : 'active workflows') : 'not approved yet'
                   const inner = (
                     <span className={`flex flex-col items-center justify-center w-full rounded-lg border px-2 py-1.5 ${t.box}`}>
                       <span className={`text-[15px] font-semibold tnum leading-tight ${t.big}`}>{big}</span>
@@ -579,6 +596,23 @@ export function TrendChart({ labels, series, height = 200, ariaLabel }:
   }
 
   const tipLeftPct = hover === null ? 0 : ((m.l + sx(hover)) / W) * 100
+  /* Centering the tooltip on the hovered column clips it against the card
+     edge once that column is near the start or end of the chart — a narrow
+     card doesn't leave enough room either side to still center it. Anchor
+     to the point instead of centering on it once close to an edge, so the
+     tooltip grows into the chart rather than spilling out of the card. */
+  const tipAlign = tipLeftPct < 15 ? 'start' : tipLeftPct > 85 ? 'end' : 'center'
+  const tipTranslateX = tipAlign === 'start' ? '4px' : tipAlign === 'end' ? 'calc(-100% - 4px)' : '-50%'
+  /* Anchoring the tooltip to a fixed spot at the top of the chart put it
+     right on top of whichever series happened to peak near the hovered
+     column. Anchor it just outside the actual data instead — above the
+     topmost point or below the lowest, whichever side has more clear
+     room at that column — so it never sits over a line it's describing. */
+  const hoverYs = hover === null ? [] : pts.map((s) => s[hover].y)
+  const hoverMinY = hoverYs.length ? Math.min(...hoverYs) : 0
+  const hoverMaxY = hoverYs.length ? Math.max(...hoverYs) : cH
+  const tipBelow = cH - hoverMaxY >= hoverMinY
+  const tipTopPct = hover === null ? 0 : ((m.t + (tipBelow ? hoverMaxY : hoverMinY)) / H) * 100
 
   return (
     <div className="h-full vw-flex vw-flex-col">
@@ -614,9 +648,13 @@ export function TrendChart({ labels, series, height = 200, ariaLabel }:
       </svg>
       {hover !== null && (
         <div
-          className="absolute top-1.5 -translate-x-1/2 pointer-events-none z-10 whitespace-nowrap
+          className="absolute pointer-events-none z-10 whitespace-nowrap
             bg-ink-1 text-white text-[11.5px] rounded-md px-2.5 py-1.5 shadow-lg vw-flex vw-flex-col vw-gap-0.5"
-          style={{ left: `${Math.min(94, Math.max(6, tipLeftPct))}%` }}
+          style={{
+            left: `${tipLeftPct}%`,
+            top: `${tipTopPct}%`,
+            transform: `translate(${tipTranslateX}, ${tipBelow ? '10px' : 'calc(-100% - 10px)'})`,
+          }}
         >
           <span className="font-medium">{labels[hover]}</span>
           {series.map((s) => (

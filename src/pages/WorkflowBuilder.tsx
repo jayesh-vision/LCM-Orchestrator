@@ -328,11 +328,11 @@ export default function WorkflowBuilder() {
                     )}
                   </span>
                 ))}
-                {!readOnly && (
+                {!readOnly && !wf.models.length && (
                   <select aria-label="Add model" value="" onChange={(e) => addModel(e.target.value)}
                     className="bg-transparent text-[12.5px] text-ink-3 outline-none min-w-[90px] flex-1">
-                    <option value="">{wf.models.length ? '+ add' : 'Select model'}</option>
-                    {vendorModels.filter((d) => !wf.models.includes(d.model)).map((d) => <option key={d.model} value={d.model}>{d.model} · {d.os}</option>)}
+                    <option value="">Select model</option>
+                    {vendorModels.map((d) => <option key={d.model} value={d.model}>{d.model} · {d.os}</option>)}
                   </select>
                 )}
               </div>
@@ -487,7 +487,7 @@ export default function WorkflowBuilder() {
               <div className="nst-table-card border-0 rounded-none shadow-none">
                 <table className="nst-table w-full table-fixed">
                   <thead><tr>
-                    <th className="w-[44px]">#</th><th className="w-[200px]">Task</th><th>Set command</th><th className="w-[56px]">Rules</th><th className="w-[86px]">Rollback</th><th className="w-[136px]"></th>
+                    <th className="w-[44px]">#</th><th className="w-[200px]">Task</th><th>Set command</th><th className="w-[56px]">Rules</th><th className="w-[124px]">Rollback</th><th className="w-[152px]"></th>
                   </tr></thead>
                   <tbody>
                     {tasksOf(stage.id).map((t, i, arr) => (
@@ -497,7 +497,7 @@ export default function WorkflowBuilder() {
                           <div className={`font-medium truncate ${t.name ? '' : 'text-ink-3 italic'}`}>{t.name || 'Untitled task'}</div>
                           {t.displayName && t.displayName !== t.name && <div className="text-[11.5px] text-ink-3">{t.displayName}</div>}
                         </td>
-                        <td><Mono className="text-[11.5px] text-ink-2 block truncate">{t.setCommand.split('\n')[0] || <span className="text-warn-600 not-italic">missing</span>}</Mono>
+                        <td title={t.setCommand || undefined}><Mono className="text-[11.5px] text-ink-2 block truncate">{t.setCommand.split('\n')[0] || <span className="text-warn-600 not-italic">missing</span>}</Mono>
                           {t.setCommand.includes('\n') && <span className="text-[11px] text-ink-3">+{t.setCommand.split('\n').length - 1} more lines</span>}</td>
                         <td className="tnum">{t.validations.length}</td>
                         <td>{t.rollbackEnabled ? <Badge tone={t.inverseCommand ? 'good' : 'crit'}>{t.inverseCommand ? 'Enabled' : 'Missing'}</Badge> : <span className="text-ink-3">—</span>}</td>
