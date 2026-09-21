@@ -1,12 +1,12 @@
 import { useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, ArrowUpRight, Boxes, Globe, Server, Wrench } from 'lucide-react'
-import type { Category, Order, OrderIntent, OrderState, Run, RunTask, StageKind, Vendor } from '@/types'
-import { domainOf } from '@/types'
-import { Badge, Card, CardBody, CardHead, Drawer, type StatTone } from '@/components/ui'
+import type { Category, Domain, Order, OrderIntent, OrderState, Run, RunTask, StageKind, Vendor } from '@/types'
+import { domainOf, DOMAINS } from '@/types'
+import { Badge, Card, CardBody, CardHead, Chip, Drawer, type StatTone } from '@/components/ui'
 import { BarList, ColumnChart, Donut, SOFT, StackedBar, TrendChart } from '@/components/charts'
 import { VENDOR_LABEL } from '@/data/workflows'
-import { CATEGORY_TONE, ORDER_TONE, relTime } from '@/lib/format'
+import { CATEGORY_TONE, DOMAIN_TONE, ORDER_TONE, relTime } from '@/lib/format'
 
 const DAY = 86400000
 
@@ -364,21 +364,6 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
     return m
   }, [orders])
 
-  /* Grouped by each order's first (primary/Source) endpoint — a two-ended
-     order can technically span two vendors, so this is a KPI-level signal
-     about where the load and the failures concentrate, not a full
-     multi-vendor audit of every endpoint. */
-  const byVendor = useMemo(() => {
-    const m = new Map<Vendor, Order[]>()
-    orders.forEach((o) => {
-      const v = o.endpoints[0]?.vendor
-      if (!v) return
-      if (!m.has(v)) m.set(v, [])
-      m.get(v)!.push(o)
-    })
-    return [...m.entries()].sort((a, b) => b[1].length - a[1].length)
-  }, [orders])
-
   const worstDomain = useMemo(() => worstBy(orders, (o) => domainOf(o.category), RISK_FAIL, 1), [orders])
   const worstVendor = useMemo(() => worstBy(orders, (o) => o.endpoints[0]?.vendor, RISK_FAIL, 3), [orders])
   const worstModel = useMemo(() => worstBy(orders, (o) => o.endpoints[0]?.deviceName, RISK_FAIL, 3), [orders])
@@ -694,7 +679,7 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
           ]
         }} />
 
-      <VendorBreakdown byVendor={byVendor} noun={noun} onDrill={onDrill} />
+      <VendorBreakdown orders={orders} noun={noun} onDrill={onDrill} />
       {failureDrawer}
     </div>
   )
@@ -754,30 +739,78 @@ function RankedBreakdown({ title, sub, info, groups, noun, segmentsFor, renderLa
  * card that's capped and scrolls, so the layout never depends on how many
  * vendors exist.
  */
-function VendorBreakdown({ byVendor, noun, onDrill }: {
-  byVendor: [Vendor, Order[]][]
+/**
+ * Vendor estates are domain-locked in this platform (a Router vendor serves
+ * Transport, a CPE vendor serves Access, and so on), so "which vendors carry
+ * the load" is really a question with a domain dimension underneath it. A
+ * grouped/stacked bar with up to 20 vendors across 4 domains would be
+ * unreadable in this card's width — instead, a domain tab row re-scopes the
+ * same list: pick a domain and every vendor's volume and failure rate
+ * recompute from just that domain's orders, so the numbers on screen are
+ * never a vendor's global figure while the tab claims to be narrower.
+ */
+function VendorBreakdown({ orders, noun, onDrill }: {
+  orders: Order[]
   noun: string
   onDrill: (patch: Patch) => void
 }) {
+  const [domain, setDomain] = useState<Domain | 'All'>('All')
+
+  const domainCounts = useMemo(() => {
+    const m = new Map<Domain, number>()
+    orders.forEach((o) => { const d = domainOf(o.category); m.set(d, (m.get(d) ?? 0) + 1) })
+    return m
+  }, [orders])
+  const activeDomains = DOMAINS.filter((d) => (domainCounts.get(d) ?? 0) > 0)
+
+  /* Grouped by each order's first (primary/Source) endpoint — a two-ended
+     order can technically span two vendors, so this is a KPI-level signal
+     about where the load and the failures concentrate, not a full
+     multi-vendor audit of every endpoint. */
+  const byVendor = useMemo(() => {
+    const scoped = domain === 'All' ? orders : orders.filter((o) => domainOf(o.category) === domain)
+    const m = new Map<Vendor, Order[]>()
+    scoped.forEach((o) => {
+      const v = o.endpoints[0]?.vendor
+      if (!v) return
+      if (!m.has(v)) m.set(v, [])
+      m.get(v)!.push(o)
+    })
+    return [...m.entries()].sort((a, b) => b[1].length - a[1].length)
+  }, [orders, domain])
+
   const items = byVendor.map(([v, list]) => {
     const failed = list.filter((o) => REQUEST_FAIL.includes(o.state)).length
     const rate = failed / list.length
     const label = VENDOR_LABEL[v] ?? v
+    const domainNote = domain === 'All' ? '' : ` in ${domain}`
     return {
       label,
       value: list.length,
       color: riskColor(rate),
       valueLabel: `${list.length} · ${Math.round(rate * 100)}%`,
-      drillLabel: `${list.length} ${label} ${noun}, ${Math.round(rate * 100)}% failed. Open them`,
-      onClick: () => onDrill({ vendor: v, state: null }),
+      drillLabel: `${list.length} ${label} ${noun}${domainNote}, ${Math.round(rate * 100)}% failed. Open them`,
+      onClick: () => onDrill({ vendor: v, domain: domain === 'All' ? null : domain, state: null }),
     }
   })
+
   return (
     <Card>
-      <CardHead title="Which vendors carry the load" sub="Each vendor by volume — the colour is its failure rate, not its size"
-        info="Every vendor in scope, by each order's primary endpoint, ranked by volume. Bar colour reflects failure rate: grey under 10%, amber at 10%+, red at 25%+. Scrolls past the top vendors instead of growing the page, since the vendor list has no fixed size — click a bar to open that vendor's requests." />
-      <CardBody className="max-h-[360px] overflow-y-auto">
-        <BarList items={items} labelWidth={112} valueWidth={72} />
+      <CardHead title="Which vendors carry the load" sub="Each vendor by volume, by domain — the colour is its failure rate, not its size"
+        info="Every vendor in scope, by each order's primary endpoint, ranked by volume. Bar colour reflects failure rate: grey under 10%, amber at 10%+, red at 25%+. Pick a domain tab to see just that domain's vendors — volume and failure rate recompute for the domain, they aren't the vendor's overall figures. Scrolls past the top vendors instead of growing the page, since the vendor list has no fixed size — click a bar to open that vendor's requests." />
+      <div className="px-4 pt-3 pb-1 flex flex-wrap gap-1.5">
+        <Chip active={domain === 'All'} onClick={() => setDomain('All')} count={orders.length}>All domains</Chip>
+        {activeDomains.map((d) => (
+          <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => setDomain(domain === d ? 'All' : d)}
+            count={domainCounts.get(d) ?? 0}>
+            {d}
+          </Chip>
+        ))}
+      </div>
+      <CardBody className="max-h-[360px] overflow-y-auto pt-2">
+        {items.length === 0
+          ? <p className="m-0 text-[12px] text-ink-3">No vendors in this domain, in the current selection.</p>
+          : <BarList items={items} labelWidth={112} valueWidth={72} />}
       </CardBody>
     </Card>
   )
