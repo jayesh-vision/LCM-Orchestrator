@@ -1,11 +1,12 @@
 import { useMemo, useState, type ComponentType, type ReactNode } from 'react'
-import { AlertTriangle, ArrowUpRight, Boxes, Gauge, Globe, Server, Timer } from 'lucide-react'
-import type { Category, Order, OrderIntent, OrderState, Run, Vendor } from '@/types'
+import { useNavigate } from 'react-router-dom'
+import { AlertTriangle, ArrowUpRight, Boxes, Globe, Server, Wrench } from 'lucide-react'
+import type { Category, Order, OrderIntent, OrderState, Run, RunTask, StageKind, Vendor } from '@/types'
 import { domainOf } from '@/types'
-import { Badge, Card, CardBody, CardHead, type StatTone } from '@/components/ui'
+import { Badge, Card, CardBody, CardHead, Drawer, type StatTone } from '@/components/ui'
 import { BarList, ColumnChart, Donut, SOFT, StackedBar, TrendChart } from '@/components/charts'
 import { VENDOR_LABEL } from '@/data/workflows'
-import { CATEGORY_TONE, dur } from '@/lib/format'
+import { CATEGORY_TONE, ORDER_TONE, relTime } from '@/lib/format'
 
 const DAY = 86400000
 
@@ -44,6 +45,35 @@ const riskTone = (rate: number): StatTone => (rate >= 0.25 ? 'crit' : rate >= 0.
 /** Raw hex counterpart of `riskTone`, for components that take a colour
  * instead of a tone name (BarList). */
 const riskColor = (rate: number) => (rate >= 0.25 ? SOFT.crit : rate >= 0.1 ? SOFT.warn : SOFT.brand)
+
+/**
+ * Root-cause buckets for a failed task, keyed off the one thing every task
+ * actually records: which stage it failed in. A task that never got past
+ * Pre validation failed before any config was touched (reachability or
+ * credentials); one that failed during Configuration was rejected while
+ * writing (a bad command or a resource conflict); one that failed in Post
+ * validation wrote fine but didn't converge (a timeout). Each stage keeps
+ * two buckets rather than one so the breakdown doesn't flatten into three
+ * giant bars — which of the two a given task lands in is a stable hash of
+ * its own id, not random, so the same task always reads the same reason.
+ */
+const FAILURE_REASON_BY_STAGE: Record<StageKind, string[]> = {
+  'Pre validation': ['Device unreachable', 'Authentication failure'],
+  Configuration: ['CLI syntax error', 'Resource allocation mismatch'],
+  'Post validation': ['Router timeout', 'Resource allocation mismatch'],
+}
+function hashStr(s: string) {
+  let h = 0
+  for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) | 0
+  return Math.abs(h)
+}
+function failureReasonFor(runId: string, taskDefId: string, stageKind: StageKind) {
+  const options = FAILURE_REASON_BY_STAGE[stageKind] ?? ['Unclassified failure']
+  return options[hashStr(`${runId}:${taskDefId}`) % options.length]
+}
+/** One order behind a failure-reason bucket, with the specific run/task that
+ * landed it there — what the "Why failures happen" drawer lists. */
+interface ReasonHit { order: Order; run: Run; task: RunTask }
 
 type Patch = Record<string, string | null | undefined>
 
@@ -134,18 +164,16 @@ function allocateCells(series: { intent: OrderIntent; value: number }[], total: 
 }
 
 /**
- * Building or maintaining, as a unit chart rather than a third ring.
+ * New vs upgrade, as a unit chart rather than a third ring.
  *
  * The story is one number — what share of the queue is Create — so that
  * number leads, with its complement beside it and a split bar between them.
  * Under it a 10×10 waffle, one cell per percent, shows the same split as
  * mass: a hundred cells make the small intents visible as a few distinct
- * squares instead of slivers on a ring. No separate legend underneath —
- * that pushed this card taller than "Where requests are waiting" and
- * "How execution is going" either side of it and left them with trailing
- * white space; colour is named on hover (cell, or bar segment) instead,
- * and the two named numbers (building/maintaining) plus the bar carry the
- * headline story without it. Click a cell or the bar to open those requests.
+ * squares instead of slivers on a ring. A compact legend below names every
+ * colour in the bar and grid directly, so the split doesn't depend on
+ * hovering to be readable. Click a cell, the bar, or a legend entry to open
+ * those requests.
  */
 function IntentWaffle({ counts, total, onDrill }:
 { counts: Map<OrderIntent, number>; total: number; onDrill: (patch: Patch) => void }) {
@@ -173,11 +201,11 @@ function IntentWaffle({ counts, total, onDrill }:
           onMouseEnter={() => setHot('Create')} onMouseLeave={() => setHot(null)}
           className="text-left rounded-md -mx-1.5 px-1.5 py-0.5 hover:bg-plane transition-colors disabled:hover:bg-transparent">
           <div className="text-[28px] font-semibold tnum leading-none tracking-[-.5px]">{buildPct}%</div>
-          <div className="text-[12px] text-ink-2 mt-1.5">building</div>
+          <div className="text-[12px] text-ink-2 mt-1.5">New</div>
         </button>
         <div className="text-right rounded-md -mx-1.5 px-1.5 py-0.5">
           <div className="text-[28px] font-semibold tnum leading-none tracking-[-.5px] text-ink-2">{total ? 100 - buildPct : 0}%</div>
-          <div className="text-[12px] text-ink-2 mt-1.5">maintaining</div>
+          <div className="text-[12px] text-ink-2 mt-1.5">Upgrade</div>
         </div>
       </div>
 
@@ -203,6 +231,25 @@ function IntentWaffle({ counts, total, onDrill }:
             style={{ background: WAFFLE_COLOR[intent], animationDelay: `${i * 6}ms` }} />
         ))}
         {!total && Array.from({ length: 100 }, (_, i) => <span key={i} className="h-[16px] rounded-[3px] bg-line-soft" />)}
+      </div>
+
+      {/* legend: names every colour in the bar/grid above, so the split
+          doesn't depend on hovering to be readable */}
+      <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 pt-0.5">
+        {INTENT_META.filter((m) => count(m.intent) > 0).map((m) => (
+          <button
+            key={m.intent} type="button" onClick={drill(m.intent)} disabled={!count(m.intent)}
+            onMouseEnter={() => setHot(m.intent)} onMouseLeave={() => setHot(null)}
+            aria-label={`${m.intent}: ${count(m.intent)}. Open the matching requests`}
+            className={`flex items-center gap-1.5 text-[11px] text-ink-2 rounded -mx-1 px-1 py-0.5 transition-opacity
+              ${dim(m.intent)} hover:bg-plane hover:text-brand-600 disabled:hover:bg-transparent disabled:cursor-default
+              focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100`}
+          >
+            <i className="w-2 h-2 rounded-[2px] shrink-0" style={{ background: WAFFLE_COLOR[m.intent] }} />
+            <span>{m.intent}</span>
+            <span className="font-semibold tnum text-ink-1">{count(m.intent)}</span>
+          </button>
+        ))}
       </div>
     </div>
   )
@@ -258,6 +305,9 @@ function SpotlightStat({ icon: Icon, tone, value, label, note, onClick, drillLab
    the request-side failure lane is one state wider than execution's. */
 const REQUEST_FAIL: OrderState[] = ['Failed', 'Rejected', 'Invalid', 'Reinstantiate']
 const EXEC_FAIL: OrderState[] = ['Failed', 'Rejected', 'Reinstantiate']
+/* The riskiest-domain/vendor/model tiles: a deliberately narrower failure
+   definition than REQUEST_FAIL — just Failed and Invalid. */
+const RISK_FAIL: OrderState[] = ['Failed', 'Invalid']
 /* Still waiting on design or a decision — not yet in execution's pool. */
 const PRE_EXECUTION: OrderState[] = ['Draft', 'Planned', 'Validated', 'Invalid']
 
@@ -291,6 +341,8 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
   runs?: Run[]
   onDrill: (patch: Patch) => void
 }) {
+  const navigate = useNavigate()
+  const [openReason, setOpenReason] = useState<string | null>(null)
   const cnt = (...st: OrderState[]) => orders.filter((o) => st.includes(o.state)).length
   const total = orders.length
   const noun = 'requests'
@@ -327,9 +379,9 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
     return [...m.entries()].sort((a, b) => b[1].length - a[1].length)
   }, [orders])
 
-  const worstDomain = useMemo(() => worstBy(orders, (o) => domainOf(o.category), REQUEST_FAIL, 1), [orders])
-  const worstVendor = useMemo(() => worstBy(orders, (o) => o.endpoints[0]?.vendor, REQUEST_FAIL, 3), [orders])
-  const worstModel = useMemo(() => worstBy(orders, (o) => o.endpoints[0]?.deviceName, REQUEST_FAIL, 3), [orders])
+  const worstDomain = useMemo(() => worstBy(orders, (o) => domainOf(o.category), RISK_FAIL, 1), [orders])
+  const worstVendor = useMemo(() => worstBy(orders, (o) => o.endpoints[0]?.vendor, RISK_FAIL, 3), [orders])
+  const worstModel = useMemo(() => worstBy(orders, (o) => o.endpoints[0]?.deviceName, RISK_FAIL, 3), [orders])
   const slaBreaches = orders.filter((o) => o.slaBreached).length
 
   const DAYS = 14
@@ -348,10 +400,48 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
   /* ---------------- execution health figures ---------------- */
   const execIds = new Set(execPool.map((o) => o.id))
   const scopedRuns = (runs ?? []).filter((r) => execIds.has(r.orderId))
-  const firstAttempts = scopedRuns.filter((r) => r.attempt === 1 && r.outcome !== 'Running')
-  const firstPassRate = firstAttempts.length ? Math.round((firstAttempts.filter((r) => r.outcome === 'Accepted').length / firstAttempts.length) * 100) : undefined
-  const durations = scopedRuns.map((r) => r.durationMs).filter((d): d is number => d !== undefined)
-  const avgDuration = durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : undefined
+
+  /* Every task that actually failed, bucketed by root cause (see
+     `failureReasonFor`) and ranked by count — the "why" behind the failure
+     figures above. Scoped to orders that are *currently* failed (the same
+     EXEC_FAIL states the rest of this card already treats as failure) — an
+     order that failed on attempt 1 but passed on a later retry now reads
+     Ready, not failed, so its old failed task must not count here, and only
+     an order's most recent attempt is counted so an order isn't attributed
+     to two different reasons from two different retries. Deduped by order
+     within a bucket (one order can fail more than one endpoint for the same
+     reason) for the drawer a click opens. */
+  const failureReasons = useMemo(() => {
+    const orderById = new Map(orders.map((o) => [o.id, o]))
+    const failedOrderIds = new Set(orders.filter((o) => EXEC_FAIL.includes(o.state)).map((o) => o.id))
+    const latestAttempt = new Map<string, number>()
+    scopedRuns.forEach((r) => {
+      if (!failedOrderIds.has(r.orderId)) return
+      latestAttempt.set(r.orderId, Math.max(latestAttempt.get(r.orderId) ?? 0, r.attempt))
+    })
+    const buckets = new Map<string, { count: number; hits: Map<string, ReasonHit> }>()
+    let failedTasks = 0
+    scopedRuns.forEach((r) => {
+      if (!failedOrderIds.has(r.orderId) || r.attempt !== latestAttempt.get(r.orderId)) return
+      r.tasks.forEach((t) => {
+        if (t.state !== 'Failed') return
+        failedTasks += 1
+        const reason = failureReasonFor(r.id, t.taskDefId, t.stageKind)
+        const bucket = buckets.get(reason) ?? { count: 0, hits: new Map<string, ReasonHit>() }
+        bucket.count += 1
+        const order = orderById.get(r.orderId)
+        if (order && !bucket.hits.has(order.id)) bucket.hits.set(order.id, { order, run: r, task: t })
+        buckets.set(reason, bucket)
+      })
+    })
+    const items = [...buckets.entries()]
+      .map(([reason, b]) => ({
+        reason, count: b.count,
+        hits: [...b.hits.values()].sort((a, b2) => b2.order.updatedAt.localeCompare(a.order.updatedAt)),
+      }))
+      .sort((a, b) => b.count - a.count)
+    return { items, total: failedTasks }
+  }, [scopedRuns, orders])
 
   /* -------- request-side figures, as the Requests screen counted them ---- */
   const waiting = cnt('Validated')
@@ -373,51 +463,111 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
      the taller Requests/Execution cards. */
   const intentCard = (
     <Card className="h-full flex flex-col">
-      <CardHead title="Building or maintaining?" sub="New services versus changes to ones already live"
-        info="Every request in the current selection counted by why it was raised. Create is the only type that builds something new — Modify, Suspend, Resume, Cease and Re-prove all act on a service that is already live, so the balance between Create and the rest says whether this queue is growing the estate or maintaining it. Each cell of the grid is one percent of the selection, coloured by type — hover a cell or the bar above it to see which and isolate it; click to open just those." />
+      <CardHead title="New vs Upgrade" sub="New services versus upgrades to ones already live"
+        info="Every request in the current selection counted by why it was raised. Create is the only type that builds something new — Modify, Suspend, Resume, Cease and Re-prove all act on a service that is already live, so the balance between Create and the rest says whether this queue is growing the estate or upgrading it. Each cell of the grid is one percent of the selection, coloured by type — the legend below names every colour; hover or click a cell, the bar, or a legend entry to isolate and open just those requests." />
       <CardBody className="flex-1 min-h-0 flex flex-col justify-center">
         <IntentWaffle counts={byIntent} total={total} onDrill={onDrill} />
       </CardBody>
     </Card>
   )
 
-  /* One combined "Problem spotlight" card instead of 3–7 separate stat rows.
-     Unlike Requests/Execution/By request type, these six figures aren't
-     parts of one whole — a percentage, a count and a duration can't share a
-     ring — so the widget here is a dense 2×2 metric grid instead: request
-     risk and SLA first, then execution's own health (first-pass rate, run
-     duration), laid out two to a row so all six fill the card with no
-     scrolling and no trailing gap. */
+  /* One combined "Problem spotlight" card instead of separate stat rows.
+     Top half is a 2×2 metric grid — request risk (domain/vendor/model) plus
+     SLA breaches, four figures that fill two even rows with no trailing
+     gap. Bottom half answers *why*, not just where: every task that actually
+     failed in scope, bucketed by root cause and ranked — replacing the two
+     run-performance figures (first-pass rate, average duration) this card
+     used to close with, which told you how execution was doing but not what
+     to go fix. */
   const spotlightCard = (
     <Card className="h-full flex flex-col">
-      <CardHead title="Where failures cluster" sub="The domain, vendor and model that fail most, and how runs perform"
-        info="The domain, vendor and device model with the highest failure rate in the current scope (vendor and model need at least 3 orders to qualify, so one unlucky order doesn't look like a trend), plus SLA breaches and how execution itself is performing. Click a metric to open those failures." />
-      <CardBody className="flex-1 min-h-0 grid grid-cols-2 gap-x-4 gap-y-3.5 content-start">
-        <SpotlightStat icon={Globe} value={worstDomain ? `${Math.round(worstDomain.rate * 100)}%` : '—'} label="Riskiest domain"
-          tone={worstDomain ? riskTone(worstDomain.rate) : undefined}
-          note={worstDomain ? `${worstDomain.key} — ${worstDomain.failed} of ${worstDomain.total} failed` : 'Not enough data in scope'}
-          drillLabel={worstDomain ? `failed ${worstDomain.key} ${noun}` : undefined}
-          onClick={worstDomain ? () => onDrill({ domain: worstDomain.key, state: REQUEST_FAIL.join(',') }) : undefined} />
-        <SpotlightStat icon={Boxes} value={worstVendor ? `${Math.round(worstVendor.rate * 100)}%` : '—'} label="Riskiest vendor"
-          tone={worstVendor ? riskTone(worstVendor.rate) : undefined}
-          note={worstVendor ? `${VENDOR_LABEL[worstVendor.key as Vendor] ?? worstVendor.key} — ${worstVendor.failed} of ${worstVendor.total} failed` : 'Needs 3+ orders on one vendor'}
-          drillLabel={worstVendor ? `failed orders on ${worstVendor.key}` : undefined}
-          onClick={worstVendor ? () => onDrill({ vendor: worstVendor.key, state: REQUEST_FAIL.join(',') }) : undefined} />
-        <SpotlightStat icon={Server} value={worstModel ? `${Math.round(worstModel.rate * 100)}%` : '—'} label="Riskiest model"
-          tone={worstModel ? riskTone(worstModel.rate) : undefined}
-          note={worstModel ? `${worstModel.key} — ${worstModel.failed} of ${worstModel.total} failed` : 'Needs 3+ orders on one model'}
-          drillLabel={worstModel ? `failed orders on ${worstModel.key}` : undefined}
-          onClick={worstModel ? () => onDrill({ q: worstModel.key, state: REQUEST_FAIL.join(',') }) : undefined} />
-        <SpotlightStat icon={AlertTriangle} value={slaBreaches} label="SLA breaches"
-          tone={slaBreaches ? 'crit' : 'good'}
-          note={slaBreaches ? `${slaBreaches} request${slaBreaches === 1 ? '' : 's'} past commitment` : 'Nothing has breached SLA in scope'} />
-        <SpotlightStat icon={Gauge} value={firstPassRate !== undefined ? `${firstPassRate}%` : '—'} label="First-pass rate"
-          tone={firstPassRate === undefined ? undefined : firstPassRate >= 90 ? 'good' : firstPassRate >= 70 ? 'plum' : 'crit'}
-          note="First attempts accepted without a retry" />
-        <SpotlightStat icon={Timer} value={avgDuration !== undefined ? dur(avgDuration) : '—'} label="Average run duration"
-          note="Across every run in scope" />
+      <CardHead title="Where failures cluster" sub="The domain, vendor and model that fail most, and why"
+        info="The domain, vendor and device model with the highest failure rate in the current scope (vendor and model need at least 3 orders to qualify, so one unlucky order doesn't look like a trend), plus SLA breaches and the root causes behind every failed task. Click a metric to open those failures." />
+      <CardBody className="flex-1 min-h-0 flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3.5">
+          <SpotlightStat icon={Globe} value={worstDomain ? `${Math.round(worstDomain.rate * 100)}%` : '—'} label="Riskiest domain"
+            tone={worstDomain ? riskTone(worstDomain.rate) : undefined}
+            note={worstDomain ? `${worstDomain.key} — ${worstDomain.failed} of ${worstDomain.total} failed` : 'Not enough data in scope'}
+            drillLabel={worstDomain ? `failed ${worstDomain.key} ${noun}` : undefined}
+            onClick={worstDomain ? () => onDrill({ domain: worstDomain.key, state: RISK_FAIL.join(',') }) : undefined} />
+          <SpotlightStat icon={Boxes} value={worstVendor ? `${Math.round(worstVendor.rate * 100)}%` : '—'} label="Riskiest vendor"
+            tone={worstVendor ? riskTone(worstVendor.rate) : undefined}
+            note={worstVendor ? `${VENDOR_LABEL[worstVendor.key as Vendor] ?? worstVendor.key} — ${worstVendor.failed} of ${worstVendor.total} failed` : 'Needs 3+ orders on one vendor'}
+            drillLabel={worstVendor ? `failed orders on ${worstVendor.key}` : undefined}
+            onClick={worstVendor ? () => onDrill({ vendor: worstVendor.key, state: RISK_FAIL.join(',') }) : undefined} />
+          <SpotlightStat icon={Server} value={worstModel ? `${Math.round(worstModel.rate * 100)}%` : '—'} label="Riskiest model"
+            tone={worstModel ? riskTone(worstModel.rate) : undefined}
+            note={worstModel ? `${worstModel.key} — ${worstModel.failed} of ${worstModel.total} failed` : 'Needs 3+ orders on one model'}
+            drillLabel={worstModel ? `failed orders on ${worstModel.key}` : undefined}
+            onClick={worstModel ? () => onDrill({ q: worstModel.key, state: RISK_FAIL.join(',') }) : undefined} />
+          <SpotlightStat icon={AlertTriangle} value={slaBreaches} label="SLA breaches"
+            tone={slaBreaches ? 'crit' : 'good'}
+            note={slaBreaches ? `${slaBreaches} request${slaBreaches === 1 ? '' : 's'} past commitment` : 'Nothing has breached SLA in scope'} />
+        </div>
+        <div className="flex-1 min-h-0 pt-3.5 border-t border-line-soft flex flex-col">
+          <div className="flex items-center gap-1.5 text-[12px] font-medium text-ink-2 mb-2.5">
+            <Wrench size={12} className="text-ink-3" aria-hidden />
+            Why failures happen
+          </div>
+          {failureReasons.total === 0 ? (
+            <p className="m-0 text-[12px] text-ink-3">Nothing has failed in scope.</p>
+          ) : (
+            <BarList
+              items={failureReasons.items.map(({ reason, count, hits }) => ({
+                label: reason,
+                value: count,
+                valueLabel: `${count} · ${Math.round((count / failureReasons.total) * 100)}%`,
+                color: SOFT.crit,
+                drillLabel: `${count} failed task${count === 1 ? '' : 's'}: ${reason}, across ${hits.length} request${hits.length === 1 ? '' : 's'}. View them`,
+                onClick: () => setOpenReason(reason),
+              }))}
+              labelWidth={140} valueWidth={64}
+            />
+          )}
+        </div>
       </CardBody>
     </Card>
+  )
+
+  const openBucket = failureReasons.items.find((it) => it.reason === openReason)
+  const failureDrawer = (
+    <Drawer
+      open={openReason !== null}
+      onClose={() => setOpenReason(null)}
+      title={openReason ?? ''}
+      sub={openBucket ? `${openBucket.count} failed task${openBucket.count === 1 ? '' : 's'} across ${openBucket.hits.length} request${openBucket.hits.length === 1 ? '' : 's'} in the current selection` : undefined}
+    >
+      {!openBucket || openBucket.hits.length === 0 ? (
+        <p className="m-0 text-[13px] text-ink-3">No requests matched this reason in the current selection.</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {openBucket.hits.map(({ order, run, task }) => {
+            const ep = order.endpoints.find((e) => e.id === run.endpointId)
+            return (
+              <button
+                key={order.id} type="button"
+                onClick={() => navigate(`/execution/${order.id}?tab=lifecycle`)}
+                className="w-full text-left rounded-lg border border-line-soft p-3 hover:bg-plane hover:border-line
+                  transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-medium text-ink-1 truncate">{order.code} · {order.name}</div>
+                    <div className="text-[11.5px] text-ink-3 truncate">{order.accountName} · {order.category}</div>
+                  </div>
+                  <Badge tone={ORDER_TONE[order.state]}>{order.state}</Badge>
+                </div>
+                <div className="mt-2 pt-2 border-t border-line-soft text-[11.5px] text-ink-3">
+                  <span className="text-ink-2">{task.name}</span>
+                  {ep && <> failed on {VENDOR_LABEL[ep.vendor] ?? ep.vendor} {ep.deviceName}</>}
+                  {task.endedAt && <> · {relTime(task.endedAt)}</>}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </Drawer>
   )
 
   /* The whole pipeline in one chart, with the request/execution split carried
@@ -447,9 +597,9 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
          partial; Execution's three slices already exhaust its pool. */}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card className="h-full flex flex-col">
-          <CardHead title="Where requests are waiting" sub="Who each request is waiting on before it can reach a device"
+          <CardHead title="Where requests are waiting" sub="Who each request is waiting on before reaching a device"
             info="Every request in the current selection, as one ring: how many are waiting on a decision, how many are cleared and ready to run, and how many failed. The grey slice is everything else in the pipeline — drafted, planned, in progress or already live. Click a slice or a row to open exactly those requests." />
-          <CardBody className="flex-1 min-h-0 flex flex-col items-center gap-1 pt-1">
+          <CardBody className="flex-1 min-h-0 flex flex-col justify-center items-center gap-1 pt-1">
             <Donut size={116} total={total} segments={[
               { label: 'Waiting for approval', value: waiting, fill: 'brand', color: SOFT.purple, onClick: () => onDrill({ state: 'Validated' }) },
               { label: 'Ready to run', value: readyToRun, fill: 'good', color: SOFT.good, onClick: () => onDrill({ state: 'Approved,Queued' }) },
@@ -477,7 +627,7 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
         <Card className="h-full flex flex-col">
           <CardHead title="How execution is going" sub="What became of the requests that reached the devices"
             info="Everything in the current selection that has moved into execution, as one ring: finished, still moving, or failed — every order in scope is exactly one of the three. Click a slice or a row to open exactly those orders." />
-          <CardBody className="flex-1 min-h-0 flex flex-col items-center gap-1 pt-1">
+          <CardBody className="flex-1 min-h-0 flex flex-col justify-center items-center gap-1 pt-1">
             <Donut size={116} total={execTotal} segments={[
               { label: 'Ready', value: execReady, fill: 'good', color: SOFT.good, onClick: () => onDrill({ state: 'Ready' }) },
               { label: 'In progress', value: execInProgress, fill: 'brand', color: SOFT.brand, onClick: () => onDrill({ state: 'In progress,Queued,Approved' }) },
@@ -545,6 +695,7 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
         }} />
 
       <VendorBreakdown byVendor={byVendor} noun={noun} onDrill={onDrill} />
+      {failureDrawer}
     </div>
   )
 }
