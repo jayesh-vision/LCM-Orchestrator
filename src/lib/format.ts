@@ -40,7 +40,7 @@ export const WORKFLOW_TONE: Record<WorkflowState, Tone> = {
 }
 
 export const CATEGORY_TONE: Record<string, Tone> = {
-  L2VPN: 'info', L3VPN: 'plum', IBW: 'teal', Broadband: 'good', Microwave: 'warn', DWDM: 'crit', 'RAN VNF': 'plum',
+  L2VPN: 'info', L3VPN: 'plum', IBW: 'teal', VLAN: 'good', Microwave: 'warn', DWDM: 'crit', 'RAN VNF': 'plum',
   GPON: 'good',
 }
 

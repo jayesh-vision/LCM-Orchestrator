@@ -27,7 +27,7 @@ export const ACCOUNTS: Account[] = [
   { id: 'ACC-02290', name: 'Sify Technologies', segment: 'Enterprise' },
   { id: 'ACC-03104', name: 'Tata Communications', segment: 'Carrier' },
   { id: 'ACC-05512', name: 'Hathway Cable', segment: 'ISP' },
-  { id: 'ACC-06001', name: 'Kerala Vision Broadband', segment: 'ISP' },
+  { id: 'ACC-06001', name: 'Kerala Vision Networks', segment: 'ISP' },
   { id: 'ACC-07219', name: 'Nxtra Data Centres', segment: 'Enterprise' },
   { id: 'ACC-08840', name: 'Maharashtra Police Network', segment: 'Government' },
 ]
@@ -103,7 +103,7 @@ export const DEVICE_MODELS: DeviceModel[] = [
   { vendor: 'HUAWEI', model: 'MA5800-X7', kind: 'OLT', os: 'Huawei VRP 8.230', osRange: '8.190 – 8.230', ports: ['GPON 0/1/0', 'GPON 0/1/1', 'GPON 0/2/0'] },
   { vendor: 'ZTE', model: 'ZXA10 C300', kind: 'OLT', os: 'ZTE ZXROS 4.1', osRange: '3.9 – 4.1', ports: ['GPON-1/1', 'GPON-1/2', 'GPON-2/1'] },
   /* Fiber domain, GPON category — the ONT/ONU at the customer premises. This
-     is the endpoint device on a GPON order, same convention as Broadband's
+     is the endpoint device on a GPON order, same convention as VLAN's
      CPE: single-ended, no far end to configure. Distinct models from the
      Access-domain CPE above — a GPON ONT speaks PON framing, not just
      Ethernet/WiFi, and is bound to a specific OLT PON port. */
@@ -130,13 +130,13 @@ export const OLT_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.k
 export const ONT_VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.filter((d) => d.kind === 'ONT').map((d) => d.vendor))]
 /** The device estate eligible for a given service category. */
 export const modelsForCategory = (category: Category): DeviceModel[] => {
-  if (category === 'Broadband') return DEVICE_MODELS.filter((d) => d.kind === 'CPE')
+  if (category === 'VLAN') return DEVICE_MODELS.filter((d) => d.kind === 'CPE')
   if (category === 'Microwave') return DEVICE_MODELS.filter((d) => d.kind === 'Radio')
   if (category === 'RAN VNF') return DEVICE_MODELS.filter((d) => d.kind === 'VNF')
   if (category === 'DWDM') return DEVICE_MODELS.filter((d) => d.kind === 'Optical')
   /* GPON's endpoint device is the ONT — the OLT is the head-end it binds to
      (an `olt_id` intent param), not a second endpoint, same as how a
-     Broadband order never models the BNG it terminates on. */
+     VLAN order never models the BNG it terminates on. */
   if (category === 'GPON') return DEVICE_MODELS.filter((d) => d.kind === 'ONT')
   if (category === 'L2VPN') return DEVICE_MODELS.filter((d) => d.kind === 'Router' || d.kind === 'Switch')
   return DEVICE_MODELS.filter((d) => d.kind === 'Router')
@@ -169,7 +169,7 @@ const ibwParams: IntentParam[] = [
   { name: 'ip_block', type: 'ipv4', constraint: '/30 or /31 from the WAN pool', modifiable: 'no', fromPool: 'IP block', required: true },
 ]
 
-/* ---------- Access domain: CPE / broadband activation ---------- */
+/* ---------- Access domain: CPE / VLAN activation ---------- */
 
 const cpeParams: IntentParam[] = [
   { name: 'ssid', type: 'string', constraint: '1–32 chars · unique per CPE', modifiable: 'hitless', required: true },
@@ -264,7 +264,7 @@ const dwdmAcceptance: AcceptanceCriterion[] = [
 ]
 
 /* ---------- Fiber domain, GPON category: GPON/XGS-PON FTTH access ---------- */
-/* Single-ended, same shape as Broadband's CPE activation — the ONT is the
+/* Single-ended, same shape as VLAN's CPE activation — the ONT is the
    endpoint, the OLT it binds to is an identifying param, not a second
    endpoint (a subscriber's fibre has no "far end" to configure). */
 
@@ -335,15 +335,15 @@ export const INTENTS: ServiceIntent[] = [
     topology: 'Full mesh', endpointArity: '2…n', params: l3Params,
     pools: ['RD/RT', 'IP block', 'Sub-interface'], acceptance: l3Acceptance, version: 1, liveServices: 52,
   },
-  /* Access domain — CPE/broadband activation. Single-ended like IBW: one
+  /* Access domain — CPE/VLAN activation. Single-ended like IBW: one
      device, no far end. */
   {
-    id: 'INT-ACCESS-RESIDENTIAL', name: 'Broadband — Residential Gateway', category: 'Broadband', type: 'Residential Gateway',
+    id: 'INT-ACCESS-RESIDENTIAL', name: 'VLAN — Residential Gateway', category: 'VLAN', type: 'Residential Gateway',
     topology: 'Single-ended', endpointArity: 'exactly 1', params: cpeParams,
     pools: ['VLAN', 'CPE Serial'], acceptance: cpeAcceptance, version: 1, liveServices: 200,
   },
   {
-    id: 'INT-ACCESS-BUSINESS', name: 'Broadband — Business Gateway', category: 'Broadband', type: 'Business Gateway',
+    id: 'INT-ACCESS-BUSINESS', name: 'VLAN — Business Gateway', category: 'VLAN', type: 'Business Gateway',
     topology: 'Single-ended', endpointArity: 'exactly 1', params: cpeParams,
     pools: ['VLAN', 'CPE Serial'], acceptance: cpeAcceptance, version: 1, liveServices: 60,
   },
@@ -373,7 +373,7 @@ export const INTENTS: ServiceIntent[] = [
     topology: 'Single-ended', endpointArity: 'exactly 1', params: duParams,
     pools: ['PCI'], acceptance: duAcceptance, version: 1, liveServices: 68,
   },
-  /* Fiber domain, GPON category — single-ended, same shape as Broadband:
+  /* Fiber domain, GPON category — single-ended, same shape as VLAN:
      the ONT is the endpoint, the OLT it binds to is a param. */
   {
     id: 'INT-GPON-RESI', name: 'GPON Residential Internet Access (FTTH)', category: 'GPON', type: 'GPON',
@@ -425,11 +425,11 @@ const PROFILE_ROWS: Array<[Category, string, string, string, string]> = [
   ['IBW', 'BGP', 'Other', 'IBW BGP profile for BGP-based Internet Bandwidth connectivity.', 'Jayesh'],
   ['IBW', 'Static', 'Other', 'IBW Static profile for static Internet Bandwidth connectivity.', 'Jayesh'],
   ['IBW', 'Other', 'Other', 'IBW profile for standard Internet Bandwidth services.', 'Jayesh'],
-  // Broadband (Access domain)
-  ['Broadband', 'Residential Gateway', 'FTTH', 'Broadband Residential Gateway profile for fibre-to-the-home connectivity.', 'Jayesh'],
-  ['Broadband', 'Residential Gateway', 'DSL', 'Broadband Residential Gateway profile for DSL connectivity.', 'Jayesh'],
-  ['Broadband', 'Business Gateway', 'FTTH', 'Broadband Business Gateway profile for fibre-to-the-home connectivity.', 'Jayesh'],
-  ['Broadband', 'Business Gateway', 'Other', 'Broadband Business Gateway profile for standard connectivity.', 'Jayesh'],
+  // VLAN (Access domain)
+  ['VLAN', 'Residential Gateway', 'FTTH', 'VLAN Residential Gateway profile for fibre-to-the-home connectivity.', 'Jayesh'],
+  ['VLAN', 'Residential Gateway', 'DSL', 'VLAN Residential Gateway profile for DSL connectivity.', 'Jayesh'],
+  ['VLAN', 'Business Gateway', 'FTTH', 'VLAN Business Gateway profile for fibre-to-the-home connectivity.', 'Jayesh'],
+  ['VLAN', 'Business Gateway', 'Other', 'VLAN Business Gateway profile for standard connectivity.', 'Jayesh'],
   // Microwave (Radio domain)
   ['Microwave', 'Point-to-Point', 'All-IP', 'Microwave PtP profile for all-IP Ethernet backhaul links.', 'Jayesh'],
   ['Microwave', 'Point-to-Point', 'Hybrid', 'Microwave PtP profile for hybrid TDM/Ethernet backhaul links.', 'Jayesh'],
@@ -458,5 +458,5 @@ export const PROFILE_TYPES: ProfileType[] = PROFILE_ROWS.map(([category, type, s
 
 export const VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.map((d) => d.vendor))]
 export const CATEGORIES: Category[] = [
-  'L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF', 'GPON',
+  'L2VPN', 'L3VPN', 'IBW', 'VLAN', 'Microwave', 'DWDM', 'RAN VNF', 'GPON',
 ]

@@ -21,7 +21,7 @@ import { VENDOR_LABEL } from '@/data/workflows'
 import { CATEGORY_TONE, DOMAIN_TONE, WORKFLOW_TONE } from '@/lib/format'
 
 const STATES: WorkflowState[] = ['Draft', 'Assigned', 'Awaiting approval', 'Active', 'Rejected', 'Retired']
-const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF', 'GPON']
+const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'VLAN', 'Microwave', 'DWDM', 'RAN VNF', 'GPON']
 /* Router vendors first (they can carry any Transport intent), then Switch
    vendors (L2VPN only — a switch has no BGP/VRF to run an L3VPN or IBW
    intent with). CPE/Radio/Optical/ONT vendors are each a disjoint estate,
@@ -44,7 +44,7 @@ const ONT_VENDOR_COVER_COLS: CoverageCol[] = ONT_VENDORS.map((v) => ({ key: v, l
    (GPON), so it never needs that switcher. */
 const CATEGORY_COVER_COLS: Record<Category, CoverageCol[]> = {
   L2VPN: VENDOR_COVER_COLS, L3VPN: VENDOR_COVER_COLS, IBW: VENDOR_COVER_COLS,
-  Broadband: CPE_VENDOR_COVER_COLS, Microwave: RADIO_VENDOR_COVER_COLS, DWDM: FIBER_VENDOR_COVER_COLS,
+  VLAN: CPE_VENDOR_COVER_COLS, Microwave: RADIO_VENDOR_COVER_COLS, DWDM: FIBER_VENDOR_COVER_COLS,
   'RAN VNF': VNF_VENDOR_COVER_COLS,
   GPON: ONT_VENDOR_COVER_COLS,
 }
@@ -129,7 +129,7 @@ export default function Workflows() {
   }, [workflows])
 
   /* A Switch vendor has no BGP/VRF, so it only ever covers an L2VPN intent;
-     a CPE vendor only ever covers a Broadband intent — everything else is
+     a CPE vendor only ever covers a VLAN intent — everything else is
      "not applicable", not a real gap, and must be excluded from the
      denominator or Coverage% would be permanently deflated by combinations
      that can never be built. Checked by device-class membership for the
@@ -138,7 +138,7 @@ export default function Workflows() {
      than one list, and excluding it from Transport just for also being an
      ONT_VENDOR would hide its genuine Router coverage. */
   const vendorApplicable = (category: Category, vendor: Vendor): boolean => {
-    if (category === 'Broadband') return CPE_VENDORS.includes(vendor)
+    if (category === 'VLAN') return CPE_VENDORS.includes(vendor)
     if (category === 'Microwave') return RADIO_VENDORS.includes(vendor)
     if (category === 'DWDM') return OPTICAL_VENDORS.includes(vendor)
     if (category === 'RAN VNF') return VNF_VENDORS.includes(vendor)

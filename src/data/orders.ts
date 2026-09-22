@@ -71,7 +71,7 @@ export function bindEndpoints(
   /* Access domain — a CPE has no far end and no interface/VRF vocabulary;
      its placeholder set is entirely different from every Transport category,
      so it gets its own branch rather than feeding the shared base+byCat below. */
-  if (category === 'Broadband') {
+  if (category === 'VLAN') {
     return eps.map((e) => {
       const wf = find(e)
       const cpeParams: OrderParamValue[] = [

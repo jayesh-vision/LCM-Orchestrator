@@ -1,14 +1,14 @@
 import { create } from 'zustand'
 import type {
   Notification, Order, OrderIntent, OrderParamValue, OrderState,
-  ProfileType, ResourcePool, Run, RunTask, Service, Workflow,
+  ProfileType, ReportDef, ResourcePool, Run, RunTask, Service, Workflow,
 } from '@/types'
 import { INTENTS, PROFILE_TYPES, intentById, pad } from '@/data/catalog'
 import { buildWorkflows } from '@/data/workflows'
 import { buildServices, serviceFromOrder } from '@/data/services'
 import { bindEndpoints, buildHistoricalOrders, buildOrders, buildRuns, claimFor, hasRetainedLog, linkProvenance, orderedTasks, WAITING } from '@/data/orders'
 import { renderCommand } from '@/data/templates'
-import { REPORTS, allocateForService, buildNotifications, buildPools, releaseForService } from '@/data/misc'
+import { allocateForService, buildNotifications, buildPools, buildReports, releaseForService } from '@/data/misc'
 
 /* Seed once, at module load, so the dataset is stable across navigation. */
 const workflows = buildWorkflows()
@@ -39,6 +39,7 @@ liveOrders.forEach((o) => {
 const orders = [...liveOrders, ...historicalOrders]
 linkProvenance(services, orders)
 const pools = buildPools(services)
+const reports = buildReports(orders, runs, services, pools)
 
 export interface WizardDraft {
   category: string
@@ -75,7 +76,7 @@ interface State {
   pools: ResourcePool[]
   profileTypes: typeof PROFILE_TYPES
   intents: typeof INTENTS
-  reports: typeof REPORTS
+  reports: ReportDef[]
   notifications: Notification[]
   toasts: Toast[]
   activeRunId: string | null
@@ -195,7 +196,7 @@ export const useStore = create<State>((set, get) => ({
   orders, services, workflows, runs, pools,
   profileTypes: PROFILE_TYPES,
   intents: INTENTS,
-  reports: REPORTS,
+  reports,
   notifications: buildNotifications(),
   toasts: [],
   activeRunId: null,

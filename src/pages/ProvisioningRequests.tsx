@@ -15,9 +15,9 @@ import {
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { VENDOR_LABEL } from '@/data/workflows'
 import { CATEGORY_TONE, clockTime, INTENT_TONE, ORDER_INTENTS, ORDER_TONE, relTime } from '@/lib/format'
-import { byRaised, orderTrace } from '@/lib/traceability'
+import { leadWithReady, orderTrace } from '@/lib/traceability'
 
-const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF', 'GPON']
+const CATEGORIES: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'VLAN', 'Microwave', 'DWDM', 'RAN VNF', 'GPON']
 
 const STATE_ORDER: OrderState[] = [
   'Draft', 'Planned', 'Validated', 'Invalid', 'Approved', 'Rejected',
@@ -131,10 +131,13 @@ export default function ProvisioningRequests() {
      the top row here, which is where someone goes looking for it. Within the
      same moment, requests that can actually be followed — through to the
      service they produced, the run that executed them and the template on each
-     endpoint — lead. Sorting a column still overrides both. */
+     endpoint — lead. A handful of Ready requests are then pulled ahead of that
+     so the view opens on a few finished, presentable rows; everything else,
+     Failed included, keeps its normal newest-first spot. Sorting a column
+     still overrides all of it. */
   const ranked = useMemo(() => {
     const withRun = new Set(runs.map((r) => r.orderId))
-    return byRaised(filtered, (o) => o.createdAt, (o) => orderTrace(o, (id) => withRun.has(id)))
+    return leadWithReady(filtered, (o) => o.state, (o) => o.createdAt, (o) => orderTrace(o, (id) => withRun.has(id)))
   }, [filtered, runs])
 
   /* Same scope as `filtered` but ignoring the status filter itself — the

@@ -9,6 +9,7 @@ import {
   Field, Kebab, Modal, Mono, Note, Select, Stat, stampColumn, type Column,
 } from '@/components/ui'
 import { INTENT_TONE, ORDER_TONE, relTime } from '@/lib/format'
+import { leadWithReady } from '@/lib/traceability'
 import { CeaseServiceModal, ModifyServiceDrawer } from '@/components/ServiceChangeDialogs'
 
 const INTENTS: OrderIntent[] = ['Modify', 'Suspend', 'Resume', 'Cease', 'Re-prove']
@@ -56,6 +57,15 @@ export default function ChangeCease() {
     if (qcustomer && !o.accountName.toLowerCase().includes(qcustomer.toLowerCase())) return false
     return true
   }), [changes, intent, cstate, q, qservice, qcustomer])
+
+  /* Newest first, with a handful of Ready rows pulled ahead of that so the
+     view opens on a few finished, presentable changes — same as the requests
+     queue. Everything else, Failed included, keeps its normal newest-first
+     spot. Sorting a column still overrides both. */
+  const ranked = useMemo(
+    () => leadWithReady(filtered, (o) => o.state, (o) => o.createdAt, () => 0),
+    [filtered],
+  )
   const liveServices = useMemo(() => services.filter((s) => s.state === 'Live' || s.state === 'Suspended').slice(0, 60), [services])
   const n = (i: OrderIntent) => changes.filter((o) => o.intent === i).length
 
@@ -132,7 +142,7 @@ export default function ChangeCease() {
       </div>
 
       <DataTable
-        rows={filtered} total={changes.length} columns={columns} pageSize={10}
+        rows={ranked} total={changes.length} columns={columns} pageSize={10}
         onRowClick={(r) => nav(`/execution/${r.id}`)}
         empty="No change orders yet. Raise one from a service, or with the button above."
         toolbar={{

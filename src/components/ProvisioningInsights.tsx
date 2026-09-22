@@ -1,12 +1,13 @@
 import { useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, ArrowUpRight, Boxes, Globe, Server, Wrench } from 'lucide-react'
-import type { Category, Domain, Order, OrderIntent, OrderState, Run, RunTask, StageKind, Vendor } from '@/types'
+import type { Category, Domain, Order, OrderIntent, OrderState, Run, RunTask, Vendor } from '@/types'
 import { domainOf, DOMAINS } from '@/types'
 import { Badge, Card, CardBody, CardHead, Chip, Drawer, type StatTone } from '@/components/ui'
 import { BarList, ColumnChart, Donut, SOFT, StackedBar, TrendChart } from '@/components/charts'
 import { VENDOR_LABEL } from '@/data/workflows'
 import { CATEGORY_TONE, DOMAIN_TONE, ORDER_TONE, relTime } from '@/lib/format'
+import { EXEC_FAIL, failureReasonFor, PRE_EXECUTION, REQUEST_FAIL, RISK_FAIL, worstBy } from '@/lib/orderFailure'
 
 const DAY = 86400000
 
@@ -21,56 +22,11 @@ function perDay(dates: string[], days: number) {
   return out
 }
 
-/** Highest failure rate among keys with at least `minSample` orders, so one
- * unlucky order out of one doesn't read as a 100% trend. */
-function worstBy(orders: Order[], keyOf: (o: Order) => string | undefined, failStates: OrderState[], minSample: number) {
-  const m = new Map<string, { total: number; failed: number }>()
-  orders.forEach((o) => {
-    const k = keyOf(o)
-    if (k === undefined) return
-    const e = m.get(k) ?? { total: 0, failed: 0 }
-    e.total += 1
-    if (failStates.includes(o.state)) e.failed += 1
-    m.set(k, e)
-  })
-  let worst: { key: string; total: number; failed: number; rate: number } | undefined
-  m.forEach((v, k) => {
-    if (v.total < minSample) return
-    const rate = v.failed / v.total
-    if (!worst || rate > worst.rate || (rate === worst.rate && v.failed > worst.failed)) worst = { key: k, total: v.total, failed: v.failed, rate }
-  })
-  return worst
-}
 const riskTone = (rate: number): StatTone => (rate >= 0.25 ? 'crit' : rate >= 0.1 ? 'warn' : 'good')
 /** Raw hex counterpart of `riskTone`, for components that take a colour
  * instead of a tone name (BarList). */
 const riskColor = (rate: number) => (rate >= 0.25 ? SOFT.crit : rate >= 0.1 ? SOFT.warn : SOFT.brand)
 
-/**
- * Root-cause buckets for a failed task, keyed off the one thing every task
- * actually records: which stage it failed in. A task that never got past
- * Pre validation failed before any config was touched (reachability or
- * credentials); one that failed during Configuration was rejected while
- * writing (a bad command or a resource conflict); one that failed in Post
- * validation wrote fine but didn't converge (a timeout). Each stage keeps
- * two buckets rather than one so the breakdown doesn't flatten into three
- * giant bars — which of the two a given task lands in is a stable hash of
- * its own id, not random, so the same task always reads the same reason.
- */
-const FAILURE_REASON_BY_STAGE: Record<StageKind, string[]> = {
-  'Pre validation': ['Device unreachable', 'Authentication failure'],
-  Configuration: ['CLI syntax error', 'Resource allocation mismatch'],
-  'Post validation': ['Router timeout', 'Resource allocation mismatch'],
-}
-function hashStr(s: string) {
-  let h = 0
-  for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) | 0
-  return Math.abs(h)
-}
-function failureReasonFor(runId: string, taskDefId: string, stageKind: StageKind) {
-  const options = FAILURE_REASON_BY_STAGE[stageKind] ?? ['Unclassified failure']
-  return options[hashStr(`${runId}:${taskDefId}`) % options.length]
-}
 /** One order behind a failure-reason bucket, with the specific run/task that
  * landed it there — what the "Why failures happen" drawer lists. */
 interface ReasonHit { order: Order; run: Run; task: RunTask }
@@ -299,17 +255,6 @@ function SpotlightStat({ icon: Icon, tone, value, label, note, onClick, drillLab
     </Tag>
   )
 }
-
-/* The two vocabularies the pipeline's halves have always used. A request can
-   fail before a device is ever touched (Invalid pre-validation), which is why
-   the request-side failure lane is one state wider than execution's. */
-const REQUEST_FAIL: OrderState[] = ['Failed', 'Rejected', 'Invalid', 'Reinstantiate']
-const EXEC_FAIL: OrderState[] = ['Failed', 'Rejected', 'Reinstantiate']
-/* The riskiest-domain/vendor/model tiles: a deliberately narrower failure
-   definition than REQUEST_FAIL — just Failed and Invalid. */
-const RISK_FAIL: OrderState[] = ['Failed', 'Invalid']
-/* Still waiting on design or a decision — not yet in execution's pool. */
-const PRE_EXECUTION: OrderState[] = ['Draft', 'Planned', 'Validated', 'Invalid']
 
 /** Inline chart legend — a dot per key, so a chart that mixes request-phase
  * and execution-phase marks says which is which right beside its title. */

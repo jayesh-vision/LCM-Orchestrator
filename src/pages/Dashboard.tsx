@@ -18,12 +18,12 @@ import { CONFORMANCE_BLURB, CONFORMANCE_ORDER, conformanceBreakdown } from '@/li
 
 const DAY = 86400000
 const CATS = [
-  'L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF', 'GPON',
+  'L2VPN', 'L3VPN', 'IBW', 'VLAN', 'Microwave', 'DWDM', 'RAN VNF', 'GPON',
 ] as const
 const DOMAIN_ICON: Record<Domain, typeof Router> = { Transport: Router, Access: Wifi, Radio: RadioTower, Fiber: Cable }
 const DOMAIN_BLURB: Record<Domain, string> = {
   Transport: 'L2VPN, L3VPN, IBW and DWDM — router/switch CLI and optical wavelength provisioning across 8 vendors.',
-  Access: 'Broadband CPE activation — the platform\'s newest domain, 3 CPE vendors.',
+  Access: 'VLAN CPE activation — the platform\'s newest domain, 3 CPE vendors.',
   Radio: 'Microwave point-to-point backhaul links and RAN CU/DU VNF instances.',
   Fiber: 'GPON/XGS-PON FTTH access — OLT head-end to ONT, the platform\'s newest domain, 3 OLT/ONT vendors.',
 }

@@ -1,4 +1,6 @@
 import type { Order, ReportDef, ResourcePool, Run, Service } from '@/types'
+import { WAITING } from '@/data/orders'
+import { EXEC_FAIL, RISK_FAIL, failureReasonFor, worstBy } from '@/lib/orderFailure'
 
 /**
  * Turns a report definition into the CSV a person actually wants: not just the
@@ -21,74 +23,76 @@ interface ReportDataset {
   rows: (string | number)[][]
 }
 
-const SERVICE_COLUMNS = ['Service ID', 'Service name', 'Order ID', 'Account', 'Category', 'Type', 'State', 'Conformance']
+const ORDER_COLUMNS = ['Order ID', 'Name', 'Account', 'Category', 'Intent', 'State']
 
-/** Order ID + owner a service can be traced back to, preferring the order that created it. */
-function buildServiceOrderIndex(orders: Order[]): Map<string, Order> {
-  const m = new Map<string, Order>()
-  orders.forEach((o) => {
-    if (!o.serviceId) return
-    const existing = m.get(o.serviceId)
-    if (!existing || (o.intent === 'Create' && existing.intent !== 'Create') || (o.intent === existing.intent && o.updatedAt > existing.updatedAt)) {
-      m.set(o.serviceId, o)
-    }
-  })
-  return m
+function orderRow(o: Order, extra: (string | number)[]): (string | number)[] {
+  return [o.id, o.name, o.accountName, o.category, o.intent, o.state, ...extra]
 }
 
-function serviceRow(s: Service, orderIdx: Map<string, Order>, extra: (string | number)[]): (string | number)[] {
-  const o = orderIdx.get(s.id)
-  return [s.id, s.name, o?.id ?? 'No order on record', s.accountName, s.category, s.type, s.state, s.conformance, ...extra]
-}
+const DAY = 86400000
 
 function buildDataset(report: ReportDef, ctx: ReportContext): ReportDataset {
-  const orderIdx = buildServiceOrderIndex(ctx.orders)
-
   switch (report.id) {
     case 'RPT-001': {
-      const rows = ctx.services.filter((s) => s.conformance === 'Ghost')
+      const since = Date.now() - 7 * DAY
+      const rows = ctx.orders.filter((o) => Date.parse(o.createdAt) > since)
       return {
-        label: 'Services billed with no configuration on the device',
-        columns: [...SERVICE_COLUMNS, 'Monthly value (INR)', 'Live since'],
-        rows: rows.map((s) => serviceRow(s, orderIdx, [s.monthlyValueInr, s.liveSince])),
+        label: 'Requests raised in the last 7 days',
+        columns: [...ORDER_COLUMNS, 'Created'],
+        rows: rows.map((o) => orderRow(o, [o.createdAt])),
       }
     }
     case 'RPT-002': {
-      const rows = ctx.services.filter((s) => s.conformance === 'Never proven')
+      const since = Date.now() - 7 * DAY
+      const rows = ctx.runs.filter((r) => r.attempt === 1 && Date.parse(r.startedAt) > since)
       return {
-        label: 'Live services with no end-to-end evidence, ever',
-        columns: [...SERVICE_COLUMNS, 'Live since', 'Age'],
-        rows: rows.map((s) => serviceRow(s, orderIdx, [s.liveSince, s.ageLabel])),
+        label: 'First-attempt runs from the last 7 days',
+        columns: ['Run ID', 'Order ID', 'Workflow ID', 'Outcome', 'Started at'],
+        rows: rows.map((r) => [r.id, r.orderId, r.workflowId, r.outcome, r.startedAt]),
       }
     }
     case 'RPT-003': {
-      const rows = ctx.services.filter((s) => s.conformance === 'Drifted')
-      return {
-        label: 'Services with open drift',
-        columns: [...SERVICE_COLUMNS, 'Drift count', 'Last proven', 'Owner'],
-        rows: rows.map((s) => serviceRow(s, orderIdx, [s.driftCount, s.lastProvenAt ?? 'never', orderIdx.get(s.id)?.owner ?? 'Unassigned'])),
-      }
+      const failedOrderIds = new Set(ctx.orders.filter((o) => EXEC_FAIL.includes(o.state)).map((o) => o.id))
+      const latestAttempt = new Map<string, number>()
+      ctx.runs.forEach((r) => { if (failedOrderIds.has(r.orderId)) latestAttempt.set(r.orderId, Math.max(latestAttempt.get(r.orderId) ?? 0, r.attempt)) })
+      const rows: (string | number)[][] = []
+      ctx.runs.forEach((r) => {
+        if (!failedOrderIds.has(r.orderId) || r.attempt !== latestAttempt.get(r.orderId)) return
+        r.tasks.forEach((t) => {
+          if (t.state !== 'Failed') return
+          rows.push([r.orderId, r.id, t.name, t.stageKind, failureReasonFor(r.id, t.taskDefId, t.stageKind), t.endedAt ?? r.startedAt])
+        })
+      })
+      return { label: 'Failed tasks behind every provisioning failure, by reason', columns: ['Order ID', 'Run ID', 'Task', 'Stage', 'Reason', 'Ended at'], rows }
     }
     case 'RPT-004': {
-      const rows = ctx.runs.filter((r) => r.attempt === 1 && r.outcome === 'Failed')
+      const rows = ctx.orders.filter((o) => !o.archived && Object.keys(WAITING).includes(o.state) && o.ageDays > 5)
+        .sort((a, b) => b.ageDays - a.ageDays)
       return {
-        label: 'First-attempt runs that failed, and the task that failed',
-        columns: ['Run ID', 'Order ID', 'Workflow ID', 'Outcome', 'Failing task', 'Failure reason', 'Started at'],
-        rows: rows.map((r) => {
-          const failing = r.tasks.find((t) => t.state === 'Failed')
-          return [r.id, r.orderId, r.workflowId, r.outcome, failing?.name ?? 'Unknown', failing?.failureReason ?? 'Not recorded', r.startedAt]
-        }),
+        label: 'Requests waiting more than 5 days',
+        columns: [...ORDER_COLUMNS, 'Waiting on', 'Age (days)'],
+        rows: rows.map((o) => orderRow(o, [o.waitingOn ?? '—', o.ageDays])),
       }
     }
     case 'RPT-005': {
-      const rows = ctx.runs.filter((r) => r.outcome === 'Rolled back with residue' || (r.residue && r.residue.length > 0))
+      const maxAttemptByOrder = new Map<string, number>()
+      ctx.runs.forEach((r) => maxAttemptByOrder.set(r.orderId, Math.max(maxAttemptByOrder.get(r.orderId) ?? 0, r.attempt)))
+      const rows = ctx.orders.filter((o) => (maxAttemptByOrder.get(o.id) ?? 0) >= 2)
       return {
-        label: 'Rollbacks that ran but left something behind',
-        columns: ['Run ID', 'Order ID', 'Workflow ID', 'Outcome', 'Residue left behind', 'Started at'],
-        rows: rows.map((r) => [r.id, r.orderId, r.workflowId, r.outcome, (r.residue ?? []).join('; ') || 'Not itemised', r.startedAt]),
+        label: 'Requests that needed more than one attempt',
+        columns: [...ORDER_COLUMNS, 'Attempts', 'Retry succeeded'],
+        rows: rows.map((o) => orderRow(o, [maxAttemptByOrder.get(o.id) ?? 1, o.state === 'Ready' ? 'Yes' : 'No'])),
       }
     }
     case 'RPT-006': {
+      const rows = ctx.orders.filter((o) => !o.archived && o.slaBreached)
+      return {
+        label: 'Requests past their promised turnaround time',
+        columns: [...ORDER_COLUMNS, 'Waiting on', 'Age (days)'],
+        rows: rows.map((o) => orderRow(o, [o.waitingOn ?? '—', o.ageDays])),
+      }
+    }
+    case 'RPT-007': {
       const rows = ctx.pools.filter((p) => p.total > 0 && (p.total - p.allocated - p.quarantined) / p.total < 0.1)
       return {
         label: 'Pools under 10% free',
@@ -99,12 +103,14 @@ function buildDataset(report: ReportDef, ctx: ReportContext): ReportDataset {
         }),
       }
     }
-    case 'RPT-007': {
-      const rows: (string | number)[][] = []
-      ctx.pools.forEach((p) => p.entries.forEach((e) => {
-        if (e.state === 'Allocated' && !e.serviceId) rows.push([p.id, p.kind, p.scope, e.value, e.state])
-      }))
-      return { label: 'Allocated configuration with no owning service record', columns: ['Pool ID', 'Kind', 'Scope', 'Value', 'State'], rows }
+    case 'RPT-008': {
+      const worst = worstBy(ctx.orders, (o) => o.endpoints[0]?.vendor, RISK_FAIL, 3)
+      const rows = worst ? ctx.orders.filter((o) => o.endpoints[0]?.vendor === worst.key) : []
+      return {
+        label: worst ? `Requests on ${worst.key} equipment, the estate's worst-performing vendor` : 'No vendor has enough volume to compare',
+        columns: [...ORDER_COLUMNS, 'Vendor', 'Device'],
+        rows: rows.map((o) => orderRow(o, [o.endpoints[0]?.vendor ?? '—', o.endpoints[0]?.deviceName ?? '—'])),
+      }
     }
     case 'RPT-009': {
       const order = ctx.orders.find((o) => report.snapshot.startsWith(o.id))

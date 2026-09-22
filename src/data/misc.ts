@@ -1,5 +1,10 @@
-import type { HeldResource, Notification, PoolEntry, PoolKind, ReportDef, ResourcePool, Service } from '@/types'
+import type {
+  HeldResource, Notification, Order, PoolEntry, PoolKind, ReportDef, ReportRun, ResourcePool, Run, Service, Vendor,
+} from '@/types'
 import { SITES, between, pad, pick, rnd } from './catalog'
+import { WAITING } from './orders'
+import { VENDOR_LABEL } from './workflows'
+import { EXEC_FAIL, RISK_FAIL, failureReasonFor, worstBy } from '@/lib/orderFailure'
 
 /* ---------- resource pools ----------
 
@@ -247,125 +252,304 @@ function recount(pools: ResourcePool[]): ResourcePool[] {
   return pools
 }
 
-/* ---------- reports ---------- */
+/* ---------- reports ----------
 
-export const REPORTS: ReportDef[] = [
-  {
-    id: 'RPT-001', name: 'Ghost service register',
-    question: 'Which services are billed but have no configuration on any endpoint?',
-    cadence: 'Weekly · Mon 06:00', audience: 'Finance + NOC lead · restricted · 14 d expiry',
-    state: 'Current', lastRunAt: '2026-08-31T06:00:00Z', snapshot: 'SNAP-2026-0831-06',
-    headline: '46 services', deltaLabel: '+7 this week', deltaTone: 'bad',
-    history: [
-      { at: '2026-08-31', snapshot: 'SNAP-2026-0831-06', headline: '46 services', value: 46, delta: 7 },
-      { at: '2026-08-24', snapshot: 'SNAP-2026-0824-06', headline: '39 services', value: 39, delta: 5 },
-      { at: '2026-08-17', snapshot: 'SNAP-2026-0817-06', headline: '34 services', value: 34, delta: 4 },
-      { at: '2026-08-10', snapshot: 'SNAP-2026-0810-06', headline: '30 services', value: 30, delta: 0 },
-    ],
-  },
-  {
-    id: 'RPT-002', name: 'Never-proven services',
-    question: 'Which live services have no end-to-end evidence, ever?',
-    cadence: 'Weekly · Mon 06:00', audience: 'NOC',
-    state: 'Current', lastRunAt: '2026-08-31T06:00:00Z', snapshot: 'SNAP-2026-0831-06',
-    headline: '316 services', deltaLabel: '−22 this week', deltaTone: 'good',
-    history: [
-      { at: '2026-08-31', snapshot: 'SNAP-2026-0831-06', headline: '316', value: 316, delta: -22 },
-      { at: '2026-08-24', snapshot: 'SNAP-2026-0824-06', headline: '338', value: 338, delta: -14 },
-      { at: '2026-08-17', snapshot: 'SNAP-2026-0817-06', headline: '352', value: 352, delta: -9 },
-      { at: '2026-08-10', snapshot: 'SNAP-2026-0810-06', headline: '361', value: 361, delta: 0 },
-    ],
-  },
-  {
-    id: 'RPT-003', name: 'Drift ageing',
-    question: 'How long has each open drift been open, and who owns it?',
-    cadence: 'Daily · 07:00', audience: 'NOC',
-    state: 'Stale', lastRunAt: '2026-09-02T07:00:00Z', snapshot: 'SNAP-2026-0902-07',
-    headline: '214 open · 31 over 30 days', deltaLabel: '+9 since yesterday', deltaTone: 'bad',
-    history: [
-      { at: '2026-09-02', snapshot: 'SNAP-2026-0902-07', headline: '214', value: 214, delta: 9 },
-      { at: '2026-09-01', snapshot: 'SNAP-2026-0901-07', headline: '205', value: 205, delta: -3 },
-      { at: '2026-08-31', snapshot: 'SNAP-2026-0831-07', headline: '208', value: 208, delta: 6 },
-      { at: '2026-08-30', snapshot: 'SNAP-2026-0830-07', headline: '202', value: 202, delta: 0 },
-    ],
-  },
-  {
-    id: 'RPT-004', name: 'First-attempt success',
-    question: 'Which workflows fail on the first run, and at which task?',
-    cadence: 'Weekly · Mon 06:00', audience: 'Engineering',
-    state: 'Current', lastRunAt: '2026-08-31T06:00:00Z', snapshot: 'SNAP-2026-0831-06',
-    headline: '68% · worst renderer 67%', deltaLabel: '+4 pts this month', deltaTone: 'good',
-    history: [
-      { at: '2026-08-31', snapshot: 'SNAP-2026-0831-06', headline: '68%', value: 68, delta: 4 },
-      { at: '2026-08-24', snapshot: 'SNAP-2026-0824-06', headline: '64%', value: 64, delta: 2 },
-      { at: '2026-08-17', snapshot: 'SNAP-2026-0817-06', headline: '62%', value: 62, delta: 1 },
-      { at: '2026-08-10', snapshot: 'SNAP-2026-0810-06', headline: '61%', value: 61, delta: 0 },
-    ],
-  },
-  {
-    id: 'RPT-005', name: 'Rollback residue',
-    question: 'Which rollbacks ran but left something behind?',
-    cadence: 'Daily · 07:00', audience: 'NOC + Engineering',
-    state: 'Current', lastRunAt: '2026-09-02T07:00:00Z', snapshot: 'SNAP-2026-0902-07',
-    headline: '4 of 11 this month', deltaLabel: 'no change', deltaTone: 'flat',
-    history: [
-      { at: '2026-09-02', snapshot: 'SNAP-2026-0902-07', headline: '4', value: 4, delta: 0 },
-      { at: '2026-09-01', snapshot: 'SNAP-2026-0901-07', headline: '4', value: 4, delta: 1 },
-      { at: '2026-08-31', snapshot: 'SNAP-2026-0831-07', headline: '3', value: 3, delta: 0 },
-      { at: '2026-08-30', snapshot: 'SNAP-2026-0830-07', headline: '3', value: 3, delta: 0 },
-    ],
-  },
-  {
-    id: 'RPT-006', name: 'Resource pool utilisation',
-    question: 'Which pools will run out, and when?',
-    cadence: 'Daily · 07:00', audience: 'Planning',
-    state: 'Running', lastRunAt: '2026-09-02T07:00:00Z', snapshot: 'SNAP-2026-0902-07',
-    headline: '2 pools under 10% free', deltaLabel: '+1 this week', deltaTone: 'bad',
-    history: [
-      { at: '2026-09-02', snapshot: 'SNAP-2026-0902-07', headline: '2', value: 2, delta: 1 },
-      { at: '2026-09-01', snapshot: 'SNAP-2026-0901-07', headline: '1', value: 1, delta: 0 },
-      { at: '2026-08-31', snapshot: 'SNAP-2026-0831-07', headline: '1', value: 1, delta: 0 },
-      { at: '2026-08-30', snapshot: 'SNAP-2026-0830-07', headline: '1', value: 1, delta: 0 },
-    ],
-  },
-  {
-    id: 'RPT-007', name: 'Unclaimed network configuration',
-    question: 'What customer configuration exists that no service record owns?',
-    cadence: 'Weekly · Mon 06:00', audience: 'NOC + Finance',
-    state: 'Stale', lastRunAt: '2026-08-31T06:00:00Z', snapshot: 'SNAP-2026-0831-06',
-    headline: '88 constructs', deltaLabel: '−4 this week', deltaTone: 'good',
-    history: [
-      { at: '2026-08-31', snapshot: 'SNAP-2026-0831-06', headline: '88', value: 88, delta: -4 },
-      { at: '2026-08-24', snapshot: 'SNAP-2026-0824-06', headline: '92', value: 92, delta: -3 },
-      { at: '2026-08-17', snapshot: 'SNAP-2026-0817-06', headline: '95', value: 95, delta: 2 },
-      { at: '2026-08-10', snapshot: 'SNAP-2026-0810-06', headline: '93', value: 93, delta: 0 },
-    ],
-  },
-  {
-    id: 'RPT-008', name: 'Assertion audit',
-    question: 'Which validation rules cannot evaluate false?',
-    cadence: 'On demand', audience: 'Engineering · internal only',
-    state: 'Failed', lastRunAt: '2026-09-01T15:42:00Z', snapshot: 'SNAP-2026-0901-15',
-    headline: '187 tautological · 431 unasserted', deltaLabel: 'first run', deltaTone: 'flat',
-    failureReason: 'Parse timeout while reading 63 draft workflows. Retry queued.',
-    history: [{ at: '2026-09-01', snapshot: 'SNAP-2026-0901-15', headline: '187 / 431', value: 187, delta: 0 }],
-  },
-  {
-    id: 'RPT-009', name: 'Acceptance certificate',
-    question: 'What evidence proves this service was delivered as ordered?',
-    cadence: 'On demand · per service', audience: 'Customer-facing · watermarked · 30 d expiry',
-    state: 'Current', lastRunAt: '2026-09-02T01:07:00Z', snapshot: 'ORD-2026-004417 run 3',
-    headline: '5 of 5 criteria', deltaLabel: '—', deltaTone: 'flat',
-    history: [{ at: '2026-09-02', snapshot: 'ORD-2026-004417 run 3', headline: '5 of 5', value: 5, delta: 0 }],
-  },
-]
+   Every report answers one plain-language question about provisioning
+   itself — requests raised, first-time-right rate, why failures happen,
+   what's stuck, retries, SLA, pool headroom, vendor reliability, proof of
+   delivery — using the exact vocabulary (EXEC_FAIL/RISK_FAIL, the failure-
+   reason buckets, slaBreached, WAITING) the rest of the platform already
+   uses for the same ideas, so a number here can never disagree with the same
+   number on Provisioning Insights or the requests queue.
+
+   The headline and current-period figure are always read straight off the
+   live orders/runs/pools — never typed in. Where the platform genuinely has
+   no history to replay (queue depth, pool headroom are a snapshot of *now*,
+   not a log), the trend line is a seeded, deterministic walk that ends on
+   that real figure, in the same spirit as the rest of this seeded dataset. */
+
+const DAY = 86400000
+
+function pad2(n: number): string { return String(n).padStart(2, '0') }
+
+function snapshotId(at: Date, hh: string): string {
+  return `SNAP-${at.getFullYear()}-${pad2(at.getMonth() + 1)}${pad2(at.getDate())}-${hh}`
+}
+
+function isoDate(at: Date): string { return at.toISOString().slice(0, 10) }
+
+/** [start, end) bounds of the period that is `n` spans of `spanDays` back from now. */
+function windowBack(now: number, n: number, spanDays: number) {
+  const end = now - n * spanDays * DAY
+  return { start: end - spanDays * DAY, end }
+}
+
+/** A deterministic walk trailing back from a real current value, for the
+ * handful of metrics that read off current state rather than a log. */
+function seededTrail(current: number, periods: number, driftFrac: number): number[] {
+  const vals = [Math.max(0, Math.round(current))]
+  for (let i = 1; i < periods; i += 1) {
+    const prev = vals[i - 1]
+    const span = Math.max(1, Math.round(prev * driftFrac))
+    vals.push(Math.max(0, prev - between(-span, span)))
+  }
+  return vals
+}
+
+/** Turn a newest-first value series into the report's run-history rows. */
+function trend(now: number, cadenceDays: number, hh: string, values: number[], headlineAt: (v: number) => string): ReportRun[] {
+  return values.map((v, i) => {
+    const at = new Date(now - i * cadenceDays * DAY)
+    const older = values[i + 1]
+    return { at: isoDate(at), snapshot: snapshotId(at, hh), headline: headlineAt(v), value: v, delta: older === undefined ? 0 : v - older }
+  })
+}
+
+function trendDelta(v0: number, v1: number, opts: { unit?: string; suffix: string; higherIsBad?: boolean }): { label: string; tone: 'good' | 'bad' | 'flat' } {
+  const d = v0 - v1
+  if (d === 0) return { label: 'no change', tone: 'flat' }
+  const higherIsBad = opts.higherIsBad ?? true
+  return { label: `${d > 0 ? '+' : ''}${d}${opts.unit ?? ''} ${opts.suffix}`, tone: (d > 0) === higherIsBad ? 'bad' : 'good' }
+}
+
+/**
+ * The platform's report catalog — every definition is derived here from the
+ * live orders/runs/pools/services, the same way `buildPools` derives pool
+ * sizing from what the estate actually consumes.
+ */
+export function buildReports(orders: Order[], runs: Run[], services: Service[], pools: ResourcePool[]): ReportDef[] {
+  const now = Date.now()
+  const lastWeeklyRun = (hh: string) => {
+    const d = new Date(now)
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+    d.setHours(Number(hh), 0, 0, 0)
+    if (d.getTime() > now) d.setDate(d.getDate() - 7)
+    return d.toISOString()
+  }
+  const lastDailyRun = (hh: string) => {
+    const d = new Date(now)
+    d.setHours(Number(hh), 0, 0, 0)
+    if (d.getTime() > now) d.setDate(d.getDate() - 1)
+    return d.toISOString()
+  }
+
+  /* ---- requests raised vs. completed ---- */
+  const rc = Array.from({ length: 4 }, (_, i) => {
+    const { start, end } = windowBack(now, i, 7)
+    const raised = orders.filter((o) => { const t = Date.parse(o.createdAt); return t > start && t <= end }).length
+    const completed = orders.filter((o) => { if (o.state !== 'Ready') return false; const t = Date.parse(o.updatedAt); return t > start && t <= end }).length
+    return { raised, completed, gap: raised - completed }
+  })
+  const rcHistory = rc.map((p, i) => {
+    const at = new Date(now - i * 7 * DAY)
+    const older = rc[i + 1]
+    return {
+      at: isoDate(at), snapshot: snapshotId(at, '06'), headline: `${p.raised} raised · ${p.completed} completed`,
+      value: p.gap, delta: older === undefined ? 0 : p.gap - older.gap,
+    }
+  })
+  const rcDelta = trendDelta(rc[0].gap, rc[1].gap, { suffix: 'this week' })
+
+  /* ---- first-time-right rate ---- */
+  const attempt1 = runs.filter((r) => r.attempt === 1)
+  const ftr = Array.from({ length: 4 }, (_, i) => {
+    const { start, end } = windowBack(now, i, 7)
+    const inWindow = attempt1.filter((r) => { const t = Date.parse(r.startedAt); return t > start && t <= end })
+    return inWindow.length ? Math.round((inWindow.filter((r) => r.outcome === 'Accepted').length / inWindow.length) * 100) : 0
+  })
+  const ftrHistory = trend(now, 7, '06', ftr, (v) => `${v}%`)
+  const ftrDelta = trendDelta(ftr[0], ftr[1], { unit: ' pts', suffix: 'this week', higherIsBad: false })
+
+  /* ---- why provisioning fails ---- */
+  const failedOrderIds = new Set(orders.filter((o) => EXEC_FAIL.includes(o.state)).map((o) => o.id))
+  const latestAttempt = new Map<string, number>()
+  runs.forEach((r) => { if (failedOrderIds.has(r.orderId)) latestAttempt.set(r.orderId, Math.max(latestAttempt.get(r.orderId) ?? 0, r.attempt)) })
+  const reasonCounts = new Map<string, number>()
+  let totalFailedTasks = 0
+  runs.forEach((r) => {
+    if (!failedOrderIds.has(r.orderId) || r.attempt !== latestAttempt.get(r.orderId)) return
+    r.tasks.forEach((t) => {
+      if (t.state !== 'Failed') return
+      totalFailedTasks += 1
+      const reason = failureReasonFor(r.id, t.taskDefId, t.stageKind)
+      reasonCounts.set(reason, (reasonCounts.get(reason) ?? 0) + 1)
+    })
+  })
+  let topReason = ''; let topCount = 0
+  reasonCounts.forEach((c, reason) => { if (c > topCount) { topCount = c; topReason = reason } })
+  const topPct = totalFailedTasks ? Math.round((topCount / totalFailedTasks) * 100) : 0
+  const whyTrail = Array.from({ length: 4 }, (_, i) => {
+    const { start, end } = windowBack(now, i, 7)
+    let c = 0
+    runs.forEach((r) => {
+      const t = Date.parse(r.startedAt)
+      if (t <= start || t > end) return
+      r.tasks.forEach((tk) => { if (tk.state === 'Failed' && failureReasonFor(r.id, tk.taskDefId, tk.stageKind) === topReason) c += 1 })
+    })
+    return c
+  })
+  const whyHistory = trend(now, 7, '06', whyTrail, (v) => `${v} failures`)
+  const whyDelta = trendDelta(whyTrail[0], whyTrail[1], { suffix: 'this week' })
+
+  /* ---- requests stuck in the queue ---- */
+  const waitingStates = Object.keys(WAITING)
+  const stuckThreshold = 5
+  const stuck = orders.filter((o) => !o.archived && waitingStates.includes(o.state) && o.ageDays > stuckThreshold)
+    .sort((a, b) => b.ageDays - a.ageDays)
+  const oldestStuck = stuck[0]
+  const stuckTrail = seededTrail(stuck.length, 4, 0.22)
+  const stuckHistory = trend(now, 1, '07', stuckTrail, (v) => `${v} waiting`)
+  const stuckDelta = trendDelta(stuckTrail[0], stuckTrail[1], { suffix: 'since yesterday' })
+
+  /* ---- retry outcomes ---- */
+  const maxAttemptByOrder = new Map<string, number>()
+  runs.forEach((r) => maxAttemptByOrder.set(r.orderId, Math.max(maxAttemptByOrder.get(r.orderId) ?? 0, r.attempt)))
+  const retriedIds = [...maxAttemptByOrder.entries()].filter(([, m]) => m >= 2).map(([id]) => id)
+  const orderById = new Map(orders.map((o) => [o.id, o]))
+  const retriedSucceeded = retriedIds.filter((id) => orderById.get(id)?.state === 'Ready').length
+  const secondAttemptStart = new Map<string, string>()
+  runs.forEach((r) => { if (r.attempt === 2) secondAttemptStart.set(r.orderId, r.startedAt) })
+  /* Cumulative — how many retries had started by each cutoff — rather than a
+     per-day count, which would mostly read zero against this sample size. */
+  const retryTrail = Array.from({ length: 4 }, (_, i) => {
+    const cutoff = now - i * DAY
+    return retriedIds.filter((id) => { const s = secondAttemptStart.get(id); return s && Date.parse(s) <= cutoff }).length
+  })
+  const retryHistory = trend(now, 1, '07', retryTrail, (v) => `${v} retried`)
+  const retryDelta = trendDelta(retryTrail[0], retryTrail[1], { suffix: 'since yesterday' })
+
+  /* ---- SLA breaches ---- */
+  const slaTrail = Array.from({ length: 4 }, (_, i) => {
+    const { start, end } = windowBack(now, i, 7)
+    return orders.filter((o) => { if (!o.slaBreached) return false; const t = Date.parse(o.createdAt); return t > start && t <= end }).length
+  })
+  const slaCount = orders.filter((o) => !o.archived && o.slaBreached).length
+  const slaHistory = trend(now, 7, '06', slaTrail, (v) => `${v} breaches`)
+  const slaDelta = trendDelta(slaTrail[0], slaTrail[1], { suffix: 'this week' })
+
+  /* ---- resource pool utilisation ---- */
+  const poolFree = pools.map((p) => ({ p, free: p.total > 0 ? (p.total - p.allocated - p.quarantined) / p.total : 1 }))
+  const lowPools = poolFree.filter((x) => x.free < 0.1)
+  const tightestPool = [...poolFree].sort((a, b) => a.free - b.free)[0]
+  const poolTrail = seededTrail(lowPools.length, 4, 0.4)
+  const poolHistory = trend(now, 1, '07', poolTrail, (v) => `${v} pools`)
+  const poolDelta = trendDelta(poolTrail[0], poolTrail[1], { suffix: 'since yesterday' })
+
+  /* ---- vendor reliability ---- */
+  const worstVendor = worstBy(orders, (o) => o.endpoints[0]?.vendor, RISK_FAIL, 3)
+  const vendorTrail = worstVendor
+    ? Array.from({ length: 4 }, (_, i) => {
+      const { start, end } = windowBack(now, i, 7)
+      const inWindow = orders.filter((o) => o.endpoints[0]?.vendor === worstVendor.key && (() => { const t = Date.parse(o.createdAt); return t > start && t <= end })())
+      return inWindow.length ? Math.round((inWindow.filter((o) => RISK_FAIL.includes(o.state)).length / inWindow.length) * 100) : 0
+    })
+    : [0, 0, 0, 0]
+  const vendorHistory = trend(now, 7, '06', vendorTrail, (v) => `${v}%`)
+  const vendorDelta = trendDelta(vendorTrail[0], vendorTrail[1], { unit: ' pts', suffix: 'this week' })
+  const vendorLabel = worstVendor ? (VENDOR_LABEL[worstVendor.key as Vendor] ?? worstVendor.key) : undefined
+
+  /* ---- acceptance certificate — most recently proven service on record ---- */
+  const withEvidence = services.filter((s) => (s.acceptanceEvidence?.length ?? 0) > 0)
+  const provenService = [...withEvidence].sort((a, b) => Date.parse(b.liveSince ?? '1970-01-01') - Date.parse(a.liveSince ?? '1970-01-01'))[0]
+  const provenOrder = provenService
+    ? orders.find((o) => o.serviceId === provenService.id && o.intent === 'Create') ?? orders.find((o) => o.serviceId === provenService.id)
+    : undefined
+  const provenAttempt = provenOrder ? Math.max(1, ...runs.filter((r) => r.orderId === provenOrder.id).map((r) => r.attempt)) : 1
+  const evidence = provenService?.acceptanceEvidence ?? []
+  const evidencePassed = evidence.filter((e) => e.passed).length
+  const provenSnapshot = provenOrder ? `${provenOrder.id} run ${provenAttempt}` : 'No order on record'
+
+  return [
+    {
+      id: 'RPT-001', name: 'Requests raised vs. completed',
+      question: 'How many provisioning requests came in this week, and how many went live?',
+      cadence: 'Weekly · Mon 06:00', audience: 'Planning + Leadership',
+      state: 'Current', lastRunAt: lastWeeklyRun('06'), snapshot: rcHistory[0].snapshot,
+      headline: `${rc[0].raised} raised · ${rc[0].completed} completed`,
+      deltaLabel: rcDelta.label, deltaTone: rcDelta.tone, history: rcHistory,
+    },
+    {
+      id: 'RPT-002', name: 'First-time-right rate',
+      question: 'What share of provisioning requests succeed on the very first attempt, with no retry needed?',
+      cadence: 'Weekly · Mon 06:00', audience: 'Engineering + NOC',
+      state: 'Current', lastRunAt: lastWeeklyRun('06'), snapshot: ftrHistory[0].snapshot,
+      headline: `${ftr[0]}% succeed on the first try, no retry needed`,
+      deltaLabel: ftrDelta.label, deltaTone: ftrDelta.tone, history: ftrHistory,
+    },
+    {
+      id: 'RPT-003', name: 'Why provisioning fails',
+      question: 'Which single reason costs the most failed provisioning attempts, and how often?',
+      cadence: 'Weekly · Mon 06:00', audience: 'NOC + Engineering',
+      state: 'Current', lastRunAt: lastWeeklyRun('06'), snapshot: whyHistory[0].snapshot,
+      headline: totalFailedTasks ? `${topReason} · ${topCount} of ${totalFailedTasks} failed tasks (${topPct}%)` : 'No failed tasks in the current estate',
+      deltaLabel: whyDelta.label, deltaTone: whyDelta.tone, history: whyHistory,
+    },
+    {
+      id: 'RPT-004', name: 'Requests stuck in the queue',
+      question: 'Which in-flight requests have been waiting longest, and on whom?',
+      cadence: 'Daily · 07:00', audience: 'NOC',
+      state: 'Stale', lastRunAt: lastDailyRun('07'), snapshot: stuckHistory[0].snapshot,
+      headline: oldestStuck
+        ? `${stuck.length} waiting over ${stuckThreshold} days · oldest ${oldestStuck.ageDays} days, waiting on ${oldestStuck.waitingOn ?? oldestStuck.state}`
+        : `Nothing has waited over ${stuckThreshold} days`,
+      deltaLabel: stuckDelta.label, deltaTone: stuckDelta.tone, history: stuckHistory,
+    },
+    {
+      id: 'RPT-005', name: 'Retry outcomes',
+      question: 'When a failed request is retried, does the retry actually succeed?',
+      cadence: 'Daily · 07:00', audience: 'Engineering',
+      state: 'Failed', lastRunAt: lastDailyRun('07'), snapshot: retryHistory[0].snapshot,
+      headline: `${retriedIds.length} requests retried · ${retriedSucceeded} now Ready`,
+      deltaLabel: retryDelta.label, deltaTone: retryDelta.tone,
+      failureReason: 'Timed out correlating attempt-2+ runs against archived orders outside the retained-log window. Retry queued.',
+      history: retryHistory,
+    },
+    {
+      id: 'RPT-006', name: 'SLA breaches',
+      question: 'Which requests have missed their promised turnaround time?',
+      cadence: 'Weekly · Mon 06:00', audience: 'Planning + Finance',
+      state: 'Current', lastRunAt: lastWeeklyRun('06'), snapshot: slaHistory[0].snapshot,
+      headline: `${slaCount} request${slaCount === 1 ? '' : 's'} past commitment`,
+      deltaLabel: slaDelta.label, deltaTone: slaDelta.tone, history: slaHistory,
+    },
+    {
+      id: 'RPT-007', name: 'Resource pool utilisation',
+      question: 'Which resource pools are closest to running out, and by how much?',
+      cadence: 'Daily · 07:00', audience: 'Planning',
+      state: 'Running', lastRunAt: lastDailyRun('07'), snapshot: poolHistory[0].snapshot,
+      headline: tightestPool
+        ? `${lowPools.length} pool${lowPools.length === 1 ? '' : 's'} under 10% free · tightest is ${tightestPool.p.scope} at ${Math.round(tightestPool.free * 100)}%`
+        : 'No pool is under 10% free',
+      deltaLabel: poolDelta.label, deltaTone: poolDelta.tone, history: poolHistory,
+    },
+    {
+      id: 'RPT-008', name: 'Vendor reliability',
+      question: "Which vendor's equipment fails configuration most often?",
+      cadence: 'Weekly · Mon 06:00', audience: 'Engineering + Vendor management',
+      state: 'Stale', lastRunAt: lastWeeklyRun('06'), snapshot: vendorHistory[0].snapshot,
+      headline: worstVendor
+        ? `${vendorLabel} fails ${Math.round(worstVendor.rate * 100)}% of its ${worstVendor.total} requests, worst in the estate`
+        : 'No vendor has enough volume yet to compare',
+      deltaLabel: vendorDelta.label, deltaTone: vendorDelta.tone, history: vendorHistory,
+    },
+    {
+      id: 'RPT-009', name: 'Acceptance certificate',
+      question: 'What evidence proves this service was delivered as ordered, and did it all pass?',
+      cadence: 'On demand · per service', audience: 'Customer-facing · watermarked · 30 d expiry',
+      state: 'Current', lastRunAt: provenOrder?.updatedAt ?? new Date(now).toISOString(), snapshot: provenSnapshot,
+      headline: evidence.length ? `${evidencePassed} of ${evidence.length} criteria passed` : 'No acceptance evidence on record',
+      deltaLabel: '—', deltaTone: 'flat',
+      history: [{ at: isoDate(new Date(now)), snapshot: provenSnapshot, headline: evidence.length ? `${evidencePassed} of ${evidence.length}` : '0 of 0', value: evidencePassed, delta: 0 }],
+    },
+  ]
+}
 
 /* ---------- notifications ---------- */
 
 export function buildNotifications(): Notification[] {
   const now = Date.now()
   const raw: Array<[Notification['tone'], string, string, string | undefined]> = [
-    ['crit', 'Ghost services up 7 this week', '46 services are billed with no configuration on the device. Combined value ₹58.2 L per year.', '/reports'],
+    ['crit', 'SLA breaches climbing', 'More requests missed their promised turnaround time this week. See the SLA breaches report for the full list.', '/reports'],
     ['warn', '4 reservations expire today', 'Orders in Awaiting approval will lose their held VLAN and pseudowire IDs at 18:00 IST.', '/requests'],
     ['crit', 'ORD-2026-004389 failed at task 7', 'BGP session never reached Established. Rollback completed with residue.', '/execution'],
     ['info', 'Change window opens at 01:00 IST', '12 approved orders are scheduled for tonight.', '/change'],

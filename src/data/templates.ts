@@ -318,7 +318,7 @@ function ibwCisco(type: string): StageSeed[] {
   ]
 }
 
-/* ---- Broadband | Residential/Business Gateway | * | HUAWEI · ZTE · ADTRAN
+/* ---- VLAN | Residential/Business Gateway | * | HUAWEI · ZTE · ADTRAN
    (Pre-Validation 3 · Service configuration 3 · Post-Validation 3). Access
    domain — CPE registration, WiFi/WAN push, then proof the gateway is
    online. One template covers every CPE vendor, the same way a single
@@ -529,7 +529,7 @@ function gponProvisioning(): StageSeed[] {
 /** The platform workflow for a profile + vendor. `role` only affects naming; both ends run the same sequence. */
 export function templateFor(category: Category, vendor: Vendor, type: string, _role?: EndpointRole, subtype = '') {
   const seeds =
-    category === 'Broadband' ? cpeProvisioning()
+    category === 'VLAN' ? cpeProvisioning()
       : category === 'Microwave' ? radioPtpProvisioning()
         : category === 'RAN VNF' ? (type === 'DU' ? ranDuProvisioning() : ranCuProvisioning())
           : category === 'DWDM' ? dwdmWavelengthProvisioning()
@@ -610,7 +610,7 @@ export const KNOWN_PARAMS: Record<Category, string[]> = {
   L2VPN: ['Interface', 'Vlan-ID', 'Neighbor IP', 'Description', 'Bandwidth', 'Xconnect group', 'VC ID'],
   L3VPN: ['Interface', 'Vlan-ID', 'Neighbor IP', 'Description', 'Bandwidth', 'VRF', 'RD', 'RT', 'Interface IP', 'Peer AS'],
   IBW: ['Interface', 'Vlan-ID', 'Neighbor IP', 'Description', 'Bandwidth', 'VRF', 'Interface IP', 'Customer prefix', 'Peer AS'],
-  Broadband: ['CPE Serial', 'SSID', 'WiFi Password', 'WAN VLAN', 'Bandwidth'],
+  VLAN: ['CPE Serial', 'SSID', 'WiFi Password', 'WAN VLAN', 'Bandwidth'],
   Microwave: ['Frequency Channel', 'Frequency Band', 'Channel Bandwidth', 'Modulation', 'TX Power', 'Capacity'],
   DWDM: ['Wavelength Channel', 'OTN Framing', 'Protection', 'Capacity'],
   'RAN VNF': ['PLMN', 'gNB ID', 'AMF IP', 'F1 IP', 'Max UE Capacity', 'CU F1 IP', 'PCI', 'Bandwidth', 'TX Power'],

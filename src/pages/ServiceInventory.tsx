@@ -17,7 +17,7 @@ import { CeaseServiceModal, ModifyServiceDrawer } from '@/components/ServiceChan
 
 const STATES: ServiceState[] = ['Live', 'Activating', 'Degraded', 'Suspended', 'Ceased']
 const CONFS: Conformance[] = ['Conformant', 'Drifted', 'Never proven', 'Ghost', 'Not checked']
-const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'Broadband', 'Microwave', 'DWDM', 'RAN VNF', 'GPON']
+const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'VLAN', 'Microwave', 'DWDM', 'RAN VNF', 'GPON']
 
 /**
  * When this service was last changed. Unlike an order, a service carries no

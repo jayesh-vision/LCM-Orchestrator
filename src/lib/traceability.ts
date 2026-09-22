@@ -1,4 +1,4 @@
-import type { Order, Service } from '@/types'
+import type { Order, OrderState, Service } from '@/types'
 
 /**
  * How far a record can actually be followed.
@@ -61,6 +61,26 @@ export function byRaised<T>(rows: T[], raisedAt: (row: T) => string, score: (row
     .map((row, i) => ({ row, i, t: Date.parse(raisedAt(row)), s: score(row) }))
     .sort((a, b) => (b.t - a.t) || (b.s - a.s) || (a.i - b.i))
     .map((x) => x.row)
+}
+
+/**
+ * `byRaised`, but with a handful of Ready rows pulled to the very front —
+ * not a full status-wise re-sort. Everything else, Failed included, stays in
+ * its normal newest-first position; only the first `leadCount` Ready rows
+ * (by recency) are lifted ahead of the rest so a demo opens on a few
+ * finished, presentable requests without reshuffling the whole queue.
+ */
+export function leadWithReady<T>(
+  rows: T[],
+  state: (row: T) => OrderState,
+  raisedAt: (row: T) => string,
+  score: (row: T) => number,
+  leadCount = 4,
+): T[] {
+  const base = byRaised(rows, raisedAt, score)
+  const lead = base.filter((row) => state(row) === 'Ready').slice(0, leadCount)
+  const leadSet = new Set(lead)
+  return [...lead, ...base.filter((row) => !leadSet.has(row))]
 }
 
 /* ---------------------------------------------------------------- origin */

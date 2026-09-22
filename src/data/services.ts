@@ -310,7 +310,7 @@ export function buildServices(): Service[] {
 
     out.push({
       id: `SVC-ACC-${pad(200000 + i * 3, 6)}`,
-      name: `${acct.name.split(' ')[0]} ${pick(SITES).city} broadband`,
+      name: `${acct.name.split(' ')[0]} ${pick(SITES).city} VLAN`,
       category: intent.category, type: intent.type, intentId,
       accountId: acct.id, accountName: acct.name,
       state, operState: OPER_FOR[state], conformance,

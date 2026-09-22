@@ -13,7 +13,7 @@ export type Domain = 'Transport' | 'Access' | 'Radio' | 'Fiber'
 export const DOMAINS: Domain[] = ['Transport', 'Access', 'Radio', 'Fiber']
 
 export type Category =
-  | 'L2VPN' | 'L3VPN' | 'IBW' | 'Broadband' | 'Microwave' | 'DWDM' | 'RAN VNF' | 'GPON'
+  | 'L2VPN' | 'L3VPN' | 'IBW' | 'VLAN' | 'Microwave' | 'DWDM' | 'RAN VNF' | 'GPON'
 /** Which categories exist under each domain — drives every domain→category cascade in the UI.
  *  A domain can carry more than one category with a disjoint vendor estate
  *  (Radio's Microwave links vs its RAN VNF category) — see
@@ -21,13 +21,13 @@ export type Category =
  *  eligibility. */
 export const CATEGORIES_BY_DOMAIN: Record<Domain, Category[]> = {
   Transport: ['L2VPN', 'L3VPN', 'IBW', 'DWDM'],
-  Access: ['Broadband'],
+  Access: ['VLAN'],
   Radio: ['Microwave', 'RAN VNF'],
   Fiber: ['GPON'],
 }
 const CATEGORY_DOMAIN: Record<Category, Domain> = {
   L2VPN: 'Transport', L3VPN: 'Transport', IBW: 'Transport', DWDM: 'Transport',
-  Broadband: 'Access', Microwave: 'Radio', 'RAN VNF': 'Radio',
+  VLAN: 'Access', Microwave: 'Radio', 'RAN VNF': 'Radio',
   GPON: 'Fiber',
 }
 export const domainOf = (category: Category): Domain => CATEGORY_DOMAIN[category]
