@@ -284,6 +284,7 @@ export default function Workflows() {
         rows={filtered} total={workflows.length} columns={columns}
         onRowClick={(r) => nav(`/workflows/${r.id}`)}
         minWidth={1180}
+        fillHeight
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Name, Code, Vendor' },
           /* Domain is the one quick-chip facet kept inline; category and

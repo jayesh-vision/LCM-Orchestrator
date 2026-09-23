@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle, Bell, Boxes, CheckCircle2, CheckSquare, Database, FileBarChart,
@@ -82,7 +82,8 @@ export default function AppShell() {
   const [bellOpen, setBellOpen] = useState(false)
   const unread = notifications.filter((n) => !n.read).length
 
-  useEffect(() => { window.scrollTo(0, 0) }, [loc.pathname])
+  const contentRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { contentRef.current?.scrollTo(0, 0) }, [loc.pathname])
 
   const crumb = CRUMBS[loc.pathname]
     ?? Object.entries(CRUMBS).find(([k]) => k !== '/' && loc.pathname.startsWith(k))?.[1]
@@ -178,9 +179,9 @@ export default function AppShell() {
       )}
 
       {/* -------- main -------- */}
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div ref={contentRef} className="flex-1 min-w-0 flex flex-col h-screen overflow-y-auto">
         {showChrome && (
-        <header className="h-14 bg-white border-b border-line pl-4 pr-7 flex items-center gap-3 sticky top-0 z-30">
+        <header className="h-14 bg-white border-b border-line pl-4 pr-7 flex items-center gap-3 sticky top-0 z-30 shrink-0">
           <button
             type="button" onClick={toggleNav}
             aria-label={collapsed ? 'Expand menu' : 'Collapse menu'} aria-expanded={!collapsed} title={collapsed ? 'Expand menu' : 'Collapse menu'}
@@ -252,7 +253,7 @@ export default function AppShell() {
         </header>
         )}
 
-        <main className="px-2 py-2 flex flex-col gap-2 max-w-[1560px] w-full">
+        <main className="px-2 py-2 flex flex-col gap-2 w-full flex-1 min-h-0">
           <Outlet />
         </main>
       </div>

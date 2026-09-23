@@ -152,6 +152,7 @@ export default function ResourcePools() {
       <DataTable
         rows={filtered} total={pools.length} columns={columns} minWidth={1020}
         onRowClick={(r) => openPool(r)}
+        fillHeight
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Pool, Scope' },
           chips: KINDS.filter((k) => pools.some((p) => p.kind === k)).map((k) => (

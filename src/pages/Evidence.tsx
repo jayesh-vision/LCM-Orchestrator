@@ -163,6 +163,7 @@ export default function Evidence() {
       <DataTable
         rows={filtered} total={rows.length} columns={columns} minWidth={1180}
         onRowClick={(r) => setOpen(r)}
+        fillHeight
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Task, Claim, Order' },
           chips: (['Passed', 'Failed'] as const).map((v) => (

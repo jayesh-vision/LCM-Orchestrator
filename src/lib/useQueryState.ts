@@ -63,6 +63,17 @@ export function useClearQuery(keys: string[]) {
  * usually below the fold. Scroll it into view once, on arrival only — never
  * when the user changes a filter themselves.
  */
+/** Nearest ancestor that actually scrolls — the page content column, not the window, now that it owns its own scroll area. */
+function scrollParentOf(el: HTMLElement): HTMLElement {
+  let node = el.parentElement
+  while (node) {
+    const oy = getComputedStyle(node).overflowY
+    if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight) return node
+    node = node.parentElement
+  }
+  return (document.scrollingElement as HTMLElement) ?? document.documentElement
+}
+
 export function useScrollToResultsOnDrillIn(selection: string) {
   const ref = useRef<HTMLDivElement | null>(null)
   const last = useRef<string>('')
@@ -73,8 +84,9 @@ export function useScrollToResultsOnDrillIn(selection: string) {
     /* A frame's grace so the rows have re-rendered and the list is its final
        height before we measure where it starts. */
     window.setTimeout(() => {
-      const y = el.getBoundingClientRect().top + window.scrollY - 72
-      window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' })
+      const parent = scrollParentOf(el)
+      const y = el.getBoundingClientRect().top - parent.getBoundingClientRect().top + parent.scrollTop - 72
+      parent.scrollTo({ top: Math.max(0, y), behavior: 'smooth' })
     }, 60)
   }, [])
 

@@ -726,7 +726,7 @@ export interface GridToolbar {
 }
 
 export function DataTable<T extends { id: string }>({
-  rows, columns, pageSize = 25, onRowClick, empty = 'Nothing matches these filters.', minWidth = 1040, maxHeight = 560, toolbar, total,
+  rows, columns, pageSize = 25, onRowClick, empty = 'Nothing matches these filters.', minWidth = 1040, maxHeight = 560, toolbar, total, fillHeight = false,
 }: {
   rows: T[]
   columns: Column<T>[]
@@ -735,12 +735,14 @@ export function DataTable<T extends { id: string }>({
   onRowClick?: (row: T) => void
   empty?: string
   minWidth?: number
-  /** Height of the scrollable grid body; scrolling near the bottom loads the next `pageSize` rows. */
+  /** Height of the scrollable grid body; scrolling near the bottom loads the next `pageSize` rows. Ignored when `fillHeight` is set. */
   maxHeight?: number
   /** Rendering the toolbar also wraps the table in its own .nst-table-card. */
   toolbar?: GridToolbar
   /** Unfiltered total, for "Showing 12 of 138". Defaults to rows.length. */
   total?: number
+  /** Grow the grid to fill the remaining height of its flex parent instead of stopping at a fixed `maxHeight` — leaves no dead space below a short result set. Needs an ancestor with a bounded height (e.g. a flex column sized to the viewport). */
+  fillHeight?: boolean
 }) {
   const [visibleCount, setVisibleCount] = useState(pageSize)
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null)
@@ -784,7 +786,11 @@ export function DataTable<T extends { id: string }>({
           row/column semantics for screen readers, which the grid-of-divs
           variant does not. Border and radius are dropped because the table sits
           inside a .vw-card-section that already provides them. */}
-      <div ref={scrollRef} onScroll={onGridScroll} className="overflow-auto" style={{ maxHeight }}>
+      <div
+        ref={scrollRef} onScroll={onGridScroll}
+        className={`overflow-auto ${fillHeight ? 'flex-1 min-h-0' : ''}`}
+        style={fillHeight ? undefined : { maxHeight }}
+      >
         <table className="nst-table border-0 rounded-none [&>thead>tr>th]:bg-plane [&>thead>tr>th]:sticky [&>thead>tr>th]:top-0 [&>thead>tr>th]:z-10" style={{ minWidth }}>
           <thead>
             <tr>
@@ -822,10 +828,12 @@ export function DataTable<T extends { id: string }>({
         </table>
       </div>
       {hasMore && (
-        <CardFoot>
-          <span>Showing {view.length.toLocaleString()} of {sorted.length.toLocaleString()}</span>
-          <span className="text-ink-3">Scroll for more</span>
-        </CardFoot>
+        <div className={fillHeight ? 'shrink-0' : ''}>
+          <CardFoot>
+            <span>Showing {view.length.toLocaleString()} of {sorted.length.toLocaleString()}</span>
+            <span className="text-ink-3">Scroll for more</span>
+          </CardFoot>
+        </div>
       )}
     </>
   )
@@ -835,8 +843,8 @@ export function DataTable<T extends { id: string }>({
   const refresh = () => { setSpin(true); toolbar.onRefresh?.(); window.setTimeout(() => setSpin(false), 600) }
 
   return (
-    <div className="vw-flex vw-flex-col vw-gap-xs">
-      <div className="vw-flex vw-items-center vw-wrap vw-gap-md">
+    <div className={`vw-flex vw-flex-col vw-gap-xs ${fillHeight ? 'flex-1 min-h-0' : ''}`}>
+      <div className="vw-flex vw-items-center vw-wrap vw-gap-md shrink-0">
         <span className="vw-value text-ink-2 whitespace-nowrap tnum">
           Showing {view.length.toLocaleString()} of {sorted.length.toLocaleString()}{total !== undefined && total !== sorted.length ? <span className="text-ink-3"> · {total.toLocaleString()} in total</span> : ''}
         </span>
@@ -891,7 +899,7 @@ export function DataTable<T extends { id: string }>({
           )}
         </div>
       </div>
-      <div className="nst-table-card">
+      <div className={`nst-table-card ${fillHeight ? 'flex flex-col flex-1 min-h-0' : ''}`}>
         {tableEl}
       </div>
     </div>

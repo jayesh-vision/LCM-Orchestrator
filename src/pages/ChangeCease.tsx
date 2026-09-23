@@ -144,6 +144,7 @@ export default function ChangeCease() {
       <DataTable
         rows={ranked} total={changes.length} columns={columns}
         onRowClick={(r) => nav(`/execution/${r.id}`)}
+        fillHeight
         empty="No change orders yet. Raise one from a service, or with the button above."
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Service, Customer' },

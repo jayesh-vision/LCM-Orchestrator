@@ -397,6 +397,7 @@ export default function ServiceInventory() {
       <DataTable
         rows={ranked} total={services.length} columns={columns}
         onRowClick={(r) => nav(`/inventory/${r.id}`)}
+        fillHeight
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Service, Customer' },
           /* The three facets worth one click rather than a trip through the
