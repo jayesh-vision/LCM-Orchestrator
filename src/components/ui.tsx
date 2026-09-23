@@ -59,7 +59,12 @@ export function InfoTip({ children, width = 270 }: { children: ReactNode; width?
    heading, .vw-card-description the sub-line. Padding is handled by the
    head/body/foot parts, so the section itself is reset to zero. */
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`vw-card-section p-0 overflow-hidden ${className}`}>{children}</div>
+  /* shrink-0: `overflow-hidden` gives a flex item an automatic min-height of
+     0 per the flexbox spec, so without this a Card stacked above a
+     `fillHeight` grid (both flex children of the page column) gets crushed
+     to nothing the moment the column runs short on room, instead of the
+     page simply growing past the viewport and scrolling. */
+  return <div className={`vw-card-section p-0 overflow-hidden shrink-0 ${className}`}>{children}</div>
 }
 export function CardHead({ title, sub, right, info, tight = false }:
 { title?: ReactNode; sub?: ReactNode; right?: ReactNode; info?: ReactNode; tight?: boolean }) {
@@ -788,8 +793,12 @@ export function DataTable<T extends { id: string }>({
           inside a .vw-card-section that already provides them. */}
       <div
         ref={scrollRef} onScroll={onGridScroll}
-        className={`overflow-auto ${fillHeight ? 'flex-1 min-h-0' : ''}`}
-        style={fillHeight ? undefined : { maxHeight }}
+        className={`overflow-auto ${fillHeight ? 'flex-1' : ''}`}
+        /* fillHeight grows the grid into whatever room its flex ancestors have —
+           `maxHeight` becomes a floor instead of a cap, so a page with a lot
+           above the grid (stat cards, charts) never crushes it down to a
+           sliver: the grid holds this minimum and the page scrolls past it. */
+        style={fillHeight ? { minHeight: maxHeight } : { maxHeight }}
       >
         <table className="nst-table border-0 rounded-none [&>thead>tr>th]:bg-plane [&>thead>tr>th]:sticky [&>thead>tr>th]:top-0 [&>thead>tr>th]:z-10" style={{ minWidth }}>
           <thead>
@@ -843,7 +852,7 @@ export function DataTable<T extends { id: string }>({
   const refresh = () => { setSpin(true); toolbar.onRefresh?.(); window.setTimeout(() => setSpin(false), 600) }
 
   return (
-    <div className={`vw-flex vw-flex-col vw-gap-xs ${fillHeight ? 'flex-1 min-h-0' : ''}`}>
+    <div className={`vw-flex vw-flex-col vw-gap-xs ${fillHeight ? 'flex-1' : ''}`}>
       <div className="vw-flex vw-items-center vw-wrap vw-gap-md shrink-0">
         <span className="vw-value text-ink-2 whitespace-nowrap tnum">
           Showing {view.length.toLocaleString()} of {sorted.length.toLocaleString()}{total !== undefined && total !== sorted.length ? <span className="text-ink-3"> · {total.toLocaleString()} in total</span> : ''}
@@ -899,7 +908,11 @@ export function DataTable<T extends { id: string }>({
           )}
         </div>
       </div>
-      <div className={`nst-table-card ${fillHeight ? 'flex flex-col flex-1 min-h-0' : ''}`}>
+      {/* `.nst-table-card` carries `overflow: hidden` for its rounded corners, which
+          per the flexbox spec gives it an automatic min-height of 0 — without an
+          explicit floor here it would get crushed by its own parent before its
+          `minHeight`-holding children (above) ever get a say. */}
+      <div className={`nst-table-card ${fillHeight ? 'flex flex-col flex-1' : ''}`} style={fillHeight ? { minHeight: maxHeight } : undefined}>
         {tableEl}
       </div>
     </div>
