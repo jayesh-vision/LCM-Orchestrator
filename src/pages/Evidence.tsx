@@ -6,7 +6,7 @@ import { useStore } from '@/store/useStore'
 import type { RunTask } from '@/types'
 import {
   Badge, Button, Card, CardBody, CardHead, CellMain, CellSub, Chip, CodeBlock, DataTable,
-  Drawer, FilterBanner, KV, Mono, Note, Stat, type Column,
+  Drawer, KV, Mono, Note, Stat, type Column,
 } from '@/components/ui'
 import { StackedBar } from '@/components/charts'
 import { dur, relTime, TASK_TONE } from '@/lib/format'
@@ -73,15 +73,6 @@ export default function Evidence() {
 
   return (
     <>
-
-      {/* Verdict has its own quick-chip row in the toolbar below, which
-         already shows which one is selected — no need to say it twice. */}
-      <FilterBanner
-        count={filtered.length} noun="assertions" onClear={clear}
-        filters={[
-          ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
-        ]}
-      />
 
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
         <Stat label="Assertions evaluated" icon={ListChecks} value={rows.length.toLocaleString()} note="Across the runs held in this workspace"
@@ -183,6 +174,9 @@ export default function Evidence() {
             { key: 'stage', label: 'Stage', value: stage, onChange: setStage,
               options: [...new Set(rows.map((r) => r.stage))].map((st) => ({ value: st, label: st, count: rows.filter((r) => r.stage === st).length })) },
             { key: 'q', label: 'Task / Claim / Order', type: 'text', value: q, onChange: setQ },
+          ],
+          activeFilterChips: [
+            ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
           ],
           onResetFilters: clear,
           onRefresh: () => pushToast('info', 'Evidence records refreshed.'),

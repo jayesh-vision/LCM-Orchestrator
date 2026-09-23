@@ -82,7 +82,7 @@ export function CardBody({ children, className = '' }: { children: ReactNode; cl
   return <div className={`p-4 ${className}`}>{children}</div>
 }
 export function CardFoot({ children }: { children: ReactNode }) {
-  return <div className="vw-card-footer-divider mt-0 px-4 py-3 vw-flex vw-items-center vw-justify-between vw-wrap vw-gap-md vw-footer-meta">{children}</div>
+  return <div className="vw-card-footer-divider mt-0 px-4 py-2 vw-flex vw-items-center vw-justify-between vw-wrap vw-gap-md vw-footer-meta">{children}</div>
 }
 
 /* ----------------------------------------------------------------- badge */
@@ -135,13 +135,13 @@ React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: BtnVariant; size?: '
 export function Tabs<T extends string>({ tabs, value, onChange }:
 { tabs: { id: T; label: string; count?: number }[]; value: T; onChange: (v: T) => void }) {
   return (
-    <div className="flex gap-0.5 border-b border-line overflow-x-auto">
+    <div className="flex gap-6 border-b border-line overflow-x-auto">
       {tabs.map((t) => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
-          className={`px-3.5 py-2.5 text-[13px] font-medium border-b-2 -mb-px whitespace-nowrap transition-colors
-            ${value === t.id ? 'text-brand-600 border-brand-500 font-semibold' : 'text-ink-2 border-transparent hover:text-ink-1'}`}
+          className={`py-2.5 text-[15px] border-b-2 -mb-px whitespace-nowrap transition-colors
+            ${value === t.id ? 'text-ink-1 border-ink-1 font-semibold' : 'text-ink-3 border-transparent font-normal hover:text-ink-1'}`}
         >
           {t.label}
           {t.count !== undefined && <span className="ml-1.5 text-[11.5px] text-ink-3 tnum">{t.count}</span>}
@@ -324,40 +324,9 @@ export function StatRow({ label, value, note, tone, onClick, drillLabel, icon: I
   )
 }
 
-/* --------------------------------------------------- active filter banner */
+/* ------------------------------------------------------------ active filter */
+/** Shape for a currently-applied filter, shown as a removable pill in the grid toolbar. */
 export interface ActiveFilter { key: string; label: string; value: string; onRemove: () => void }
-
-/**
- * Shown whenever the screen is filtered — usually because the user arrived by
- * clicking a number somewhere else. Without it a drill-down looks like the
- * screen is simply missing data.
- */
-export function FilterBanner({ filters, onClear, count, noun }:
-{ filters: ActiveFilter[]; onClear: () => void; count: number; noun: string }) {
-  if (filters.length === 0) return null
-  return (
-    <div className="vw-card-section vw-card--info vw-flex vw-items-center vw-wrap vw-gap-sm px-4 py-3 sticky top-[62px] z-20" role="status">
-      <span className="vw-value">
-        Showing <b className="tnum font-medium">{count.toLocaleString()}</b> {noun} filtered by
-      </span>
-      {filters.map((f) => (
-        <span key={f.key} className="vw-chip vw-chip--info gap-1.5 pr-1.5 bg-white">
-          <span className="opacity-70">{f.label}</span>
-          <b className="font-medium">{f.value}</b>
-          <button
-            type="button" onClick={f.onRemove} aria-label={`Remove the ${f.label} filter`}
-            className="w-[17px] h-[17px] grid place-items-center rounded-full hover:bg-brand-100"
-          >
-            <X size={11} />
-          </button>
-        </span>
-      ))}
-      <button type="button" onClick={onClear} className="nst-btn nst-btn--ghost nst-btn--sm text-brand-600">
-        Clear all
-      </button>
-    </div>
-  )
-}
 
 /* ---------------------------------------------------------------- drawer */
 export function Drawer({ open, onClose, title, sub, width = 620, children, footer }:
@@ -749,6 +718,8 @@ export interface GridToolbar {
   search?: { value: string; onChange: (v: string) => void; placeholder?: string }
   chips?: ReactNode
   filters?: FilterField[]
+  /** Currently-applied filters, shown as removable pills next to the toolbar icons. */
+  activeFilterChips?: ActiveFilter[]
   onResetFilters?: () => void
   onRefresh?: () => void
   actions?: MenuItem[]
@@ -864,7 +835,7 @@ export function DataTable<T extends { id: string }>({
   const refresh = () => { setSpin(true); toolbar.onRefresh?.(); window.setTimeout(() => setSpin(false), 600) }
 
   return (
-    <div className="vw-flex vw-flex-col vw-gap-md">
+    <div className="vw-flex vw-flex-col vw-gap-xs">
       <div className="vw-flex vw-items-center vw-wrap vw-gap-md">
         <span className="vw-value text-ink-2 whitespace-nowrap tnum">
           Showing {view.length.toLocaleString()} of {sorted.length.toLocaleString()}{total !== undefined && total !== sorted.length ? <span className="text-ink-3"> · {total.toLocaleString()} in total</span> : ''}
@@ -874,6 +845,26 @@ export function DataTable<T extends { id: string }>({
         )}
         {toolbar.chips && <div className="vw-flex vw-items-center vw-wrap vw-gap-sm">{toolbar.chips}</div>}
         <div className="flex-1" />
+        {toolbar.activeFilterChips && toolbar.activeFilterChips.length > 0 && (
+          <div className="vw-flex vw-items-center vw-wrap vw-gap-xs">
+            {toolbar.activeFilterChips.map((f) => (
+              <span key={f.key} className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-[3px] rounded-full bg-plane text-[12px] text-ink-2 whitespace-nowrap">
+                {f.label} = <b className="font-medium text-ink-1">{f.value}</b>
+                <button
+                  type="button" onClick={f.onRemove} aria-label={`Remove the ${f.label} filter`}
+                  className="w-[15px] h-[15px] grid place-items-center rounded-full hover:bg-line shrink-0"
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+            {toolbar.activeFilterChips.length > 1 && toolbar.onResetFilters && (
+              <button type="button" onClick={toolbar.onResetFilters} className="text-[12px] text-brand-600 hover:underline whitespace-nowrap">
+                Clear all
+              </button>
+            )}
+          </div>
+        )}
         <div className="vw-flex vw-items-center vw-gap-sm relative">
           <button className={`nst-icon-btn ${spin ? 'is-active' : ''}`} onClick={refresh} aria-label="Refresh" title="Refresh">
             <RefreshCcw size={16} className={spin ? 'animate-spin' : ''} />

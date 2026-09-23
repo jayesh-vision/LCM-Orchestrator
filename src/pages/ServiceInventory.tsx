@@ -7,7 +7,7 @@ import type { Category, Conformance, Domain, Order, Service, ServiceState } from
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Card, CardBody, CardHead, CellMain, CellSub, DataTable,
-  FieldDropdown, FilterBanner, Kebab, Mono, Stat, stampColumn, type Column,
+  FieldDropdown, Kebab, Mono, Stat, stampColumn, type Column,
 } from '@/components/ui'
 import { CHART, Donut, FILL, type FillKey } from '@/components/charts'
 import { CATEGORY_TONE, CONFORMANCE_TONE, inr, relTime, SERVICE_TONE } from '@/lib/format'
@@ -303,22 +303,6 @@ export default function ServiceInventory() {
   return (
     <>
 
-      {/* Domain has its own quick-chip row in the toolbar below, which
-         already shows which one is selected — no need to say it twice. */}
-      <FilterBanner
-        count={filtered.length} noun="services" onClear={clear}
-        filters={[
-          ...(cat !== 'All' ? [{ key: 'cat', label: 'Category', value: cat, onRemove: () => setCat('All') }] : []),
-          ...(state !== 'All' ? [{ key: 'state', label: 'State', value: state, onRemove: () => setState('All') }] : []),
-          ...(conf !== 'All' ? [{ key: 'conf', label: 'Conformance', value: conf, onRemove: () => setConf('All') }] : []),
-          ...(intent !== 'All' ? [{ key: 'intent', label: 'Intent', value: intentName, onRemove: () => setIntent('All') }] : []),
-          ...(origin !== 'All' ? [{ key: 'origin', label: 'Origin', value: ORIGIN_LABEL[origin], onRemove: () => setOrigin('All') }] : []),
-          ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
-          ...(qservice ? [{ key: 'service', label: 'Service', value: qservice, onRemove: () => setQservice('') }] : []),
-          ...(qcustomer ? [{ key: 'customer', label: 'Customer', value: qcustomer, onRemove: () => setQcustomer('') }] : []),
-        ]}
-      />
-
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
         <Stat label="Total services" icon={Boxes} value={services.length.toLocaleString()}
           progress={(n.state('Live') / services.length) * 100}
@@ -437,6 +421,16 @@ export default function ServiceInventory() {
               options: intents.map((i) => ({ value: i.id, label: i.name, count: services.filter((x) => x.intentId === i.id).length })) },
             { key: 'service', label: 'Service', type: 'text', value: qservice, onChange: setQservice },
             { key: 'customer', label: 'Customer', type: 'text', value: qcustomer, onChange: setQcustomer },
+          ],
+          activeFilterChips: [
+            ...(cat !== 'All' ? [{ key: 'cat', label: 'Category', value: cat, onRemove: () => setCat('All') }] : []),
+            ...(state !== 'All' ? [{ key: 'state', label: 'State', value: state, onRemove: () => setState('All') }] : []),
+            ...(conf !== 'All' ? [{ key: 'conf', label: 'Conformance', value: conf, onRemove: () => setConf('All') }] : []),
+            ...(intent !== 'All' ? [{ key: 'intent', label: 'Intent', value: intentName, onRemove: () => setIntent('All') }] : []),
+            ...(origin !== 'All' ? [{ key: 'origin', label: 'Origin', value: ORIGIN_LABEL[origin], onRemove: () => setOrigin('All') }] : []),
+            ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
+            ...(qservice ? [{ key: 'service', label: 'Service', value: qservice, onRemove: () => setQservice('') }] : []),
+            ...(qcustomer ? [{ key: 'customer', label: 'Customer', value: qcustomer, onRemove: () => setQcustomer('') }] : []),
           ],
           onResetFilters: clear,
           onRefresh: () => pushToast('info', 'Inventory refreshed.'),

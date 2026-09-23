@@ -133,7 +133,7 @@ export default function ServiceDetail() {
             </div>
           </div>
         </CardBody>
-        <div className="px-5">
+        <div className="px-4">
           <Tabs
             value={tab} onChange={setTab}
             tabs={[

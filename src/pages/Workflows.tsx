@@ -10,7 +10,7 @@ import type { Category, Domain, Vendor, Workflow, WorkflowState } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Card, CardBody, CardHead, CellMain, Chip, DataTable,
-  FilterBanner, Kebab, Mono, Note, Stat, type Column,
+  Kebab, Mono, Note, Stat, type Column,
 } from '@/components/ui'
 import { CoverageMatrix, type CoverageCol } from '@/components/charts'
 import {
@@ -209,23 +209,6 @@ export default function Workflows() {
   return (
     <>
 
-      {/* Domain has its own quick-chip row in the toolbar below, which
-         already shows which one is selected — no need to say it twice. */}
-      <FilterBanner
-        count={filtered.length} noun="workflows" onClear={clear}
-        filters={[
-          ...(cat !== 'All' ? [{ key: 'cat', label: 'Category', value: cat, onRemove: () => setCat('All') }] : []),
-          ...(wtype !== 'All' ? [{ key: 'type', label: 'Type', value: wtype, onRemove: () => setWtype('All') }] : []),
-          ...(wsubtype !== 'All' ? [{ key: 'subtype', label: 'Subtype', value: wsubtype, onRemove: () => setWsubtype('All') }] : []),
-          ...(st !== 'All' ? [{ key: 'state', label: 'State', value: stList.join(' or '), onRemove: () => setSt('All') }] : []),
-          ...(intentId !== 'All' ? [{ key: 'intent', label: 'Intent', value: intents.find((i) => i.id === intentId)?.name ?? intentId, onRemove: () => setIntentId('All') }] : []),
-          ...(vendor !== 'All' ? [{ key: 'vendor', label: 'Vendor', value: vendor, onRemove: () => setVendor('All') }] : []),
-          ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
-          ...(qname ? [{ key: 'name', label: 'Name', value: qname, onRemove: () => setQname('') }] : []),
-          ...(qcode ? [{ key: 'code', label: 'Code', value: qcode, onRemove: () => setQcode('') }] : []),
-        ]}
-      />
-
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
         <Stat label="Total workflows" icon={ListChecks} value={workflows.length}
           progress={(n.state('Active') / Math.max(1, workflows.length)) * 100}
@@ -325,6 +308,17 @@ export default function Workflows() {
               options: intents.map((i) => ({ value: i.id, label: i.name, count: workflows.filter((w) => w.intentId === i.id).length })) },
             { key: 'name', label: 'Name', type: 'text', value: qname, onChange: setQname },
             { key: 'code', label: 'Code', type: 'text', value: qcode, onChange: setQcode },
+          ],
+          activeFilterChips: [
+            ...(cat !== 'All' ? [{ key: 'cat', label: 'Category', value: cat, onRemove: () => setCat('All') }] : []),
+            ...(wtype !== 'All' ? [{ key: 'type', label: 'Type', value: wtype, onRemove: () => setWtype('All') }] : []),
+            ...(wsubtype !== 'All' ? [{ key: 'subtype', label: 'Subtype', value: wsubtype, onRemove: () => setWsubtype('All') }] : []),
+            ...(st !== 'All' ? [{ key: 'state', label: 'State', value: stList.join(' or '), onRemove: () => setSt('All') }] : []),
+            ...(intentId !== 'All' ? [{ key: 'intent', label: 'Intent', value: intents.find((i) => i.id === intentId)?.name ?? intentId, onRemove: () => setIntentId('All') }] : []),
+            ...(vendor !== 'All' ? [{ key: 'vendor', label: 'Vendor', value: vendor, onRemove: () => setVendor('All') }] : []),
+            ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
+            ...(qname ? [{ key: 'name', label: 'Name', value: qname, onRemove: () => setQname('') }] : []),
+            ...(qcode ? [{ key: 'code', label: 'Code', value: qcode, onRemove: () => setQcode('') }] : []),
           ],
           onResetFilters: clear,
           onRefresh: () => pushToast('info', 'Workflow list refreshed.'),

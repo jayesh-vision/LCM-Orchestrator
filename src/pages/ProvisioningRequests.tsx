@@ -10,7 +10,7 @@ import type { Category, Domain, Order, OrderIntent, OrderState, Vendor } from '@
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Button, CellMain, CellSub, Chip, DataTable, Drawer, Field,
-  FieldDropdown, FilterBanner, KV, Kebab, Modal, Mono, Note, SegmentedToggle, stampColumn, type Column,
+  FieldDropdown, KV, Kebab, Modal, Mono, Note, SegmentedToggle, stampColumn, type Column,
 } from '@/components/ui'
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
 import { VENDOR_LABEL } from '@/data/workflows'
@@ -256,32 +256,11 @@ export default function ProvisioningRequests() {
   return (
     <>
 
-      <div className="flex items-center justify-end vw-wrap gap-3">
+      <div className="flex items-center justify-start vw-wrap gap-3">
         <SegmentedToggle
           options={[{ value: 'listing', label: 'Listing', icon: ListChecks }, { value: 'insights', label: 'Insights', icon: BarChart3 }]}
           value={view} onChange={setView} />
       </div>
-
-      {/* Domain, Vendor and Category each have their own dropdown in the
-         toolbar below, which already shows the selected value — no need to
-         say it twice up here. */}
-      <FilterBanner
-        count={view === 'insights' ? scoped.length : filtered.length} noun="requests" onClear={clear}
-        filters={[
-          /* Insights breaks requests down BY status and ignores the status
-             filter entirely (see `scoped` above) — showing "Status: X" as an
-             active filter here would claim a narrowing that isn't actually
-             applied to what's on screen. */
-          ...(state !== 'All' && view !== 'insights' ? [{ key: 'state', label: 'Status', value: stateList.join(' or '), onRemove: () => setState('All') }] : []),
-          ...(history === 'on' ? [{ key: 'history', label: 'Scope', value: 'Including completed history', onRemove: () => setHistory('off') }] : []),
-          ...(intent !== 'All' ? [{ key: 'intent', label: 'Request type', value: intent, onRemove: () => setIntent('All') }] : []),
-          ...(customer ? [{ key: 'customer', label: 'Customer', value: customer, onRemove: () => setCustomer('') }] : []),
-          ...(qname ? [{ key: 'name', label: 'Name', value: qname, onRemove: () => setQname('') }] : []),
-          ...(qcode ? [{ key: 'code', label: 'Code', value: qcode, onRemove: () => setQcode('') }] : []),
-          ...(qmodel ? [{ key: 'model', label: 'Model', value: qmodel, onRemove: () => setQmodel('') }] : []),
-          ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
-        ]}
-      />
 
       {view === 'insights' ? (
         <ProvisioningInsights orders={scoped} runs={runs} onDrill={(p) => patch({ ...p, view: 'listing' })} />
@@ -329,6 +308,16 @@ export default function ProvisioningRequests() {
                 { key: 'name', label: 'Name', type: 'text', value: qname, onChange: setQname },
                 { key: 'code', label: 'Code', type: 'text', value: qcode, onChange: setQcode },
                 { key: 'model', label: 'Model', type: 'text', value: qmodel, onChange: setQmodel },
+              ],
+              activeFilterChips: [
+                ...(state !== 'All' ? [{ key: 'state', label: 'Status', value: stateList.join(' or '), onRemove: () => setState('All') }] : []),
+                ...(history === 'on' ? [{ key: 'history', label: 'Scope', value: 'Including completed history', onRemove: () => setHistory('off') }] : []),
+                ...(intent !== 'All' ? [{ key: 'intent', label: 'Request type', value: intent, onRemove: () => setIntent('All') }] : []),
+                ...(customer ? [{ key: 'customer', label: 'Customer', value: customer, onRemove: () => setCustomer('') }] : []),
+                ...(qname ? [{ key: 'name', label: 'Name', value: qname, onRemove: () => setQname('') }] : []),
+                ...(qcode ? [{ key: 'code', label: 'Code', value: qcode, onRemove: () => setQcode('') }] : []),
+                ...(qmodel ? [{ key: 'model', label: 'Model', value: qmodel, onRemove: () => setQmodel('') }] : []),
+                ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
               ],
               onResetFilters: clear,
               onRefresh: () => pushToast('info', 'Request list refreshed.'),

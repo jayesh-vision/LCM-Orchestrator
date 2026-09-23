@@ -5,7 +5,7 @@ import { useStore } from '@/store/useStore'
 import type { PoolKind, ResourcePool } from '@/types'
 import {
   Badge, Button, Card, CardBody, CardHead, CellMain, CellSub, Chip, DataTable,
-  Drawer, FilterBanner, Mono, Note, Stat, type Column,
+  Drawer, Mono, Note, Stat, type Column,
 } from '@/components/ui'
 import { BarList, PoolGauge, SOFT } from '@/components/charts'
 
@@ -68,16 +68,6 @@ export default function ResourcePools() {
 
   return (
     <>
-
-      {/* Kind has its own quick-chip row in the toolbar below, which already
-         shows which one is selected — repeating it here would just be the
-         same state said twice. */}
-      <FilterBanner
-        count={filtered.length} noun="pools" onClear={clear}
-        filters={[
-          ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
-        ]}
-      />
 
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
         <Stat label="Pools" icon={Database} value={pools.length}
@@ -171,6 +161,9 @@ export default function ResourcePools() {
             { key: 'kind', label: 'Kind', value: kind, onChange: (v) => setKind(v as PoolKind | 'All'),
               options: KINDS.filter((k) => pools.some((p) => p.kind === k)).map((k) => ({ value: k, label: k, count: pools.filter((p) => p.kind === k).length })) },
             { key: 'q', label: 'Pool / Scope', type: 'text', value: q, onChange: setQ },
+          ],
+          activeFilterChips: [
+            ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
           ],
           onResetFilters: clear,
           onRefresh: () => pushToast('info', 'Pool utilisation refreshed.'),

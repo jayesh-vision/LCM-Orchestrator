@@ -252,7 +252,7 @@ export default function AppShell() {
         </header>
         )}
 
-        <main className="px-7 py-6 pb-12 flex flex-col gap-5 max-w-[1560px] w-full">
+        <main className="px-2 py-2 flex flex-col gap-2 max-w-[1560px] w-full">
           <Outlet />
         </main>
       </div>
