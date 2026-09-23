@@ -411,7 +411,7 @@ export default function ServiceInventory() {
 
       <div ref={resultsRef} />
       <DataTable
-        rows={ranked} total={services.length} columns={columns} pageSize={12}
+        rows={ranked} total={services.length} columns={columns}
         onRowClick={(r) => nav(`/inventory/${r.id}`)}
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Service, Customer' },

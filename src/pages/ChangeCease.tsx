@@ -142,7 +142,7 @@ export default function ChangeCease() {
       </div>
 
       <DataTable
-        rows={ranked} total={changes.length} columns={columns} pageSize={10}
+        rows={ranked} total={changes.length} columns={columns}
         onRowClick={(r) => nav(`/execution/${r.id}`)}
         empty="No change orders yet. Raise one from a service, or with the button above."
         toolbar={{

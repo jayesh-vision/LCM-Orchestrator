@@ -292,7 +292,6 @@ export default function ProvisioningRequests() {
             rows={ranked}
             total={orders.length}
             columns={columns}
-            pageSize={12}
             onRowClick={(r) => nav(`/requests/${r.id}`, fromList)}
             toolbar={{
               search: { value: q, onChange: setQ, placeholder: 'Name, Code, Model' },

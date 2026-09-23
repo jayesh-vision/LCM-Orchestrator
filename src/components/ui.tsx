@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Filter, Info, MoreVertical, RefreshCcw, Search, X } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronDown, Copy, Filter, Info, MoreVertical, RefreshCcw, Search, X } from 'lucide-react'
 /* format.ts only imports `Tone` back from here as a type, so this pair is a
    type-level cycle that erases at build time, not a runtime one. */
 import { dateTime, relTime } from '@/lib/format'
@@ -755,23 +755,27 @@ export interface GridToolbar {
 }
 
 export function DataTable<T extends { id: string }>({
-  rows, columns, pageSize = 12, onRowClick, empty = 'Nothing matches these filters.', minWidth = 1040, toolbar, total,
+  rows, columns, pageSize = 25, onRowClick, empty = 'Nothing matches these filters.', minWidth = 1040, maxHeight = 560, toolbar, total,
 }: {
   rows: T[]
   columns: Column<T>[]
+  /** Rows revealed per scroll-triggered load. */
   pageSize?: number
   onRowClick?: (row: T) => void
   empty?: string
   minWidth?: number
+  /** Height of the scrollable grid body; scrolling near the bottom loads the next `pageSize` rows. */
+  maxHeight?: number
   /** Rendering the toolbar also wraps the table in its own .nst-table-card. */
   toolbar?: GridToolbar
   /** Unfiltered total, for "Showing 12 of 138". Defaults to rows.length. */
   total?: number
 }) {
-  const [page, setPage] = useState(0)
+  const [visibleCount, setVisibleCount] = useState(pageSize)
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [spin, setSpin] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const activeFilters = (toolbar?.filters ?? []).filter((f) => f.value && f.value !== 'All').length
 
   const sorted = useMemo(() => {
@@ -785,10 +789,23 @@ export function DataTable<T extends { id: string }>({
     })
   }, [rows, sort, columns])
 
-  const pages = Math.max(1, Math.ceil(sorted.length / pageSize))
-  const safePage = Math.min(page, pages - 1)
-  const view = sorted.slice(safePage * pageSize, safePage * pageSize + pageSize)
-  useEffect(() => { setPage(0) }, [rows.length])
+  const view = sorted.slice(0, visibleCount)
+  const hasMore = visibleCount < sorted.length
+  useEffect(() => {
+    setVisibleCount(pageSize)
+    scrollRef.current?.scrollTo({ top: 0 })
+  }, [rows.length, pageSize])
+
+  /* Grid-scroll pagination: reveal the next `pageSize` rows once the user
+     scrolls near the bottom of the grid's own viewport, instead of paging
+     through click-through Prev/Next controls. */
+  const onGridScroll = () => {
+    const el = scrollRef.current
+    if (!el || !hasMore) return
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) {
+      setVisibleCount((c) => Math.min(sorted.length, c + pageSize))
+    }
+  }
 
   const tableEl = (
     <>
@@ -796,8 +813,8 @@ export function DataTable<T extends { id: string }>({
           row/column semantics for screen readers, which the grid-of-divs
           variant does not. Border and radius are dropped because the table sits
           inside a .vw-card-section that already provides them. */}
-      <div className="overflow-x-auto">
-        <table className="nst-table border-0 rounded-none [&>thead>tr>th]:bg-plane" style={{ minWidth }}>
+      <div ref={scrollRef} onScroll={onGridScroll} className="overflow-auto" style={{ maxHeight }}>
+        <table className="nst-table border-0 rounded-none [&>thead>tr>th]:bg-plane [&>thead>tr>th]:sticky [&>thead>tr>th]:top-0 [&>thead>tr>th]:z-10" style={{ minWidth }}>
           <thead>
             <tr>
               {columns.map((c) => (
@@ -833,14 +850,10 @@ export function DataTable<T extends { id: string }>({
           </tbody>
         </table>
       </div>
-      {pages > 1 && (
+      {hasMore && (
         <CardFoot>
-          <span>Showing {safePage * pageSize + 1}–{Math.min(sorted.length, (safePage + 1) * pageSize)} of {sorted.length.toLocaleString()}</span>
-          <span className="flex items-center gap-2">
-            <Button size="sm" disabled={safePage === 0} onClick={() => setPage(safePage - 1)}><ChevronLeft size={14} />Previous</Button>
-            <span className="text-ink-3 tnum">Page {safePage + 1} of {pages}</span>
-            <Button size="sm" disabled={safePage >= pages - 1} onClick={() => setPage(safePage + 1)}>Next<ChevronRight size={14} /></Button>
-          </span>
+          <span>Showing {view.length.toLocaleString()} of {sorted.length.toLocaleString()}</span>
+          <span className="text-ink-3">Scroll for more</span>
         </CardFoot>
       )}
     </>

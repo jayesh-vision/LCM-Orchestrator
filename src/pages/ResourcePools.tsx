@@ -160,7 +160,7 @@ export default function ResourcePools() {
       </div>
 
       <DataTable
-        rows={filtered} total={pools.length} columns={columns} pageSize={10} minWidth={1020}
+        rows={filtered} total={pools.length} columns={columns} minWidth={1020}
         onRowClick={(r) => openPool(r)}
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Pool, Scope' },

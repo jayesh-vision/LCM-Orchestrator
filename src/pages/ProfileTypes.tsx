@@ -118,7 +118,7 @@ export default function ProfileTypes() {
       </div>
 
       <DataTable
-        rows={filtered} total={profileTypes.length} columns={columns} pageSize={12} minWidth={900}
+        rows={filtered} total={profileTypes.length} columns={columns} minWidth={900}
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Category, Type, Subtype' },
           /* Domain is the one quick-chip facet kept inline; category and

@@ -298,7 +298,7 @@ export default function Workflows() {
 
       <div ref={resultsRef} />
       <DataTable
-        rows={filtered} total={workflows.length} columns={columns} pageSize={12}
+        rows={filtered} total={workflows.length} columns={columns}
         onRowClick={(r) => nav(`/workflows/${r.id}`)}
         minWidth={1180}
         toolbar={{

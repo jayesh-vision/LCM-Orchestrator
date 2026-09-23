@@ -217,7 +217,7 @@ export default function Reports() {
 
       <div ref={resultsRef}>
       <DataTable
-        rows={filtered} total={reports.length} columns={columns} pageSize={10} minWidth={1220}
+        rows={filtered} total={reports.length} columns={columns} minWidth={1220}
         onRowClick={(r) => setOpen(r)}
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Report, Question' },
