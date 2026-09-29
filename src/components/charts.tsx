@@ -781,6 +781,7 @@ export function StackedTrendChart({ labels, series, overlay, height = 220, ariaL
           )}
         </div>
       )}
+      
       </div>
       <div className="vw-flex vw-items-center vw-gap-lg vw-wrap mt-2">
         {series.map((s) => (

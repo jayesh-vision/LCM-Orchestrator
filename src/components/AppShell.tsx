@@ -4,7 +4,7 @@ import {
   AlertTriangle, Bell, Boxes, CheckCircle2, CheckSquare, Database, FileBarChart,
   Info, LayoutGrid, ListChecks, PanelLeftClose, PanelLeftOpen, RefreshCcw, Search, Server, Target, Workflow as WorkflowIcon, X,
 } from 'lucide-react'
-import { useStore } from '@/store/useStore'
+import { useStore } from '@/store/useStore' 
 import { Badge, Button } from './ui'
 
 interface NavItem { to: string; label: string; icon: typeof LayoutGrid; count?: () => string }
