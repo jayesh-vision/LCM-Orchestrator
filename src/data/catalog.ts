@@ -303,7 +303,11 @@ const l3Acceptance: AcceptanceCriterion[] = [
   { id: 'AC-4', claim: 'Any spoke reaches the hub, CE to CE', layer: 'service', expected: 'loss = 0/20 from each spoke' },
 ]
 
-export const INTENTS: ServiceIntent[] = [
+/* Legacy seed shape — every one of these predates the Draft/Active/Retired
+   lifecycle field and the family/version-history model added to
+   ServiceIntent. Migrated below rather than edited in place, the way an
+   ALTER TABLE + backfill would run against real rows. */
+const INTENTS_LEGACY: Omit<ServiceIntent, 'state' | 'familyId'>[] = [
   {
     id: 'INT-IBW-ACCESS', name: 'IBW Internet Access', category: 'IBW', type: 'Internet Access',
     topology: 'Single-ended', endpointArity: 'exactly 1', params: ibwParams,
@@ -387,6 +391,14 @@ export const INTENTS: ServiceIntent[] = [
   },
 ]
 
+/** Migration: every legacy intent is already carrying live traffic
+ *  (`liveServices > 0`), so it migrates straight to Active rather than
+ *  starting back at Draft — Draft is reserved for intents newly authored
+ *  through the Service Intents screen. Each becomes the sole known
+ *  version-row of its own family — we don't fabricate history we don't
+ *  have, even where the legacy `version` number implies earlier ones existed. */
+export const INTENTS: ServiceIntent[] = INTENTS_LEGACY.map((i) => ({ ...i, state: 'Active' as const, familyId: i.id }))
+
 export const intentById = (id: string) => INTENTS.find((i) => i.id === id)!
 
 /* ---------- profile type master ---------- */
@@ -455,6 +467,17 @@ export const PROFILE_TYPES: ProfileType[] = PROFILE_ROWS.map(([category, type, s
   createdAt: new Date(2025, 8 + (i % 10), 3 + (i % 22)).toISOString(),
   usedByWorkflows: 0, // filled once workflows are built
 }))
+
+/** Migration: link every legacy intent to its Profile Type row now that the
+ *  master hierarchy exists (`INTENTS` predates `SERVICE_INTENT.PROFILE_TYPE_ID_FK`)
+ *  — the first Profile Type matching the intent's own category/type, same
+ *  fallback the Workflow Builder already used before this link existed. */
+INTENTS.forEach((i) => {
+  if (!i.profileTypeId) {
+    const pt = PROFILE_TYPES.find((p) => p.category === i.category && p.type === i.type)
+    if (pt) i.profileTypeId = pt.id
+  }
+})
 
 export const VENDORS: Vendor[] = [...new Set(DEVICE_MODELS.map((d) => d.vendor))]
 export const CATEGORIES: Category[] = [

@@ -1,17 +1,105 @@
 import { create } from 'zustand'
 import type {
-  Notification, Order, OrderIntent, OrderParamValue, OrderState,
-  ProfileType, ReportDef, ResourcePool, Run, RunTask, Service, Workflow,
+  IntentParam, Notification, Order, OrderIntent, OrderParamValue, OrderState,
+  ProfileType, ReportDef, ResourcePool, Run, RunTask, Service, ServiceIntent, Workflow,
 } from '@/types'
-import { INTENTS, PROFILE_TYPES, intentById, pad } from '@/data/catalog'
+import { INTENTS, PROFILE_TYPES, pad } from '@/data/catalog'
 import { buildWorkflows } from '@/data/workflows'
 import { buildServices, serviceFromOrder } from '@/data/services'
 import { bindEndpoints, buildHistoricalOrders, buildOrders, buildRuns, claimFor, hasRetainedLog, linkProvenance, orderedTasks, WAITING } from '@/data/orders'
-import { renderCommand } from '@/data/templates'
+import { renderCommand, workflowParams } from '@/data/templates'
 import { allocateForService, buildNotifications, buildPools, buildReports, releaseForService } from '@/data/misc'
 
+/** Migration: guarantee every workflow maps to a real, currently Active
+ *  Service Intent — `buildWorkflows()`'s intentId assignment already covers
+ *  every category and every legacy intent migrates to Active (see
+ *  `catalog.ts`), so this is a no-op against today's seed. It exists as a
+ *  permanent safety net rather than an assumption: if a workflow's intentId
+ *  is missing, dangling, or (the real, ongoing case) points at a version
+ *  that's since been retired in favour of a newer one in the same family,
+ *  it's remapped to that family's current Active version here — the same
+ *  repair `setIntentState` performs live when an activation retires a
+ *  sibling, just also run once up front so nothing already-broken slips
+ *  through. `explicitParams` is pruned to whatever the replacement's own
+ *  parameter catalog actually contains, so a manually-added parameter that
+ *  only existed on the old version doesn't linger as orphaned data. */
+function reconcileWorkflowIntents(allWorkflows: Workflow[], allIntents: ServiceIntent[]): Workflow[] {
+  let fixed = 0
+  const result = allWorkflows.map((w) => {
+    const current = allIntents.find((i) => i.id === w.intentId)
+    if (current?.state === 'Active') return w
+    const replacement = (current && allIntents.find((i) => i.familyId === current.familyId && i.state === 'Active'))
+      ?? allIntents.find((i) => i.state === 'Active' && i.category === w.category && i.type === w.type)
+      ?? allIntents.find((i) => i.state === 'Active' && i.category === w.category)
+    if (!replacement || replacement.id === w.intentId) return w
+    fixed += 1
+    const validNames = new Set(replacement.params.map((p) => p.name))
+    return { ...w, intentId: replacement.id, explicitParams: (w.explicitParams ?? []).filter((n) => validNames.has(n)) }
+  })
+  if (fixed > 0) console.info(`[migration] Remapped ${fixed} workflow(s) to a valid Active Service Intent.`)
+  return result
+}
+
+/** Migration: run *after* `reconcileWorkflowIntents`, so every workflow here
+ *  is already pointing at a real, Active Service Intent — but that intent's
+ *  formal parameter catalog may still be missing names the workflow's own
+ *  commands actually reference (the Workflow Builder's "· not in catalog"
+ *  tag). This registers those: for every Active intent with at least one
+ *  workflow using an uncatalogued parameter, one new version is published
+ *  carrying every such parameter its family's workflows need, all at once —
+ *  not one interactive fork per parameter, which would leave a pile of
+ *  Draft versions needing individual review for what is really a single
+ *  bulk data-correction pass. Published straight to Active, because this is
+ *  a system backfill of parameters already safely in production use, not a
+ *  human edit awaiting review — and every workflow pointing at the version
+ *  being replaced follows forward to the new one, same as a live activation. */
+function backfillIntentParamsFromLegacyWorkflows(
+  allIntents: ServiceIntent[], allWorkflows: Workflow[],
+): { intents: ServiceIntent[]; workflows: Workflow[] } {
+  let intents = allIntents
+  let workflows = allWorkflows
+  let intentsBackfilled = 0
+  let paramsRegistered = 0
+
+  const byIntentId = new Map<string, Workflow[]>()
+  allWorkflows.forEach((w) => byIntentId.set(w.intentId, [...(byIntentId.get(w.intentId) ?? []), w]))
+
+  byIntentId.forEach((wfs, intentId) => {
+    const current = intents.find((i) => i.id === intentId)
+    if (!current) return
+    const existingNames = new Set(current.params.map((p) => p.name))
+    const missing = new Set<string>()
+    wfs.forEach((w) => workflowParams(w.tasks).forEach((name) => { if (!existingNames.has(name)) missing.add(name) }))
+    if (missing.size === 0) return
+
+    const backfilled: IntentParam[] = [...missing].sort().map((name) => ({
+      name, type: 'string', required: true, modifiable: 'hitless',
+      constraint: 'Backfilled from legacy workflow commands during migration — review and refine.',
+    }))
+    intentsBackfilled += 1
+    paramsRegistered += backfilled.length
+
+    if (current.state === 'Draft') {
+      intents = intents.map((i) => (i.id === intentId ? { ...i, params: [...i.params, ...backfilled] } : i))
+      return
+    }
+
+    const nextVersion = Math.max(...intents.filter((i) => i.familyId === current.familyId).map((i) => i.version)) + 1
+    const newId = `${current.familyId}-v${nextVersion}`
+    intents = intents
+      .map((i) => (i.familyId === current.familyId && i.state === 'Active' ? { ...i, state: 'Retired' as const } : i))
+      .concat([{ ...current, id: newId, version: nextVersion, state: 'Active', params: [...current.params, ...backfilled] }])
+    workflows = workflows.map((w) => (w.intentId === intentId ? { ...w, intentId: newId } : w))
+  })
+
+  if (intentsBackfilled > 0) {
+    console.info(`[migration] Registered ${paramsRegistered} parameter(s) across ${intentsBackfilled} Service Intent(s) from legacy workflow usage.`)
+  }
+  return { intents, workflows }
+}
+
 /* Seed once, at module load, so the dataset is stable across navigation. */
-const workflows = buildWorkflows()
+const { intents: seedIntents, workflows } = backfillIntentParamsFromLegacyWorkflows(INTENTS, reconcileWorkflowIntents(buildWorkflows(), INTENTS))
 const services = buildServices()
 const liveOrders = buildOrders(services, workflows)
 const historicalOrders = buildHistoricalOrders(services, workflows)
@@ -117,6 +205,23 @@ interface State {
   setWorkflowState: (id: string, state: Workflow['state']) => void
   /** Create or replace a workflow from the builder. Returns the stored id. */
   saveWorkflow: (wf: Workflow, note?: string) => string
+
+  /** Create a Service Intent bound to a Profile Type row. Returns the new intent id. */
+  addIntent: (input: { profileTypeId: string; name: string; topology: ServiceIntent['topology']; endpointArity: string }) => string
+  /* No `updateIntent` — a Service Intent's basic metadata (name, topology,
+     endpoint arity, profile type, category, type) is fixed forever once
+     created. The parameter catalog is the only thing that can change, and
+     changing it either edits a Draft in place or forks a new Draft version —
+     never overwrites a published row. Each of these four returns the id of
+     the row the change actually landed on (itself, or a newly forked one),
+     so the UI can follow the edit to wherever it went. */
+  addIntentParam: (intentId: string, param: IntentParam) => string
+  updateIntentParam: (intentId: string, name: string, patch: Partial<IntentParam>) => string
+  removeIntentParam: (intentId: string, name: string) => string
+  reorderIntentParam: (intentId: string, name: string, direction: -1 | 1) => string
+  /** Only a never-activated Draft can be deleted. */
+  deleteIntent: (id: string) => void
+  setIntentState: (id: string, state: ServiceIntent['state']) => void
 }
 
 let toastSeq = 0
@@ -192,10 +297,35 @@ function applyToInventory(services: Service[], pools: ResourcePool[], order: Ord
   return null
 }
 
+/** The one rule every parameter-catalog change follows: a Draft version is
+ *  still being authored, so it's edited in place; anything else (Active or
+ *  Retired) is frozen, so the change instead forks a new Draft version
+ *  carrying the same familyId, leaving the published row untouched. Returns
+ *  the updated array plus the id of whichever row the change landed on, so
+ *  callers can report back — or retarget a UI — to wherever the edit went. */
+function applyParamChange(
+  intents: ServiceIntent[], intentId: string, transform: (params: IntentParam[]) => IntentParam[],
+): { intents: ServiceIntent[]; id: string } {
+  const target = intents.find((i) => i.id === intentId)
+  if (!target) return { intents, id: intentId }
+  if (target.state === 'Draft') {
+    return {
+      intents: intents.map((i) => (i.id === intentId ? { ...i, params: transform(i.params) } : i)),
+      id: intentId,
+    }
+  }
+  const nextVersion = Math.max(...intents.filter((i) => i.familyId === target.familyId).map((i) => i.version)) + 1
+  const forked: ServiceIntent = {
+    ...target, id: `${target.familyId}-v${nextVersion}`, version: nextVersion, state: 'Draft',
+    liveServices: 0, params: transform(target.params),
+  }
+  return { intents: [forked, ...intents], id: forked.id }
+}
+
 export const useStore = create<State>((set, get) => ({
   orders, services, workflows, runs, pools,
   profileTypes: PROFILE_TYPES,
-  intents: INTENTS,
+  intents: seedIntents,
   reports,
   notifications: buildNotifications(),
   toasts: [],
@@ -225,7 +355,9 @@ export const useStore = create<State>((set, get) => ({
     const order: Order = {
       id: `ORD-2026-${pad(4500 + seq, 6)}`,
       code: `NS-${pad(400 + seq, 6)}`,
-      name: draft.name || intentById(draft.intentId).name,
+      /* Live store lookup, not the static `intentById` import — `draft.intentId`
+         can name a version a migration or a live edit forked at runtime. */
+      name: draft.name || get().intents.find((i) => i.id === draft.intentId)!.name,
       intent: 'Create',
       intentId: draft.intentId,
       category: draft.category as Order['category'],
@@ -621,5 +753,110 @@ export const useStore = create<State>((set, get) => ({
     set((s) => ({ workflows: exists ? s.workflows.map((w) => (w.id === id ? stored : w)) : [stored, ...s.workflows] }))
     get().pushToast('good', note ?? `${id} saved${stored.state === 'Draft' ? ' as draft' : ''}.`)
     return id
+  },
+
+  addIntent: (input) => {
+    const pt = get().profileTypes.find((p) => p.id === input.profileTypeId)
+    const category = pt?.category ?? 'L2VPN'
+    const catToken = category.replace(/\s+/g, '').toUpperCase().slice(0, 6)
+    const nameToken = input.name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 20) || 'INTENT'
+    let id = `INT-${catToken}-${nameToken}`
+    let n = 2
+    while (get().intents.some((i) => i.id === id)) { id = `INT-${catToken}-${nameToken}-${n}`; n += 1 }
+    /* Starts Draft, not Active — a freshly authored intent isn't ready to be
+       picked in a workflow until someone explicitly activates it. Its own
+       id is the root of a new family — every later version forks from here. */
+    const intent: ServiceIntent = {
+      id, familyId: id, name: input.name.trim(), profileTypeId: input.profileTypeId,
+      category, type: pt?.type ?? '', topology: input.topology, endpointArity: input.endpointArity.trim() || 'exactly 2',
+      params: [], pools: [], acceptance: [], version: 1, state: 'Draft', liveServices: 0,
+    }
+    set((s) => ({ intents: [intent, ...s.intents] }))
+    get().pushToast('good', `Service Intent ${id} created.`)
+    return id
+  },
+
+  setIntentState: (id, state) => {
+    const familyId = get().intents.find((i) => i.id === id)?.familyId
+    let retiredSiblingId: string | null = null
+    set((s) => ({
+      intents: s.intents.map((i) => {
+        if (i.id === id) return { ...i, state }
+        /* Activating a version retires whichever sibling in its family was
+           Active — at most one current Active version per family, which is
+           what lets every picker elsewhere key off `state === 'Active'`
+           and only ever see one row per intent. */
+        if (state === 'Active' && i.familyId === familyId && i.state === 'Active') {
+          retiredSiblingId = i.id
+          return { ...i, state: 'Retired' }
+        }
+        return i
+      }),
+    }))
+    /* Migration, live: every workflow still pinned to the version that just
+       retired follows forward to the one that replaced it, so "mapped to a
+       valid Service Intent" stays true for old workflows too, not just new
+       ones — and any explicitly-added parameter that only existed on the
+       old version is dropped rather than left dangling against the new one. */
+    let remapped = 0
+    if (retiredSiblingId) {
+      const replacement = get().intents.find((i) => i.id === id)!
+      const validNames = new Set(replacement.params.map((p) => p.name))
+      set((s) => ({
+        workflows: s.workflows.map((w) => {
+          if (w.intentId !== retiredSiblingId) return w
+          remapped += 1
+          return { ...w, intentId: id, explicitParams: (w.explicitParams ?? []).filter((n) => validNames.has(n)) }
+        }),
+      }))
+    }
+    get().pushToast('good', remapped > 0
+      ? `Service Intent ${id} moved to ${state} — ${remapped} workflow(s) remapped from the retired version.`
+      : `Service Intent ${id} moved to ${state}.`)
+  },
+
+  addIntentParam: (intentId, param) => {
+    if (get().intents.find((i) => i.id === intentId)?.params.some((p) => p.name === param.name)) return intentId
+    const result = applyParamChange(get().intents, intentId, (params) => [...params, param])
+    set({ intents: result.intents })
+    get().pushToast('good', result.id === intentId ? `Parameter ${param.name} added.` : `Parameter ${param.name} added in new draft ${result.id}.`)
+    return result.id
+  },
+
+  updateIntentParam: (intentId, name, patch) => {
+    const result = applyParamChange(get().intents, intentId, (params) => params.map((p) => (p.name === name ? { ...p, ...patch } : p)))
+    set({ intents: result.intents })
+    get().pushToast('good', result.id === intentId ? `Parameter ${name} updated.` : `Parameter ${name} updated in new draft ${result.id}.`)
+    return result.id
+  },
+
+  removeIntentParam: (intentId, name) => {
+    const result = applyParamChange(get().intents, intentId, (params) => params.filter((p) => p.name !== name))
+    set({ intents: result.intents })
+    get().pushToast('good', result.id === intentId ? `Parameter ${name} removed.` : `Parameter ${name} removed in new draft ${result.id}.`)
+    return result.id
+  },
+
+  reorderIntentParam: (intentId, name, direction) => {
+    const result = applyParamChange(get().intents, intentId, (params) => {
+      const i = params.findIndex((p) => p.name === name)
+      const j = i + direction
+      if (i < 0 || j < 0 || j >= params.length) return params
+      const arr = [...params]
+      ;[arr[i], arr[j]] = [arr[j], arr[i]]
+      return arr
+    })
+    set({ intents: result.intents })
+    return result.id
+  },
+
+  deleteIntent: (id) => {
+    const target = get().intents.find((i) => i.id === id)
+    if (!target || target.state !== 'Draft') {
+      get().pushToast('crit', 'Only a Draft version can be deleted.')
+      return
+    }
+    set((s) => ({ intents: s.intents.filter((i) => i.id !== id) }))
+    get().pushToast('good', `${id} deleted.`)
   },
 }))

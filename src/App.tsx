@@ -9,6 +9,7 @@ import ServiceDetail from '@/pages/ServiceDetail'
 import ChangeCease from '@/pages/ChangeCease'
 import Workflows from '@/pages/Workflows'
 import WorkflowBuilder from '@/pages/WorkflowBuilder'
+import ServiceIntents from '@/pages/ServiceIntents'
 import ProfileTypes from '@/pages/ProfileTypes'
 import ResourcePools from '@/pages/ResourcePools'
 import Evidence from '@/pages/Evidence'
@@ -42,6 +43,7 @@ export default function App() {
         <Route path="workflows" element={<Workflows />} />
         <Route path="workflows/new" element={<WorkflowBuilder />} />
         <Route path="workflows/:id" element={<WorkflowBuilder />} />
+        <Route path="service-intents" element={<ServiceIntents />} />
         <Route path="profile-types" element={<ProfileTypes />} />
         <Route path="pools" element={<ResourcePools />} />
         <Route path="evidence" element={<Evidence />} />

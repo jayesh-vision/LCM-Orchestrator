@@ -170,9 +170,23 @@ export interface AcceptanceCriterion {
   expected: string
 }
 
+/** Same three-state lifecycle as a Workflow: a Draft intent is still being
+ *  authored and can't be selected anywhere yet; Retired stops new selection
+ *  without touching whatever already points to it. */
+export type ServiceIntentState = 'Draft' | 'Active' | 'Retired'
+
 export interface ServiceIntent {
-  id: string                 // INT-L2-P2P
+  id: string                 // INT-L2-P2P, or INT-L2-P2P-v2 for a later version
+  /** The stable lineage id shared by every version-row of this intent — `id`
+   *  itself for a version 1. Basic metadata (name/topology/endpointArity/
+   *  profileType/category/type) is fixed forever once a row is created;
+   *  editing the parameter catalog on anything but a Draft row forks a new
+   *  row carrying the same familyId rather than mutating this one, so every
+   *  past version stays intact and viewable. */
+  familyId: string
   name: string
+  /** The exact Profile Type row this intent was built from, when authored via the Service Intents screen. */
+  profileTypeId?: string
   category: Category
   type: string               // Transparent / Railwire / Hub & Spoke / BGP
   topology: 'Single-ended' | 'Two-ended' | 'Star' | 'Full mesh'
@@ -180,7 +194,11 @@ export interface ServiceIntent {
   params: IntentParam[]
   pools: PoolKind[]
   acceptance: AcceptanceCriterion[]
+  /** The version number within this row's family. The name is deliberately
+   *  not unique across versions — `id` is the stable per-version identity,
+   *  `familyId` the stable lineage identity. */
   version: number
+  state: ServiceIntentState
   liveServices: number
 }
 
@@ -242,6 +260,8 @@ export interface Workflow {
   models: string[]            // every model this template may run on
   osRange: string
   intentId: string
+  /** Intent parameters explicitly included even though no command references them yet. */
+  explicitParams?: string[]
   /** Which end of the service this template configures ("Location" on the platform). Absent = either end. */
   endpointRole?: EndpointRole
   state: WorkflowState

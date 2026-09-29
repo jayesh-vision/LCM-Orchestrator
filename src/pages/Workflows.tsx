@@ -150,7 +150,6 @@ export default function Workflows() {
     .filter((v) => vendorApplicable(i.category, v))
     .map((v) => `${i.id}|${v}`)), [intents]) // eslint-disable-line react-hooks/exhaustive-deps
   const built = applicablePairs.filter((k) => (coverage.get(k)?.built ?? 0) > 0).length
-  const draftCombos = applicablePairs.filter((k) => (coverage.get(k)?.built ?? 0) === 0 && (coverage.get(k)?.draft ?? 0) > 0).length
   const combinations = applicablePairs.length
   const gaps = combinations - built
   const coveragePct = combinations > 0 ? Math.round((built / combinations) * 100) : 100
@@ -170,8 +169,23 @@ export default function Workflows() {
     }
     return coverageGroups[0] ?? []
   }, [coverageGroups, cat, coverageDomain])
-  const coverageIntents = intents.filter((i) => coverageGroup.includes(i.category))
+  /* A Service Intent nothing maps to has nothing to show in an
+     intent-by-vendor coverage grid — every cell in its row would read as a
+     gap for demand that was never actually there, which isn't a gap at all,
+     it's an intent nobody has built against yet. Excluded from the matrix's
+     own rows and from the Built/Draft/Gap metrics in its header — the
+     page-level "Coverage" stat above stays as it was, since that one is
+     explicitly about coverage across every intent, used or not. */
+  const usedIntentIds = useMemo(() => new Set(workflows.map((w) => w.intentId)), [workflows])
+  const coverageIntents = intents.filter((i) => coverageGroup.includes(i.category) && usedIntentIds.has(i.id))
   const coverageCols = coverageGroup[0] ? CATEGORY_COVER_COLS[coverageGroup[0]] : []
+  const widgetPairs = useMemo(() => coverageIntents.flatMap((i) => coverageCols
+    .map((c) => c.key as Vendor)
+    .filter((v) => vendorApplicable(i.category, v))
+    .map((v) => `${i.id}|${v}`)), [coverageIntents, coverageCols]) // eslint-disable-line react-hooks/exhaustive-deps
+  const widgetBuilt = widgetPairs.filter((k) => (coverage.get(k)?.built ?? 0) > 0).length
+  const widgetDraftCombos = widgetPairs.filter((k) => (coverage.get(k)?.built ?? 0) === 0 && (coverage.get(k)?.draft ?? 0) > 0).length
+  const widgetGaps = widgetPairs.length - widgetBuilt
 
   const columns: Column<Workflow>[] = [
     {
@@ -236,9 +250,9 @@ export default function Workflows() {
         <CardHead title="Coverage — intent by vendor" sub={`${coverageDomain} domain${coverageGroups.length > 1 ? ` — ${coverageGroup.join(' / ')}` : ''} — where an active workflow exists, and how much of the installed base rides on it`}
           info="Each tile shows whether an Active workflow exists for that intent on that vendor: a green count = that many active workflows, amber Draft = authoring has started but nothing is approved, a plain dash (—) = nothing exists — click it to see what's missing. Every vendor column is marked with its device class (Router, Switch, CPE, Radio, Optical, VNF, ONT) — those are disjoint estates, so a column only ever lights up under the category it belongs to; outside that category the dash is fixed and not clickable, because that combination can never be built. Use the Domain chip above the grid to switch between Transport, Access, Radio and Fiber — a domain with more than one disjoint vendor estate (Radio's Microwave/RAN VNF) adds its own group switcher underneath. The bar on the right is the live services riding on that intent — the bigger the bar, the more revenue depends on that row's coverage. Click a tile to filter the list below, or the bar to open those services."
           right={<>
-            <Badge tone="good">Built {built}</Badge>
-            {draftCombos > 0 && <Badge tone="warn">Draft {draftCombos}</Badge>}
-            <Badge tone={gaps > 0 ? 'crit' : 'none'}>Gap {gaps}</Badge>
+            <Badge tone="good">Built {widgetBuilt}</Badge>
+            {widgetDraftCombos > 0 && <Badge tone="warn">Draft {widgetDraftCombos}</Badge>}
+            <Badge tone={widgetGaps > 0 ? 'crit' : 'none'}>Gap {widgetGaps}</Badge>
           </>} />
         <CardBody>
           <div className="flex items-center gap-1.5 mb-3.5">

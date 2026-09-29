@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle, Bell, Boxes, CheckCircle2, CheckSquare, Database, FileBarChart,
-  Info, LayoutGrid, ListChecks, PanelLeftClose, PanelLeftOpen, RefreshCcw, Search, Server, Workflow as WorkflowIcon, X,
+  Info, LayoutGrid, ListChecks, PanelLeftClose, PanelLeftOpen, RefreshCcw, Search, Server, Target, Workflow as WorkflowIcon, X,
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import { Badge, Button } from './ui'
@@ -26,6 +26,7 @@ const GROUPS: { label: string | null; items: NavItem[] }[] = [
     label: 'Configure',
     items: [
       { to: '/workflows', label: 'Workflows', icon: WorkflowIcon },
+      { to: '/service-intents', label: 'Service Intents', icon: Target },
       { to: '/profile-types', label: 'Profile Types', icon: Boxes },
       { to: '/pools', label: 'Resource Pools', icon: Database },
     ],
@@ -46,6 +47,7 @@ const CRUMBS: Record<string, string> = {
   '/inventory': 'Operate / Service Inventory',
   '/change': 'Operate / Change & Cease',
   '/workflows': 'Configure / Workflows',
+  '/service-intents': 'Configure / Service Intents',
   '/profile-types': 'Configure / Profile Types',
   '/pools': 'Configure / Resource Pools',
   '/evidence': 'Analyse / Evidence',
@@ -59,12 +61,14 @@ function useCounts() {
   const workflows = useStore((s) => s.workflows)
   const pools = useStore((s) => s.pools)
   const profileTypes = useStore((s) => s.profileTypes)
+  const intents = useStore((s) => s.intents)
   const reports = useStore((s) => s.reports)
   return {
     '/requests': orders.length,
     '/inventory': services.length,
     '/change': orders.filter((o) => o.intent !== 'Create').length,
     '/workflows': workflows.length,
+    '/service-intents': intents.length,
     '/profile-types': profileTypes.length,
     '/pools': pools.length,
     '/reports': reports.length,

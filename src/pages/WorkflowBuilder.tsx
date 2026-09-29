@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Check, CheckCircle2, ChevronRight, Eye, Pencil, Plus, RotateCcw,
@@ -6,12 +7,12 @@ import {
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type {
-  Category, EndpointRole, StageKind, ValidationRule, ValidationType, Vendor, Workflow, WorkflowStage, WorkflowTaskDef,
+  Category, EndpointRole, IntentParam, StageKind, ValidationRule, ValidationType, Vendor, Workflow, WorkflowStage, WorkflowTaskDef,
 } from '@/types'
 import { STAGE_KINDS, VALIDATION_TYPES } from '@/types'
-import { CATEGORIES, DEVICE_MODELS, PROFILE_TYPES, modelsForCategory } from '@/data/catalog'
+import { DEVICE_MODELS, modelsForCategory } from '@/data/catalog'
 import { VENDOR_LABEL } from '@/data/workflows'
-import { KNOWN_PARAMS, emptyStages, newRule, newStage, newTask, paramsIn, templateFor } from '@/data/templates'
+import { KNOWN_PARAMS, emptyStages, newRule, newStage, newTask, paramsIn, templateFor, workflowParams } from '@/data/templates'
 import { Badge, Button, Card, CardBody, Field, Mono, Note, Select, TextInput, Toggle } from '@/components/ui'
 import { CATEGORY_TONE, WORKFLOW_TONE, shortDate } from '@/lib/format'
 
@@ -32,21 +33,28 @@ const KIND_HINT: Record<StageKind, string> = {
 /** A brand-new draft, optionally seeded from an existing workflow (clone). */
 function blankWorkflow(from?: Workflow): Workflow {
   const stages = from ? from.stages.map((s) => ({ ...s })) : emptyStages()
-  const category: Category = from?.category ?? 'L2VPN'
-  const firstType = PROFILE_TYPES.find((p) => p.category === category)
+  const intentId = from?.intentId ?? 'INT-L2-P2P'
+  /* Module-level helper, not a component — reads the live store directly
+     rather than the static catalog import, since `intentId` may name a
+     version a data migration or a live edit forked at runtime (the static
+     `catalog.ts` `INTENTS` array only ever holds the original seed rows). */
+  const intent = useStore.getState().intents.find((i) => i.id === intentId)!
+  const category: Category = intent.category
+  const firstType = useStore.getState().profileTypes.find((p) => p.category === category && p.type === intent.type)
   return {
     id: 'new',
     name: from ? from.name : '',
     displayName: from ? from.displayName : '',
     category,
-    type: from?.type ?? firstType?.type ?? '',
+    type: from?.type ?? intent.type,
     subtype: from?.subtype ?? firstType?.subtype ?? '',
     vendor: from?.vendor ?? 'JUNIPER',
     kind: from?.kind ?? 'Router',
     model: from?.model ?? '',
     models: from ? [...from.models] : [],
     osRange: from?.osRange ?? '',
-    intentId: from?.intentId ?? 'INT-L2-P2P',
+    intentId,
+    explicitParams: from?.explicitParams ? [...from.explicitParams] : [],
     endpointRole: from?.endpointRole ?? 'Source',
     state: 'Draft',
     version: from ? from.version + 1 : 1,
@@ -90,8 +98,14 @@ export default function WorkflowBuilder() {
   const patch = (p: Partial<Workflow>) => { setWf((w) => ({ ...w, ...p })); setDirty(true) }
 
   /* -------- definition helpers -------- */
-  const types = useMemo(() => [...new Set(PROFILE_TYPES.filter((p) => p.category === wf.category).map((p) => p.type))], [wf.category])
-  const subtypes = useMemo(() => [...new Set(PROFILE_TYPES.filter((p) => p.category === wf.category && p.type === wf.type).map((p) => p.subtype))], [wf.category, wf.type])
+  const intents = useStore((s) => s.intents)
+  const profileTypes = useStore((s) => s.profileTypes)
+  /* Looked up from the live store, not the static `intentById` import — a
+     migration or a live edit can fork a version (e.g. `INT-L2-P2P-v2`) that
+     only ever exists in the store, never in the static seed `catalog.ts`
+     ships with. */
+  const intent = intents.find((i) => i.id === wf.intentId)!
+  const intentParams: IntentParam[] = intent.params
   /* A Switch has no BGP/VRF, so it can only ever carry L2VPN — the vendor
      list narrows to what the current category can actually run on. */
   const categoryVendors = [...new Set(modelsForCategory(wf.category).map((d) => d.vendor))]
@@ -104,24 +118,26 @@ export default function WorkflowBuilder() {
   const suggested = composeName(wf, siblings.length + 1)
   useEffect(() => { if (autoName) setWf((w) => (w.name === suggested ? w : { ...w, name: suggested })) }, [autoName, suggested])
 
-  const setCategory = (category: Category) => {
-    const t = [...new Set(PROFILE_TYPES.filter((p) => p.category === category).map((p) => p.type))]
-    const st = [...new Set(PROFILE_TYPES.filter((p) => p.category === category && p.type === t[0]).map((p) => p.subtype))]
+  /* Category/type/subtype stay on the Workflow record — templateFor(),
+     bindEndpoints() and the coverage matrix all still match on them — but
+     the author only ever picks the Service Intent; the rest is derived. */
+  const setIntent = (intentId: string) => {
+    const nextIntent = intents.find((i) => i.id === intentId)!
+    const category = nextIntent.category
+    const type = nextIntent.type
+    const linkedProfileType = nextIntent.profileTypeId ? profileTypes.find((p) => p.id === nextIntent.profileTypeId) : undefined
+    const subtype = linkedProfileType?.subtype ?? profileTypes.find((p) => p.category === category && p.type === type)?.subtype ?? ''
     /* Switching away from L2VPN strands a Switch-bound vendor with no valid
        device — fall back to the first Router vendor for the new category. */
     const validVendors = modelsForCategory(category).map((d) => d.vendor)
     const vendor = validVendors.includes(wf.vendor) ? wf.vendor : validVendors[0]
     const kind = DEVICE_MODELS.find((d) => d.vendor === vendor)?.kind ?? 'Router'
     patch({
-      category, type: t[0] ?? '', subtype: st[0] ?? '', vendor, kind,
+      intentId, category, type, subtype, vendor, kind,
       ...(vendor !== wf.vendor ? { models: [], model: '' } : {}),
       endpointRole: category === 'IBW' ? undefined : (wf.endpointRole ?? 'Source'),
-      intentId: category === 'IBW' ? 'INT-IBW-ACCESS' : category === 'L2VPN' ? 'INT-L2-P2P' : 'INT-L3-MESH',
+      explicitParams: [],
     })
-  }
-  const setType = (type: string) => {
-    const st = [...new Set(PROFILE_TYPES.filter((p) => p.category === wf.category && p.type === type).map((p) => p.subtype))]
-    patch({ type, subtype: st[0] ?? '' })
   }
   const setVendor = (vendor: Vendor) => {
     const kind = DEVICE_MODELS.find((d) => d.vendor === vendor)?.kind ?? 'Router'
@@ -202,16 +218,52 @@ export default function WorkflowBuilder() {
     wf.tasks.forEach((t) => paramsIn(t.setCommand + '\n' + (t.inverseCommand ?? '')).forEach((p) => m.set(p, (m.get(p) ?? 0) + 1)))
     return [...m.entries()].sort((a, b) => b[1] - a[1])
   }, [wf.tasks])
-  const known = KNOWN_PARAMS[wf.category]
+  /* The `$`-autocomplete only ever offers the selected intent's own params
+     (the formal, typed catalog); the red/brand highlight and the "unknown
+     parameter" check stay a union with the legacy per-category vocabulary
+     so pre-existing commands that predate Service Intents don't regress. */
+  const intentParamNames = intentParams.map((p) => p.name)
+  const known = [...new Set([...intentParamNames, ...(KNOWN_PARAMS[wf.category] ?? [])])]
   const unknown = params.filter(([p]) => !known.includes(p))
+  /* Every `${Parameter}` found in any task's set/rollback command or
+     validation rule, full stop — this is "Used automatically", and it's not
+     filtered down to whatever the mapped Service Intent's formal catalog
+     happens to contain. Legacy workflows in particular were built against
+     an older per-category vocabulary (`KNOWN_PARAMS`) that predates
+     Service Intents entirely and rarely matches an intent's own param
+     names one-for-one — a workflow's commands are still the ground truth
+     for what it actually uses, regardless of which vocabulary named it. */
+  const usedParamNames = useMemo(() => new Set(workflowParams(wf.tasks)), [wf.tasks])
+  const usedParams = useMemo(() => [...usedParamNames].sort(), [usedParamNames])
+  const explicitParams = wf.explicitParams ?? []
+  /* A name someone manually added can later show up in a command too — the
+     moment that happens it belongs to "Used automatically" only. Nothing is
+     deleted from `explicitParams` for this: it's still the record of what
+     was explicitly asked for, so if the command stops referencing it again
+     later it falls straight back into "Added manually" rather than being
+     silently forgotten. This filter is what actually keeps a param from
+     appearing in both lists at once, and from being deletable once a
+     command binds it. */
+  const visibleExplicitParams = explicitParams.filter((n) => !usedParamNames.has(n))
+  const distinctParamCount = new Set([...usedParamNames, ...explicitParams]).size
+  /* What's left to offer in the "Add" / "swap" selects — every intent
+     parameter not already fixed by a command and not already added. */
+  const availableParams = intentParams.filter((p) => !usedParamNames.has(p.name) && !explicitParams.includes(p.name))
+  const addExplicitParam = (name: string) => { if (name) patch({ explicitParams: [...explicitParams, name] }) }
+  const removeExplicitParam = (name: string) => patch({ explicitParams: explicitParams.filter((n) => n !== name) })
+  const swapExplicitParam = (oldName: string, newName: string) => {
+    if (!newName || newName === oldName) return
+    patch({ explicitParams: explicitParams.map((n) => (n === oldName ? newName : n)) })
+  }
 
   const checks = useMemo(() => {
     const out: { ok: boolean; text: string; where?: string }[] = []
-    out.push({ ok: !!wf.type && !!wf.subtype && wf.models.length > 0 && !!wf.displayName.trim(), text: 'Category, type, subtype, at least one model and a display name are set' })
+    out.push({ ok: !!wf.intentId && wf.models.length > 0 && !!wf.displayName.trim(), text: 'Service Intent, at least one model and a display name are set' })
+    out.push({ ok: intent.state === 'Active', text: intent.state === 'Active' ? 'Service Intent is Active' : `Service Intent is ${intent.state} — only an Active intent can be submitted` })
     out.push({ ok: !workflows.some((w) => w.id !== wf.id && w.name === wf.name && w.state !== 'Retired'), text: 'Name is unique among live workflows' })
     out.push({ ok: stages.some((s) => s.kind === 'Configuration'), text: 'At least one Configuration stage' })
-    stages.forEach((s) => { if (!tasksOf(s.id).length) out.push({ ok: false, text: 'Stage has no tasks', where: s.name }) })
-    if (stages.every((s) => tasksOf(s.id).length)) out.push({ ok: true, text: 'Every stage has at least one task' })
+    /* A stage doesn't need its own task — only the workflow as a whole does. */
+    out.push({ ok: wf.tasks.length > 0, text: 'At least one task somewhere in the workflow' })
     const nameless = wf.tasks.filter((t) => !t.name.trim() || !t.setCommand.trim())
     out.push({ ok: nameless.length === 0, text: nameless.length ? `${nameless.length} task(s) missing a name or set command` : 'Every task has a name and a set command', where: nameless[0]?.stage })
     const unruled = wf.tasks.filter((t) => !t.validations.length || t.validations.some((r) => r.type !== 'Not empty' && !r.text.trim()))
@@ -297,20 +349,14 @@ export default function WorkflowBuilder() {
         </CardBody>
 
         <div className="px-5 pb-5 border-t border-line-soft pt-4">
-          <div className="grid gap-x-4 gap-y-3 md:grid-cols-3 xl:grid-cols-6">
-            <Field label="Category" required>
-              <Select value={wf.category} disabled={readOnly} onChange={(e) => setCategory(e.target.value as Category)}>
-                {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-              </Select>
-            </Field>
-            <Field label="Type" required>
-              <Select value={wf.type} disabled={readOnly} onChange={(e) => setType(e.target.value)}>
-                {types.map((t) => <option key={t}>{t}</option>)}
-              </Select>
-            </Field>
-            <Field label="Catalog subtype" required>
-              <Select value={wf.subtype} disabled={readOnly} onChange={(e) => patch({ subtype: e.target.value })}>
-                {subtypes.map((t) => <option key={t}>{t}</option>)}
+          <div className="grid gap-x-4 gap-y-3 md:grid-cols-2 xl:grid-cols-4">
+            <Field label="Service Intent" required hint="The tasks, assertions and parameters this workflow can use all come from the intent. Only Active intents can be selected.">
+              <Select value={wf.intentId} disabled={readOnly} onChange={(e) => setIntent(e.target.value)}>
+                {/* Draft/Retired intents aren't offered for new selection — but the
+                    currently-bound one stays in the list even if it isn't Active,
+                    so an existing workflow never shows a blank/invalid selection. */}
+                {intents.filter((i) => i.state === 'Active' || i.id === wf.intentId)
+                  .map((i) => <option key={i.id} value={i.id}>{i.name} · {i.category}{i.state !== 'Active' ? ` · ${i.state}` : ''}</option>)}
               </Select>
             </Field>
             <Field label="Vendor" required hint={wf.category === 'L2VPN' ? undefined : 'Router vendors only — this category needs BGP/VRF, which a Switch does not run.'}>
@@ -328,11 +374,11 @@ export default function WorkflowBuilder() {
                     )}
                   </span>
                 ))}
-                {!readOnly && !wf.models.length && (
+                {!readOnly && (
                   <select aria-label="Add model" value="" onChange={(e) => addModel(e.target.value)}
                     className="bg-transparent text-[12.5px] text-ink-3 outline-none min-w-[90px] flex-1">
-                    <option value="">Select model</option>
-                    {vendorModels.map((d) => <option key={d.model} value={d.model}>{d.model} · {d.os}</option>)}
+                    <option value="">{wf.models.length ? 'Add another model' : 'Select model'}</option>
+                    {vendorModels.filter((d) => !wf.models.includes(d.model)).map((d) => <option key={d.model} value={d.model}>{d.model} · {d.os}</option>)}
                   </select>
                 )}
               </div>
@@ -349,6 +395,11 @@ export default function WorkflowBuilder() {
               </div>
             </Field>
           </div>
+          {intent.state !== 'Active' && (
+            <Note tone="warn" className="mt-3">
+              This workflow is bound to <Mono>{intent.id}</Mono>, which is {intent.state.toLowerCase()} — pick an Active Service Intent before submitting.
+            </Note>
+          )}
           <div className="grid gap-x-4 gap-y-3 md:grid-cols-2 mt-3">
             <Field label="Name" required hint={readOnly ? undefined : autoName ? 'Composed from the selections above in the platform convention. Switch it off to type your own.' : 'Typed manually.'}>
               <div className="flex gap-2">
@@ -463,7 +514,7 @@ export default function WorkflowBuilder() {
         {/* context pane */}
         {task && stage ? (
           <TaskEditor
-            task={task} stage={stage} known={known} readOnly={readOnly}
+            task={task} stage={stage} known={known} intentParams={intentParams} readOnly={readOnly}
             onChange={(p) => patchTask(task.id, p)}
             onDelete={() => removeTask(task.id)}
             onDone={() => setSelTask(null)}
@@ -545,20 +596,59 @@ export default function WorkflowBuilder() {
       <div className="grid gap-4 xl:grid-cols-2 items-start">
         <Card>
           <div className="px-5 pt-4 pb-3 border-b border-line-soft">
-            <div className="vw-card-title-sm">Parameters this workflow needs</div>
-            <div className="vw-card-description">Every <Mono>{'${Parameter}'}</Mono> found in a command. The request supplies these per device — the ones in grey are not something a request carries for {wf.category}.</div>
+            <div className="vw-card-title-sm">Distinct workflow parameters</div>
+            <div className="vw-card-description">
+              {distinctParamCount} distinct parameter{distinctParamCount === 1 ? '' : 's'} in this workflow — {intentParams.length} defined by <Mono>{intent.name}</Mono>.
+            </div>
           </div>
-          <CardBody>
-            {params.length ? (
-              <div className="flex gap-2 flex-wrap" aria-label="Parameters used">
-                {params.map(([p, n]) => (
-                  <span key={p} className={`vw-chip gap-1.5 ${known.includes(p) ? 'vw-chip--info' : 'vw-chip--neutral line-through'}`} title={known.includes(p) ? `Used by ${n} task(s)` : 'Not a parameter the request supplies'}>
-                    <Mono className="text-[12px]">{'${' + p + '}'}</Mono><span className="text-[11px] opacity-70 tnum">{n}</span>
-                  </span>
-                ))}
-              </div>
-            ) : <p className="text-[13px] text-ink-3 m-0">No parameters yet — write a command with a <Mono>{'${Vlan-ID}'}</Mono>-style placeholder and it appears here.</p>}
-            <div className="mt-3 text-[12px] text-ink-3">Available for {wf.category}: {known.map((k) => <Mono key={k} className="text-[11.5px] mr-1.5">{'${' + k + '}'}</Mono>)}</div>
+          <CardBody className="flex flex-col gap-4">
+            <div>
+              <div className="nst-input-label mb-1.5">Used automatically</div>
+              {usedParams.length ? (
+                <div className="flex gap-1.5 flex-wrap" aria-label="Parameters used automatically">
+                  {usedParams.map((name) => {
+                    const inCatalog = intentParamNames.includes(name)
+                    return (
+                      <span key={name} className={`vw-chip gap-1 ${inCatalog ? 'vw-chip--info' : 'vw-chip--neutral'}`}
+                        title={inCatalog ? 'Referenced in a command — remove it from the command to drop it' : `Referenced in a command, but not part of ${intent.name}'s parameter catalog`}>
+                        <Mono className="text-[12px]">{'${' + name + '}'}</Mono>
+                        {!inCatalog && <span className="text-[10px] opacity-70">· not in catalog</span>}
+                      </span>
+                    )
+                  })}
+                </div>
+              ) : <p className="text-[13px] text-ink-3 m-0">No command references a parameter yet.</p>}
+            </div>
+
+            <div>
+              <div className="nst-input-label mb-1.5">Added manually</div>
+              {visibleExplicitParams.length > 0 && (
+                <div className="flex flex-col gap-1.5 mb-2" aria-label="Manually added parameters">
+                  {visibleExplicitParams.map((name) => (
+                    <div key={name} className="flex items-center gap-1.5">
+                      <select aria-label={`Parameter ${name}`} value={name} disabled={readOnly}
+                        onChange={(e) => swapExplicitParam(name, e.target.value)}
+                        className="nst-input !h-[30px] text-[12.5px] font-mono flex-1 max-w-[260px]">
+                        <option value={name}>{name}</option>
+                        {availableParams.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                      </select>
+                      {!readOnly && (
+                        <button type="button" aria-label={`Remove ${name}`} onClick={() => removeExplicitParam(name)} className="nst-icon-btn w-7 h-7 text-crit-500"><X size={13} /></button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!readOnly && (
+                <select aria-label="Add parameter" value="" onChange={(e) => addExplicitParam(e.target.value)}
+                  disabled={!availableParams.length}
+                  className="nst-input !h-[30px] text-[12.5px] text-ink-3 max-w-[260px]">
+                  <option value="">{availableParams.length ? '+ Add parameter' : 'All parameters are already part of this workflow'}</option>
+                  {availableParams.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                </select>
+              )}
+              {!visibleExplicitParams.length && readOnly && <p className="text-[13px] text-ink-3 m-0">None added.</p>}
+            </div>
           </CardBody>
         </Card>
         <Card>
@@ -588,8 +678,8 @@ export default function WorkflowBuilder() {
    groups: identity, set command + rules, rollback, behaviour.
    ------------------------------------------------------------------ */
 
-function TaskEditor({ task, stage, known, readOnly, onChange, onDelete, onDone }: {
-  task: WorkflowTaskDef; stage: WorkflowStage; known: string[]; readOnly?: boolean
+function TaskEditor({ task, stage, known, intentParams, readOnly, onChange, onDelete, onDone }: {
+  task: WorkflowTaskDef; stage: WorkflowStage; known: string[]; intentParams: IntentParam[]; readOnly?: boolean
   onChange: (p: Partial<WorkflowTaskDef>) => void; onDelete: () => void; onDone: () => void
 }) {
   const used = paramsIn(task.setCommand)
@@ -624,7 +714,7 @@ function TaskEditor({ task, stage, known, readOnly, onChange, onDelete, onDone }
             <span className="nst-input-label">Set command <span className="text-crit-500">*</span></span>
             <span className="text-[11.5px] text-ink-3">Sent to the device as typed. One command per line.</span>
           </div>
-          <CommandBox value={task.setCommand} onChange={(v) => onChange({ setCommand: v })} placeholder={stage.kind === 'Configuration' ? 'set interfaces ${Interface} unit ${Vlan-ID} vlan-id ${Vlan-ID}' : 'show configuration interfaces ${Interface} | display set'} known={known} readOnly={readOnly} />
+          <CommandBox value={task.setCommand} onChange={(v) => onChange({ setCommand: v })} placeholder={stage.kind === 'Configuration' ? 'set interfaces ${Interface} unit ${Vlan-ID} vlan-id ${Vlan-ID}' : 'show configuration interfaces ${Interface} | display set'} known={known} intentParams={intentParams} readOnly={readOnly} />
           {used.length > 0 && (
             <div className="flex gap-1.5 flex-wrap mt-2" aria-label="Parameters in this command">
               {used.map((p) => (
@@ -644,7 +734,7 @@ function TaskEditor({ task, stage, known, readOnly, onChange, onDelete, onDone }
           {task.rollbackEnabled && (
             <div className="mt-3">
               <span className="nst-input-label block mb-1.5">Rollback command <span className="text-crit-500">*</span></span>
-              <CommandBox value={task.inverseCommand ?? ''} onChange={(v) => onChange({ inverseCommand: v })} placeholder="delete interfaces ${Interface} unit ${Vlan-ID}" known={known} readOnly={readOnly} />
+              <CommandBox value={task.inverseCommand ?? ''} onChange={(v) => onChange({ inverseCommand: v })} placeholder="delete interfaces ${Interface} unit ${Vlan-ID}" known={known} intentParams={intentParams} readOnly={readOnly} />
               <Rules label="Rollback is accepted when" rules={task.rollbackValidations} onChange={setRb} readOnly={readOnly} />
               <div className="mt-3">
                 <Toggle checked={task.rollbackBreaker} disabled={readOnly} onChange={(v) => onChange({ rollbackBreaker: v })} label="Rollback breaker" hint="When the rollback pass reaches this task it stops here — earlier tasks are left as they are." />
@@ -677,10 +767,72 @@ function TaskEditor({ task, stage, known, readOnly, onChange, onDelete, onDone }
   )
 }
 
-/** Mono textarea that highlights `${Parameter}` placeholders behind the text. */
-function CommandBox({ value, onChange, placeholder, known, readOnly }: { value: string; onChange: (v: string) => void; placeholder?: string; known: string[]; readOnly?: boolean }) {
+/** Nearest unclosed `$` (optionally `${`) behind the caret, with the text typed since — null once broken by whitespace, `}` or a newline. */
+function detectTrigger(text: string, caret: number): { start: number; query: string } | null {
+  let i = caret - 1
+  while (i >= 0) {
+    const c = text[i]
+    if (c === '$') {
+      const qStart = text[i + 1] === '{' ? i + 2 : i + 1
+      return { start: i, query: text.slice(qStart, caret) }
+    }
+    if (c === '}' || c === '\n' || /\s/.test(c)) return null
+    i--
+  }
+  return null
+}
+
+/** Pixel position of a caret index inside a textarea, via a hidden mirror element — the standard technique in the absence of any native API for it. */
+function getCaretCoordinates(el: HTMLTextAreaElement, index: number) {
+  const div = document.createElement('div')
+  const style = window.getComputedStyle(el)
+  ;['boxSizing', 'width', 'fontFamily', 'fontSize', 'fontWeight', 'letterSpacing', 'lineHeight', 'padding', 'border', 'whiteSpace', 'wordWrap']
+    .forEach((p) => { (div.style as unknown as Record<string, string>)[p] = (style as unknown as Record<string, string>)[p] })
+  Object.assign(div.style, { position: 'absolute', visibility: 'hidden', whiteSpace: 'pre-wrap', wordWrap: 'break-word', top: '0', left: '-9999px' })
+  document.body.appendChild(div)
+  div.textContent = el.value.slice(0, index)
+  const span = document.createElement('span')
+  span.textContent = el.value.slice(index) || '.'
+  div.appendChild(span)
+  const elRect = el.getBoundingClientRect()
+  const spanRect = span.getBoundingClientRect()
+  const divRect = div.getBoundingClientRect()
+  const top = elRect.top + (spanRect.top - divRect.top) - el.scrollTop
+  const left = elRect.left + (spanRect.left - divRect.left) - el.scrollLeft
+  document.body.removeChild(div)
+  return { top, left }
+}
+
+/** Mono textarea that highlights `${Parameter}` placeholders behind the text, and offers the
+ * selected intent's own parameters in a `$`-triggered autocomplete. */
+function CommandBox({ value, onChange, placeholder, known, intentParams, readOnly }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; known: string[]; intentParams: IntentParam[]; readOnly?: boolean
+}) {
+  const taRef = useRef<HTMLTextAreaElement>(null)
+  const [ac, setAc] = useState<{ start: number; query: string; top: number; left: number } | null>(null)
+  const [hi, setHi] = useState(0)
   const lines = Math.min(10, Math.max(3, value.split('\n').length + 1))
   const parts = value.split(/(\$\{[^}]+\})/g)
+  const options = ac ? intentParams.filter((p) => p.name.toLowerCase().includes(ac.query.toLowerCase())) : []
+
+  const syncTrigger = (el: HTMLTextAreaElement) => {
+    const t = detectTrigger(el.value, el.selectionStart)
+    if (!t) { setAc(null); return }
+    const { top, left } = getCaretCoordinates(el, el.selectionStart)
+    setAc({ start: t.start, query: t.query, top: top + 20, left: Math.min(left, window.innerWidth - 240) })
+    setHi(0)
+  }
+
+  const commit = (p: IntentParam) => {
+    if (!ac || !taRef.current) return
+    const caret = taRef.current.selectionStart
+    const next = value.slice(0, ac.start) + '${' + p.name + '}' + value.slice(caret)
+    const caretAfter = ac.start + p.name.length + 3
+    onChange(next)
+    setAc(null)
+    requestAnimationFrame(() => { taRef.current?.focus(); taRef.current?.setSelectionRange(caretAfter, caretAfter) })
+  }
+
   return (
     <div className="nst-textarea-wrap relative !h-auto font-mono text-[12.5px]" style={{ minHeight: `${lines * 20 + 16}px` }}>
       <div aria-hidden className="absolute inset-0 px-2 pt-2 whitespace-pre-wrap break-words pointer-events-none leading-[20px] text-transparent">
@@ -690,11 +842,37 @@ function CommandBox({ value, onChange, placeholder, known, readOnly }: { value: 
         {'\n'}
       </div>
       <textarea
+        ref={taRef}
         value={value} placeholder={placeholder} spellCheck={false} disabled={readOnly}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => { onChange(e.target.value); syncTrigger(e.target) }}
+        onClick={(e) => syncTrigger(e.currentTarget)}
+        onKeyUp={(e) => { if (!['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(e.key)) syncTrigger(e.currentTarget) }}
+        onBlur={() => setAc(null)}
+        onKeyDown={(e) => {
+          if (!ac || !options.length) return
+          if (e.key === 'ArrowDown') { e.preventDefault(); setHi((h) => (h + 1) % options.length) }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((h) => (h - 1 + options.length) % options.length) }
+          else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); commit(options[hi]) }
+          else if (e.key === 'Escape') { e.preventDefault(); setAc(null) }
+        }}
         className="nst-textarea relative !font-mono !text-[12.5px] !leading-[20px] !p-2 w-full bg-transparent disabled:opacity-100"
         style={{ minHeight: `${lines * 20 + 16}px` }}
       />
+      {ac && options.length > 0 && createPortal(
+        <div className="nst-surface--raised anim-in p-1 max-h-[240px] overflow-y-auto" role="listbox" aria-label="Parameters"
+          style={{ position: 'fixed', top: ac.top, left: ac.left, minWidth: 220, zIndex: 60 }}>
+          {options.map((p, i) => (
+            <button key={p.name} type="button" role="option" aria-selected={i === hi}
+              onMouseDown={(e) => { e.preventDefault(); commit(p) }}
+              onMouseEnter={() => setHi(i)}
+              className={`w-full text-left px-2.5 py-1.5 rounded-[var(--vw-radius-xs)] text-[12.5px] flex items-center justify-between gap-2 ${i === hi ? 'bg-plane' : 'hover:bg-plane'}`}>
+              <Mono className="text-[12px]">{p.name}</Mono>
+              <span className="text-[10.5px] text-ink-3 shrink-0">{p.type}{p.required ? ' · required' : ''}</span>
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }
