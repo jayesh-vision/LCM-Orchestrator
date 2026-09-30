@@ -1,19 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, Bell, Boxes, CheckCircle2, CheckSquare, Database, FileBarChart,
-  Info, LayoutGrid, ListChecks, PanelLeftClose, PanelLeftOpen, RefreshCcw, Search, Server, Target, Workflow as WorkflowIcon, X,
+  AlertTriangle, Bell, Boxes, CheckCircle2, Database, FileBarChart,
+  Info, ListChecks, PanelLeftClose, PanelLeftOpen, RefreshCcw, Search, Server, Target, Workflow as WorkflowIcon, X,
 } from 'lucide-react'
-import { useStore } from '@/store/useStore' 
+import { useStore } from '@/store/useStore'
 import { Badge, Button } from './ui'
 
-interface NavItem { to: string; label: string; icon: typeof LayoutGrid; count?: () => string }
+interface NavItem { to: string; label: string; icon: typeof ListChecks; count?: () => string }
 
 const GROUPS: { label: string | null; items: NavItem[] }[] = [
-  {
-    label: null,
-    items: [{ to: '/', label: 'Dashboard', icon: LayoutGrid }],
-  },
   {
     label: 'Operate',
     items: [
@@ -34,14 +30,12 @@ const GROUPS: { label: string | null; items: NavItem[] }[] = [
   {
     label: 'Analyse',
     items: [
-      { to: '/evidence', label: 'Evidence', icon: CheckSquare },
       { to: '/reports', label: 'Reports', icon: FileBarChart },
     ],
   },
 ]
 
 const CRUMBS: Record<string, string> = {
-  '/': 'Dashboard',
   '/requests': 'Operate / Provisioning Requests',
   '/execution': 'Operate / Provisioning Execution',
   '/inventory': 'Operate / Service Inventory',
@@ -50,7 +44,6 @@ const CRUMBS: Record<string, string> = {
   '/service-intents': 'Configure / Service Intents',
   '/profile-types': 'Configure / Profile Types',
   '/pools': 'Configure / Resource Pools',
-  '/evidence': 'Analyse / Evidence',
   '/reports': 'Analyse / Reports',
 }
 

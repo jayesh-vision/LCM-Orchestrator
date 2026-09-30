@@ -1,6 +1,5 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import AppShell from '@/components/AppShell'
-import Dashboard from '@/pages/Dashboard'
 import ProvisioningRequests from '@/pages/ProvisioningRequests'
 import OrderDetail from '@/pages/OrderDetail'
 import NewServiceWizard from '@/pages/NewServiceWizard'
@@ -12,7 +11,6 @@ import WorkflowBuilder from '@/pages/WorkflowBuilder'
 import ServiceIntents from '@/pages/ServiceIntents'
 import ProfileTypes from '@/pages/ProfileTypes'
 import ResourcePools from '@/pages/ResourcePools'
-import Evidence from '@/pages/Evidence'
 import Reports from '@/pages/Reports'
 import NotFound from '@/pages/NotFound'
 
@@ -31,7 +29,8 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<Dashboard />} />
+        {/* Dashboard module removed — Provisioning Requests is the landing screen now. */}
+        <Route index element={<Navigate to="/requests" replace />} />
         <Route path="requests" element={<ProvisioningRequests />} />
         <Route path="requests/new" element={<NewServiceWizard />} />
         <Route path="requests/:id" element={<OrderDetail />} />
@@ -46,7 +45,6 @@ export default function App() {
         <Route path="service-intents" element={<ServiceIntents />} />
         <Route path="profile-types" element={<ProfileTypes />} />
         <Route path="pools" element={<ResourcePools />} />
-        <Route path="evidence" element={<Evidence />} />
         <Route path="reports" element={<Reports />} />
         <Route path="*" element={<NotFound />} />
       </Route>

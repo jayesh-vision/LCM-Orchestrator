@@ -8,10 +8,10 @@ import { useStore } from '@/store/useStore'
 import type { Category, Domain, IntentParam, PoolKind, ServiceIntent, ServiceIntentState } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
-  Badge, Button, CellMain, CellSub, Chip, DataTable, Drawer,
-  Field, Kebab, Modal, Mono, Note, Select, Stat, TextInput, Toggle, type Column,
+  Badge, Button, CellMain, CellSub, DataTable, Drawer,
+  Field, FieldDropdown, Kebab, Modal, Mono, Note, Select, Stat, TextInput, Toggle, type Column,
 } from '@/components/ui'
-import { CATEGORY_TONE, DOMAIN_TONE, WORKFLOW_TONE } from '@/lib/format'
+import { CATEGORY_TONE, WORKFLOW_TONE } from '@/lib/format'
 
 const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'VLAN', 'Microwave', 'DWDM', 'RAN VNF', 'GPON']
 const TOPOLOGIES: ServiceIntent['topology'][] = ['Single-ended', 'Two-ended', 'Star', 'Full mesh']
@@ -96,8 +96,6 @@ export default function ServiceIntents() {
     setDomain(next)
     if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
   }
-  const pickDomain = (d: Domain) => setDomainScoped(domain === d ? 'All' : d)
-
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState<IntentForm>(blankIntentForm())
   const [manageId, setManageId] = useState<string | null>(null)
@@ -252,7 +250,12 @@ export default function ServiceIntents() {
         fillHeight
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Code, Name, Type' },
-          chips: DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
+          /* Transport / Access / Radio / Fiber as options inside one Domain
+             dropdown, rather than a pill per value. */
+          chips: [
+            <FieldDropdown key="domain" label="Domain" value={domain} onChange={(v) => setDomainScoped(v as Domain | 'All')}
+              options={DOMAINS.map((d) => ({ value: d, label: d, count: intents.filter((i) => domainOf(i.category) === d).length }))} />,
+          ],
           filters: [
             { key: 'state', label: 'State', value: state, onChange: (v) => setState(v as ServiceIntentState | 'All'),
               options: STATES.map((s) => ({ value: s, label: s, count: families.filter((i) => i.state === s).length })) },

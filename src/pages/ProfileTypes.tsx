@@ -6,10 +6,10 @@ import { useStore } from '@/store/useStore'
 import type { Category, Domain, ProfileType } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
-  Badge, Button, CellMain, Chip, DataTable, Drawer,
-  Field, Kebab, Modal, Note, Select, Stat, TextInput, type Column,
+  Badge, Button, CellMain, DataTable, Drawer,
+  Field, FieldDropdown, Kebab, Modal, Note, Select, Stat, TextInput, type Column,
 } from '@/components/ui'
-import { CATEGORY_TONE, DOMAIN_TONE, shortDate } from '@/lib/format'
+import { CATEGORY_TONE, shortDate } from '@/lib/format'
 
 const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'VLAN', 'Microwave', 'DWDM', 'RAN VNF', 'GPON']
 
@@ -33,7 +33,6 @@ export default function ProfileTypes() {
     setDomain(next)
     if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
   }
-  const pickDomain = (d: Domain) => setDomainScoped(domain === d ? 'All' : d)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ category: 'L2VPN' as Category, type: '', subtype: '', description: '' })
   const [view, setView] = useState<ProfileType | null>(null)
@@ -122,14 +121,17 @@ export default function ProfileTypes() {
         fillHeight
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Category, Type, Subtype' },
-          /* Domain is the one quick-chip facet kept inline; category and
-             everything else lives in the filter popover so this stays one line. */
-          chips: DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
+          /* Domain (Transport/Access/Radio/Fiber as one dropdown's options,
+             not a pill per value) and Category are the two facets worth a
+             direct dropdown in the toolbar; everything else stays behind
+             the filter icon. */
+          chips: [
+            <FieldDropdown key="domain" label="Domain" value={domain} onChange={(v) => setDomainScoped(v as Domain | 'All')}
+              options={DOMAINS.map((d) => ({ value: d, label: d, count: profileTypes.filter((p) => domainOf(p.category) === d).length }))} />,
+            <FieldDropdown key="cat" label="Category" value={cat} onChange={(v) => setCat(v as Category | 'All')}
+              options={domainCats.map((c) => ({ value: c, label: c, count: profileTypes.filter((p) => p.category === c).length }))} />,
+          ],
           filters: [
-            { key: 'domain', label: 'Domain', value: domain, onChange: (v) => setDomainScoped(v as Domain | 'All'),
-              options: DOMAINS.map((d) => ({ value: d, label: d, count: profileTypes.filter((p) => domainOf(p.category) === d).length })) },
-            { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
-              options: domainCats.map((c) => ({ value: c, label: c, count: profileTypes.filter((p) => p.category === c).length })) },
             { key: 'type', label: 'Type', value: ptype, onChange: setPtype,
               options: [...new Set(profileTypes.map((p) => p.type))].sort().map((t) => ({ value: t, label: t, count: profileTypes.filter((p) => p.type === t).length })) },
             { key: 'subtype', label: 'Subtype', type: 'text', value: qsubtype, onChange: setQsubtype },

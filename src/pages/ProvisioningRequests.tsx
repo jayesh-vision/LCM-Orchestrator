@@ -9,7 +9,7 @@ import { useStore } from '@/store/useStore'
 import type { Category, Domain, Order, OrderIntent, OrderState, Vendor } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
-  Badge, Button, CellMain, CellSub, Chip, DataTable, Drawer, Field,
+  Badge, Button, CellMain, CellSub, DataTable, Drawer, Field,
   FieldDropdown, KV, Kebab, Modal, Mono, Note, SegmentedToggle, stampColumn, type Column,
 } from '@/components/ui'
 import { ProvisioningInsights } from '@/components/ProvisioningInsights'
@@ -55,10 +55,6 @@ export default function ProvisioningRequests() {
   const stateList = state === 'All' ? [] : state.split(',')
   const [vendor, setVendor] = useQueryState<Vendor | 'All'>('vendor', 'All')
   const [intent, setIntent] = useQueryState<OrderIntent | 'All'>('intent', 'All')
-  /* Off by default: this screen is a queue of work in flight. The archive is
-     every create this platform has ever completed, which is provenance for
-     Service Inventory rather than something anyone is working on. */
-  const [history, setHistory] = useQueryState('history', 'off')
   const [customer, setCustomer] = useQueryState('customer', '')
   /* Independent name/code/model filters for the popover — separate from
      the toolbar's broad `q` search box, which still matches across all
@@ -68,7 +64,7 @@ export default function ProvisioningRequests() {
   const [qmodel, setQmodel] = useQueryState('model', '')
   const [view, setView] = useQueryState<'listing' | 'insights'>('view', 'insights')
   const patch = useQueryPatch()
-  const clear = useClearQuery(['q', 'domain', 'cat', 'state', 'vendor', 'intent', 'customer', 'name', 'code', 'model', 'history'])
+  const clear = useClearQuery(['q', 'domain', 'cat', 'state', 'vendor', 'intent', 'customer', 'name', 'code', 'model'])
   const domainCats = domain === 'All' ? CATEGORIES : CATEGORIES_BY_DOMAIN[domain]
   const setDomainScoped = (next: Domain | 'All') => {
     setDomain(next)
@@ -95,11 +91,7 @@ export default function ProvisioningRequests() {
   const doApprove = (o: Order) => { approveOrder(o.id, 'Ravi K.'); pushToast('good', `${o.id} approved — ready to run once credentials are validated.`) }
   const runCredentialsThenExecute = (o: Order) => { setCreds(null); startRun(o.id); nav(`/requests/${o.id}?tab=lifecycle`, fromList) }
 
-  const orders = useMemo(
-    () => (history === 'on' ? allOrders : allOrders.filter((o) => !o.archived)),
-    [allOrders, history],
-  )
-  const archivedCount = useMemo(() => allOrders.filter((o) => o.archived).length, [allOrders])
+  const orders = useMemo(() => allOrders.filter((o) => !o.archived), [allOrders])
 
   const byCategory = useMemo(() => {
     const m = new Map<Category, Order[]>()
@@ -275,25 +267,14 @@ export default function ProvisioningRequests() {
             onRowClick={(r) => nav(`/requests/${r.id}`, fromList)}
             toolbar={{
               search: { value: q, onChange: setQ, placeholder: 'Name, Code, Model' },
-              /* Request type, Domain, Vendor and Category are common enough to
-                 earn their own dropdown right in the toolbar, instead of a
-                 click-through to the filter icon — everything else stays in
-                 the popover. */
+              /* Domain and Category are the common quick-chip facets kept
+                 inline, matching the other listings — Request type and
+                 Vendor live in the filter popover instead. */
               chips: [
-                <FieldDropdown key="intent" label="Request type" value={intent} onChange={(v) => setIntent(v as OrderIntent | 'All')}
-                  options={ORDER_INTENTS.filter((i) => orders.some((o) => o.intent === i))
-                    .map((i) => ({ value: i, label: i, count: orders.filter((o) => o.intent === i).length }))} />,
                 <FieldDropdown key="domain" label="Domain" value={domain} onChange={(v) => setDomainScoped(v as Domain | 'All')}
                   options={DOMAINS.map((d) => ({ value: d, label: d, count: orders.filter((o) => domainOf(o.category) === d).length }))} />,
-                <FieldDropdown key="vendor" label="Vendor" value={vendor} onChange={(v) => setVendor(v as Vendor | 'All')}
-                  options={[...new Set(orders.map((o) => o.endpoints[0]?.vendor).filter((v): v is Vendor => v !== undefined))].sort()
-                    .map((v) => ({ value: v, label: VENDOR_LABEL[v], count: orders.filter((o) => o.endpoints[0]?.vendor === v).length }))} />,
                 <FieldDropdown key="cat" label="Category" value={cat} onChange={(v) => setCat(v as Category | 'All')}
                   options={domainCats.map((c) => ({ value: c, label: c, count: (byCategory.get(c) ?? []).length }))} />,
-                <Chip key="history" active={history === 'on'} onClick={() => setHistory(history === 'on' ? 'off' : 'on')}>
-                  Include history
-                  <span className="tnum opacity-70">{archivedCount.toLocaleString()}</span>
-                </Chip>,
               ],
               filters: [
                 {
@@ -305,6 +286,16 @@ export default function ProvisioningRequests() {
                     { value: 'Failed,Rejected,Invalid,Reinstantiate', label: 'Blocked' },
                   ],
                 },
+                {
+                  key: 'intent', label: 'Request type', value: intent, onChange: (v) => setIntent(v as OrderIntent | 'All'),
+                  options: ORDER_INTENTS.filter((i) => orders.some((o) => o.intent === i))
+                    .map((i) => ({ value: i, label: i, count: orders.filter((o) => o.intent === i).length })),
+                },
+                {
+                  key: 'vendor', label: 'Vendor', value: vendor, onChange: (v) => setVendor(v as Vendor | 'All'),
+                  options: [...new Set(orders.map((o) => o.endpoints[0]?.vendor).filter((v): v is Vendor => v !== undefined))].sort()
+                    .map((v) => ({ value: v, label: VENDOR_LABEL[v], count: orders.filter((o) => o.endpoints[0]?.vendor === v).length })),
+                },
                 { key: 'customer', label: 'Customer Name', type: 'text', value: customer, onChange: setCustomer },
                 { key: 'name', label: 'Name', type: 'text', value: qname, onChange: setQname },
                 { key: 'code', label: 'Code', type: 'text', value: qcode, onChange: setQcode },
@@ -312,8 +303,8 @@ export default function ProvisioningRequests() {
               ],
               activeFilterChips: [
                 ...(state !== 'All' ? [{ key: 'state', label: 'Status', value: stateList.join(' or '), onRemove: () => setState('All') }] : []),
-                ...(history === 'on' ? [{ key: 'history', label: 'Scope', value: 'Including completed history', onRemove: () => setHistory('off') }] : []),
                 ...(intent !== 'All' ? [{ key: 'intent', label: 'Request type', value: intent, onRemove: () => setIntent('All') }] : []),
+                ...(vendor !== 'All' ? [{ key: 'vendor', label: 'Vendor', value: VENDOR_LABEL[vendor], onRemove: () => setVendor('All') }] : []),
                 ...(customer ? [{ key: 'customer', label: 'Customer', value: customer, onRemove: () => setCustomer('') }] : []),
                 ...(qname ? [{ key: 'name', label: 'Name', value: qname, onRemove: () => setQname('') }] : []),
                 ...(qcode ? [{ key: 'code', label: 'Code', value: qcode, onRemove: () => setQcode('') }] : []),

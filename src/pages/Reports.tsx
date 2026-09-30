@@ -4,8 +4,8 @@ import { useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
 import { useStore } from '@/store/useStore'
 import type { ReportDef } from '@/types'
 import {
-  Badge, Button, Card, CardBody, CardHead, CellMain, CellSub, Chip, DataTable,
-  Drawer, InfoTip, KV, Kebab, Mono, Note, type Column,
+  Badge, Button, Card, CardBody, CardHead, CellMain, CellSub, DataTable,
+  Drawer, FieldDropdown, InfoTip, KV, Kebab, Mono, Note, type Column,
 } from '@/components/ui'
 import { TrendLine } from '@/components/charts'
 import { relTime, shortDate } from '@/lib/format'
@@ -66,6 +66,11 @@ export default function Reports() {
   const ctx: ReportContext = { services, orders, pools, runs }
   const [q, setQ] = useQueryState('q', '')
   const [state, setState] = useQueryState<ReportDef['state'] | 'All'>('state', 'All')
+  /* Independent Report/Question filters for the popover — separate from the
+     toolbar's broad `q` search box, which still matches across both at once
+     for a quick look-up. */
+  const [qreport, setQreport] = useQueryState('report', '')
+  const [qquestion, setQquestion] = useQueryState('question', '')
   const [open, setOpen] = useState<ReportDef | null>(null)
   /* The four KPI cards drill into the grid below, which sits past the fold —
      without this a click silently filtered the table off-screen and read as
@@ -79,8 +84,10 @@ export default function Reports() {
   const filtered = useMemo(() => reports.filter((r) => {
     if (state !== 'All' && r.state !== state) return false
     if (q && !(r.name.toLowerCase().includes(q.toLowerCase()) || r.question.toLowerCase().includes(q.toLowerCase()))) return false
+    if (qreport && !r.name.toLowerCase().includes(qreport.toLowerCase())) return false
+    if (qquestion && !r.question.toLowerCase().includes(qquestion.toLowerCase())) return false
     return true
-  }), [reports, state, q])
+  }), [reports, state, q, qreport, qquestion])
 
   const n = (s: ReportDef['state']) => reports.filter((r) => r.state === s).length
   const featured = reports[0]
@@ -222,15 +229,15 @@ export default function Reports() {
         fillHeight
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Report, Question' },
-          chips: (['Current', 'Stale', 'Running', 'Failed'] as const).filter((s) => n(s) > 0).map((s) => (
-            <Chip key={s} active={state === s} onClick={() => setState(state === s ? 'All' : s)}>{s}</Chip>
-          )),
-          filters: [
-            { key: 'state', label: 'Status', value: state, onChange: (v) => setState(v as ReportDef['state'] | 'All'),
-              options: (['Current', 'Stale', 'Running', 'Failed'] as const).filter((s) => n(s) > 0).map((s) => ({ value: s, label: s, count: n(s) })) },
-            { key: 'q', label: 'Report / Question', type: 'text', value: q, onChange: setQ },
+          chips: [
+            <FieldDropdown key="state" label="Status" value={state} onChange={(v) => setState(v as ReportDef['state'] | 'All')}
+              options={(['Current', 'Stale', 'Running', 'Failed'] as const).filter((s) => n(s) > 0).map((s) => ({ value: s, label: s, count: n(s) }))} />,
           ],
-          onResetFilters: () => { setState('All'); setQ('') },
+          filters: [
+            { key: 'report', label: 'Report', type: 'text', value: qreport, onChange: setQreport },
+            { key: 'question', label: 'Question', type: 'text', value: qquestion, onChange: setQquestion },
+          ],
+          onResetFilters: () => { setState('All'); setQ(''); setQreport(''); setQquestion('') },
           onRefresh: () => pushToast('info', 'Report catalog refreshed.'),
           actions: [
             { label: 'New report', icon: Plus, onClick: () => pushToast('info', 'Report queued. It will appear here when generation completes.') },

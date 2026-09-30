@@ -5,8 +5,8 @@ import { CalendarClock, CheckCircle2, CircleOff, Eye, PauseCircle, Pencil, Plus,
 import { useStore } from '@/store/useStore'
 import type { Order, OrderIntent, Service } from '@/types'
 import {
-  Badge, Button, Card, CardBody, CardHead, CellMain, CellSub, Chip, DataTable,
-  Field, Kebab, Modal, Mono, Note, Select, Stat, stampColumn, type Column,
+  Badge, Button, Card, CardBody, CardHead, CellMain, CellSub, DataTable,
+  Field, FieldDropdown, Kebab, Modal, Mono, Note, Select, Stat, stampColumn, type Column,
 } from '@/components/ui'
 import { INTENT_TONE, ORDER_TONE, relTime } from '@/lib/format'
 import { leadWithReady } from '@/lib/traceability'
@@ -148,10 +148,14 @@ export default function ChangeCease() {
         empty="No change orders yet. Raise one from a service, or with the button above."
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Service, Customer' },
-          chips: INTENTS.filter((i) => n(i) > 0).map((i) => <Chip key={i} active={intent === i} onClick={() => setIntent(intent === i ? 'All' : i)}>{i}</Chip>),
+          /* Operation is the one facet worth a click rather than a trip
+             through the filter icon — a single dropdown, not a pill per
+             value, so it reads the same way Domain/Category do elsewhere. */
+          chips: [
+            <FieldDropdown key="intent" label="Operation" value={intent} onChange={(v) => setIntent(v as OrderIntent | 'All')}
+              options={INTENTS.filter((i) => n(i) > 0).map((i) => ({ value: i, label: i, count: n(i) }))} />,
+          ],
           filters: [
-            { key: 'intent', label: 'Operation', value: intent, onChange: (v) => setIntent(v as OrderIntent | 'All'),
-              options: INTENTS.filter((i) => n(i) > 0).map((i) => ({ value: i, label: i, count: n(i) })) },
             { key: 'state', label: 'Status', value: cstate, onChange: setCstate,
               options: [...new Set(changes.map((c) => c.state))].map((st) => ({ value: st, label: st, count: changes.filter((c) => c.state === st).length })) },
             { key: 'service', label: 'Service', type: 'text', value: qservice, onChange: setQservice },

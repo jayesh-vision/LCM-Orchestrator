@@ -400,19 +400,18 @@ export default function ServiceInventory() {
         fillHeight
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Service, Customer' },
-          /* The three facets worth one click rather than a trip through the
-             filter icon, matching Provisioning Requests. Conformance is not
-             among them because the summary cards and the donut above already
-             drill into it; State has no such shortcut, so it earns a slot. */
+          /* Domain and Category are the facets worth one click rather than a
+             trip through the filter icon, matching Provisioning Requests.
+             State now lives in the popover along with everything else. */
           chips: [
             <FieldDropdown key="domain" label="Domain" value={domain} onChange={(v) => setDomainScoped(v as Domain | 'All')}
               options={DOMAINS.map((d) => ({ value: d, label: d, count: services.filter((x) => domainOf(x.category) === d).length }))} />,
             <FieldDropdown key="cat" label="Category" value={cat} onChange={(v) => setCat(v as Category | 'All')}
               options={domainCats.map((c) => ({ value: c, label: c, count: n.cat(c) }))} />,
-            <FieldDropdown key="state" label="State" value={state} onChange={(v) => setState(v as ServiceState | 'All')}
-              options={STATES.filter((st) => n.state(st) > 0).map((st) => ({ value: st, label: st, count: n.state(st) }))} />,
           ],
           filters: [
+            { key: 'state', label: 'State', value: state, onChange: (v) => setState(v as ServiceState | 'All'),
+              options: STATES.filter((st) => n.state(st) > 0).map((st) => ({ value: st, label: st, count: n.state(st) })) },
             { key: 'conf', label: 'Conformance', value: conf, onChange: (v) => setConf(v as Conformance | 'All'),
               options: CONFS.filter((c) => n.conf(c) > 0).map((c) => ({ value: c, label: c, count: n.conf(c) })) },
             { key: 'origin', label: 'Origin', value: origin, onChange: (v) => setOrigin(v as ServiceOrigin | 'All'),

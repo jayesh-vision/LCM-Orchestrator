@@ -10,7 +10,7 @@ import type { Category, Domain, Vendor, Workflow, WorkflowState } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Card, CardBody, CardHead, CellMain, Chip, DataTable,
-  Kebab, Mono, Note, Stat, type Column,
+  FieldDropdown, Kebab, Mono, Note, Stat, type Column,
 } from '@/components/ui'
 import { CoverageMatrix, type CoverageCol } from '@/components/charts'
 import {
@@ -301,16 +301,18 @@ export default function Workflows() {
         fillHeight
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Name, Code, Vendor' },
-          /* Domain is the one quick-chip facet kept inline; category and
-             everything else lives in the filter popover so this stays one line. */
-          chips: DOMAINS.map((d) => <Chip key={d} tone={DOMAIN_TONE[d]} active={domain === d} onClick={() => pickDomain(d)}>{d}</Chip>),
+          /* Domain and Category are the two facets worth a direct dropdown
+             right in the toolbar, same as Provisioning Requests / Service
+             Inventory — everything else stays behind the filter icon. */
+          chips: [
+            <FieldDropdown key="domain" label="Domain" value={domain} onChange={(v) => setDomainScoped(v as Domain | 'All')}
+              options={DOMAINS.map((d) => ({ value: d, label: d, count: workflows.filter((w) => domainOf(w.category) === d).length }))} />,
+            <FieldDropdown key="cat" label="Category" value={cat} onChange={(v) => patch({ cat: v === 'All' ? null : v, type: null, subtype: null })}
+              options={domainCats.map((c) => ({ value: c, label: c, count: n.cat(c) }))} />,
+          ],
           filters: [
-            { key: 'domain', label: 'Domain', value: domain, onChange: (v) => setDomainScoped(v as Domain | 'All'),
-              options: DOMAINS.map((d) => ({ value: d, label: d, count: workflows.filter((w) => domainOf(w.category) === d).length })) },
             { key: 'state', label: 'Status', value: st, onChange: (v) => setSt(v),
               options: STATES.filter((x) => n.state(x) > 0).map((x) => ({ value: x, label: x, count: n.state(x) })) },
-            { key: 'cat', label: 'Category', value: cat, onChange: (v) => patch({ cat: v === 'All' ? null : v, type: null, subtype: null }),
-              options: domainCats.map((c) => ({ value: c, label: c, count: n.cat(c) })) },
             { key: 'type', label: 'Type', value: wtype, onChange: (v) => patch({ type: v === 'All' ? null : v, subtype: null }),
               options: [...new Set(workflows.filter((w) => cat === 'All' || w.category === cat).map((w) => w.type))].sort()
                 .map((t) => ({ value: t, label: t, count: workflows.filter((w) => (cat === 'All' || w.category === cat) && w.type === t).length })) },
@@ -325,7 +327,6 @@ export default function Workflows() {
             { key: 'code', label: 'Code', type: 'text', value: qcode, onChange: setQcode },
           ],
           activeFilterChips: [
-            ...(cat !== 'All' ? [{ key: 'cat', label: 'Category', value: cat, onRemove: () => setCat('All') }] : []),
             ...(wtype !== 'All' ? [{ key: 'type', label: 'Type', value: wtype, onRemove: () => setWtype('All') }] : []),
             ...(wsubtype !== 'All' ? [{ key: 'subtype', label: 'Subtype', value: wsubtype, onRemove: () => setWsubtype('All') }] : []),
             ...(st !== 'All' ? [{ key: 'state', label: 'State', value: stList.join(' or '), onRemove: () => setSt('All') }] : []),
