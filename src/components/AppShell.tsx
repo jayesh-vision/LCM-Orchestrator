@@ -47,6 +47,7 @@ const CRUMBS: Record<string, string> = {
   '/reports': 'Analyse / Reports',
 }
 
+
 function useCounts() {
   /* The sidebar counts work, not history. */
   const orders = useStore((s) => s.orders).filter((o) => !o.archived)
