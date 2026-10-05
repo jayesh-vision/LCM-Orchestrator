@@ -18,6 +18,7 @@ import BpmnJourney from '@/components/BpmnJourney'
 /* Stage kind → chip tone, as the platform colours its stage nodes. */
 const STAGE_KIND_TONE: Record<StageKind, Tone> = { 'Pre validation': 'teal', Configuration: 'info', 'Post validation': 'warn' }
 
+
 /**
  * Why this particular attempt was made.
  *
