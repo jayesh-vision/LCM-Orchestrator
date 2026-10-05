@@ -412,7 +412,7 @@ export default function ServiceDetail() {
                           <Link to={`/requests/${o.id}`} className="text-brand-600 hover:underline"><Mono>{o.id}</Mono></Link>
                           {/* The same request as a process diagram — where
                               it went, and where its runs broke. */}
-                          <Link to={`/requests/${o.id}?tab=journey`} className="vw-chip vw-chip--info is-clickable text-[11px] no-underline" title="Open the BPMN journey">BPMN</Link>
+                          <Link to={`/requests/${o.id}?tab=journey`} className="vw-chip vw-chip--info is-clickable text-[11px] no-underline" title="Open the workflow journey">Workflow</Link>
                           <Mono className="text-ink-3 text-[12px]">{o.code}</Mono>
                           <span className="ml-auto"><Badge tone={ORDER_TONE[o.state]} dot>{o.state}</Badge></span>
                         </div>

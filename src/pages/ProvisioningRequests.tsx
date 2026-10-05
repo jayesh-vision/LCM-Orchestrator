@@ -222,7 +222,7 @@ export default function ProvisioningRequests() {
           ...(!PRE_EXECUTION.includes(r.state)
             ? [{ label: 'Verify details', icon: ClipboardCheck, onClick: () => setVerify(r) }]
             : []),
-          { label: 'BPMN journey', icon: GitBranch, onClick: () => nav(`/requests/${r.id}?tab=journey`, fromList) },
+          { label: 'Workflow', icon: GitBranch, onClick: () => nav(`/requests/${r.id}?tab=journey`, fromList) },
           { label: 'Life cycle operation', icon: Workflow, onClick: () => nav(`/requests/${r.id}?tab=lifecycle`, fromList) },
           { label: 'View jobs', icon: ListChecks, onClick: () => nav(`/requests/${r.id}?tab=runs`, fromList) },
           ...(r.state === 'Validated'

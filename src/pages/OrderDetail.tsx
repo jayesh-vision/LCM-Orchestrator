@@ -401,7 +401,7 @@ export default function OrderDetail() {
               /* The whole journey as one BPMN process — raised to landed,
                  with the execution sub-process expanded per device and the
                  point where a run broke marked as such. */
-              { id: 'journey', label: 'BPMN journey' },
+              { id: 'journey', label: 'Workflow' },
               { id: 'lifecycle', label: 'Lifecycle operation' },
               /* Every run on the request, not the selected endpoint's share of
                  them. The tab body groups Source and Destination side by side,
