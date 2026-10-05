@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, CircleAlert, Eye, FolderTree, Layers, Pencil, Plus, Shapes, Workflow as WorkflowIcon } from 'lucide-react'
-import { useQueryPatch, useQueryState } from '@/lib/useQueryState'
+import { useQueryState } from '@/lib/useQueryState'
 import { useStore } from '@/store/useStore'
 import type { Category, Domain, ProfileType } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
@@ -27,7 +27,6 @@ export default function ProfileTypes() {
   const [cat, setCat] = useQueryState<Category | 'All'>('cat', 'All')
   const [ptype, setPtype] = useQueryState('type', 'All')
   const [usedFilter, setUsedFilter] = useQueryState<'All' | 'unused'>('used', 'All')
-  const patch = useQueryPatch()
   const domainCats = domain === 'All' ? CATS : CATEGORIES_BY_DOMAIN[domain]
   const setDomainScoped = (next: Domain | 'All') => {
     setDomain(next)
@@ -102,18 +101,14 @@ export default function ProfileTypes() {
 
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
         <Stat label="Profile types" icon={Layers} value={profileTypes.length} note="Category → Type → Subtype combinations"
-          info="The master hierarchy of service profiles. Each row is one Category → Type → Subtype combination that workflows are scoped to and provisioning requests select from."
-          drillLabel="every profile type" onClick={() => { setCat('All'); }} />
+          info="The master hierarchy of service profiles. Each row is one Category → Type → Subtype combination that workflows are scoped to and provisioning requests select from." />
         <Stat label="Categories" icon={FolderTree} value={CATS.length} note="Across Transport, Access, Radio and Fiber domains"
-          info="The top level of the hierarchy — the broad service families the platform provisions. Every profile type belongs to exactly one category, and every category belongs to exactly one domain."
-          drillLabel="every category" onClick={() => patch({ domain: null, cat: null, type: null })} />
+          info="The top level of the hierarchy — the broad service families the platform provisions. Every profile type belongs to exactly one category, and every category belongs to exactly one domain." />
         <Stat label="Distinct types" icon={Shapes} value={types} note="Functional classifications across all categories"
-          info="The middle level of the hierarchy — functional classifications such as Hub & Spoke or Point-to-point. One type can carry several subtypes."
-          drillLabel="every distinct type" onClick={() => patch({ domain: null, cat: null, type: null })} />
+          info="The middle level of the hierarchy — functional classifications such as Hub & Spoke or Point-to-point. One type can carry several subtypes." />
         <Stat label="Unused" icon={CircleAlert} value={unused} tone={unused > 0 ? 'warn' : 'good'}
           note={unused > 0 ? 'No workflow references these yet' : 'Every profile is referenced by a workflow'}
-          info="Profile types no workflow references yet. An order that selects one of these cannot be fulfilled until a workflow is mapped to it — either build the workflow or retire the profile."
-          drillLabel="every unused profile type" onClick={() => patch({ domain: null, cat: null, type: null, used: 'unused' })} />
+          info="Profile types no workflow references yet. An order that selects one of these cannot be fulfilled until a workflow is mapped to it — either build the workflow or retire the profile." />
       </div>
 
       <DataTable
