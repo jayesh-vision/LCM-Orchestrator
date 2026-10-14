@@ -1664,15 +1664,15 @@ export default function NewServiceWizard() {
                 <div className="border border-line rounded-lg overflow-hidden">
                   <table className="w-full text-[12.5px]">
                     <thead>
-                      <tr className="bg-plane border-b border-line text-ink-3 uppercase text-[11px] tracking-wide">
-                        <th className="px-3.5 py-2.5 text-left font-semibold">Service ID</th>
-                        <th className="px-3.5 py-2.5 text-left font-semibold">Name &amp; Customer</th>
-                        <th className="px-3.5 py-2.5 text-left font-semibold">Category</th>
-                        <th className="px-3.5 py-2.5 text-left font-semibold">Endpoints</th>
-                        <th className="px-3.5 py-2.5 text-left font-semibold">Bandwidth</th>
-                        <th className="px-3.5 py-2.5 text-left font-semibold">State</th>
-                        <th className="px-3.5 py-2.5 text-left font-semibold">Conformance</th>
-                        <th className="px-3.5 py-2.5 text-right font-semibold">Action</th>
+                      <tr className="bg-plane border-b border-line text-ink-2 text-[12px] font-medium">
+                        <th className="px-3.5 py-2.5 text-left font-medium">Service ID</th>
+                        <th className="px-3.5 py-2.5 text-left font-medium">Name &amp; Customer</th>
+                        <th className="px-3.5 py-2.5 text-left font-medium">Category</th>
+                        <th className="px-3.5 py-2.5 text-left font-medium">Endpoints</th>
+                        <th className="px-3.5 py-2.5 text-left font-medium">Bandwidth</th>
+                        <th className="px-3.5 py-2.5 text-left font-medium">State</th>
+                        <th className="px-3.5 py-2.5 text-left font-medium">Conformance</th>
+                        <th className="px-3.5 py-2.5 text-right font-medium">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line-soft">
@@ -2173,19 +2173,34 @@ export default function NewServiceWizard() {
               {requestIntent !== 'Modify' && (
                 <Card>
                   <CardHead
-                    title={selectedDay2Workflow ? `${selectedDay2Workflow.name} Parameters` : 'Current Service Parameters'}
+                    title="Workflow Parameters"
                     sub={
                       selectedDay2Workflow
-                        ? `Parameters evaluated by workflow ${selectedDay2Workflow.id} during this ${requestIntent} operation.`
+                        ? `Parameters evaluated and bound by workflow ${selectedDay2Workflow.id} during this ${requestIntent} operation.`
                         : 'Parameters currently realised on this service.'
+                    }
+                    right={
+                      <div className="flex items-center gap-2">
+                        {selectedDay2Workflow && (
+                          <Badge tone="info" className="!text-[10px]">
+                            {serviceParamsList.length} Bound Parameter{serviceParamsList.length === 1 ? '' : 's'}
+                          </Badge>
+                        )}
+                      </div>
                     }
                   />
                   <CardBody className="py-3">
-                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
                       {serviceParamsList.map((p) => (
-                        <div key={p.name} className="p-2.5 rounded border border-line bg-plane/20 text-[12px]">
-                          <span className="text-ink-3 block text-[11.5px] font-medium">{p.name}</span>
-                          <span className="font-mono font-medium text-ink-1">{p.current}</span>
+                        <div key={p.name} className="p-3 rounded-lg border border-line bg-plane/30 flex flex-col justify-between gap-1 text-[12px]">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-ink-3 text-[11.5px] font-medium">{p.name}</span>
+                            <span className="text-[10px] text-ink-3 bg-white px-1.5 py-0.5 rounded border border-line-soft font-mono">
+                              {p.source}
+                            </span>
+                          </div>
+                          <div className="font-mono font-medium text-ink-1 text-[13.5px] mt-0.5">{p.current}</div>
+                          {p.hint && <div className="text-[10.5px] text-ink-3">{p.hint}</div>}
                         </div>
                       ))}
                     </div>
@@ -2239,18 +2254,6 @@ export default function NewServiceWizard() {
                           {DAY2_PRESETS.Cease.map((p) => <option key={p} value={p}>{p}</option>)}
                         </Select>
                       </Field>
-                      <div className="p-3 rounded-lg border border-crit-200 bg-crit-50/50 flex items-start gap-2.5">
-                        <input
-                          id="confirm-cease-cb"
-                          type="checkbox"
-                          checked={ceaseConfirmed}
-                          onChange={(e) => setCeaseConfirmed(e.target.checked)}
-                          className="mt-0.5 h-4 w-4 rounded border-crit-300 text-crit-600 focus:ring-crit-500 cursor-pointer"
-                        />
-                        <label htmlFor="confirm-cease-cb" className="text-[12.5px] font-medium text-crit-900 cursor-pointer">
-                          I confirm that customer decommissioning approval has been verified and this service should be permanently torn down.
-                        </label>
-                      </div>
                     </div>
                   )}
 
@@ -2286,6 +2289,22 @@ export default function NewServiceWizard() {
                       className={TEXTAREA_CLS}
                     />
                   </Field>
+
+                  {/* Cease Decommissioning Confirmation Checkbox (after Operation Notes) */}
+                  {requestIntent === 'Cease' && (
+                    <div className="p-3 rounded-lg border border-crit-200 bg-crit-50/50 flex items-start gap-2.5">
+                      <input
+                        id="confirm-cease-cb"
+                        type="checkbox"
+                        checked={ceaseConfirmed}
+                        onChange={(e) => setCeaseConfirmed(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-crit-300 text-crit-600 focus:ring-crit-500 cursor-pointer"
+                      />
+                      <label htmlFor="confirm-cease-cb" className="text-[12.5px] font-medium text-crit-900 cursor-pointer">
+                        I confirm that customer decommissioning approval has been verified and this service should be permanently torn down.
+                      </label>
+                    </div>
+                  )}
                 </CardBody>
               </Card>
 
