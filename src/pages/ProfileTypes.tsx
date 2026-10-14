@@ -1,15 +1,15 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, CircleAlert, Eye, FolderTree, Layers, Pencil, Plus, Shapes, Workflow as WorkflowIcon } from 'lucide-react'
+import { CircleAlert, Eye, FolderTree, Layers, Plus, Shapes, Workflow as WorkflowIcon } from 'lucide-react'
 import { useQueryState } from '@/lib/useQueryState'
 import { useStore } from '@/store/useStore'
 import type { Category, Domain, ProfileType } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
-  Badge, Button, CellMain, DataTable, Drawer,
+  Badge, Button, CellMain, DataTable,
   Field, FieldDropdown, Kebab, Modal, Note, Select, Stat, TextInput, type Column,
 } from '@/components/ui'
-import { CATEGORY_TONE, shortDate } from '@/lib/format'
+import { CATEGORY_TONE, DOMAIN_TONE, shortDate } from '@/lib/format'
 
 const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'VLAN', 'Microwave', 'DWDM', 'RAN VNF', 'GPON']
 
@@ -17,7 +17,6 @@ export default function ProfileTypes() {
   const profileTypes = useStore((s) => s.profileTypes)
   const workflows = useStore((s) => s.workflows)
   const add = useStore((s) => s.addProfileType)
-  const update = useStore((s) => s.updateProfileType)
 
   const nav = useNavigate()
   const pushToast = useStore((st) => st.pushToast)
@@ -33,15 +32,8 @@ export default function ProfileTypes() {
     if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
   }
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState({ category: 'L2VPN' as Category, type: '', subtype: '', description: '' })
+  const [form, setForm] = useState({ domain: '' as Domain | '', category: '' as Category | '', type: '', subtype: '', description: '' })
   const [view, setView] = useState<ProfileType | null>(null)
-  const [edit, setEdit] = useState<ProfileType | null>(null)
-  const [editForm, setEditForm] = useState({ category: 'L2VPN' as Category, type: '', subtype: '', description: '' })
-
-  const startEdit = (p: ProfileType) => {
-    setEditForm({ category: p.category, type: p.type, subtype: p.subtype, description: p.description })
-    setEdit(p)
-  }
 
   const usage = useMemo(() => {
     const m = new Map<string, number>()
@@ -72,9 +64,10 @@ export default function ProfileTypes() {
   )
 
   const columns: Column<ProfileType>[] = [
-    { key: 'sub', header: 'Subtype', width: '150px', sortValue: (r) => r.subtype, render: (r) => <CellMain>{r.subtype}</CellMain> },
-    { key: 'type', header: 'Type', width: '170px', sortValue: (r) => r.type, render: (r) => r.type },
+    { key: 'domain', header: 'Domain', width: '120px', sortValue: (r) => domainOf(r.category), render: (r) => domainOf(r.category) },
     { key: 'cat', header: 'Category', width: '120px', sortValue: (r) => r.category, render: (r) => <Badge tone={CATEGORY_TONE[r.category]}>{r.category}</Badge> },
+    { key: 'type', header: 'Type', width: '170px', sortValue: (r) => r.type, render: (r) => r.type },
+    { key: 'sub', header: 'Subtype', width: '150px', sortValue: (r) => r.subtype, render: (r) => <CellMain>{r.subtype}</CellMain> },
     { key: 'desc', header: 'Description', render: (r) => <span className="block truncate max-w-[560px]" title={r.description}>{r.description}</span> },
     { key: 'creator', header: 'Creator', width: '110px', sortValue: (r) => r.creator, render: (r) => r.creator },
     {
@@ -90,7 +83,6 @@ export default function ProfileTypes() {
       render: (r) => (
         <Kebab items={[
           { label: 'View details', icon: Eye, onClick: () => setView(r) },
-          { label: 'Edit', icon: Pencil, onClick: () => startEdit(r) },
         ]} />
       ),
     },
@@ -112,7 +104,8 @@ export default function ProfileTypes() {
       </div>
 
       <DataTable
-        rows={filtered} total={profileTypes.length} columns={columns} minWidth={900}
+        rows={filtered} total={profileTypes.length} columns={columns} minWidth={1020}
+        onRowClick={(row) => setView(row)}
         fillHeight
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Category, Type, Subtype' },
@@ -136,83 +129,94 @@ export default function ProfileTypes() {
           onResetFilters: () => { setDomain('All'); setCat('All'); setPtype('All'); setUsedFilter('All'); setQ(''); setQsubtype('') },
           onRefresh: () => pushToast('info', 'Profile types refreshed.'),
           actions: [
-            { label: 'Create profile template', icon: Plus, onClick: () => setOpen(true) },
+            { label: 'Profile template', icon: Plus, onClick: () => setOpen(true) },
           ],
         }}
       />
 
       <Modal
         open={open} onClose={() => setOpen(false)}
-        title="Create profile template" sub="Adds a Category → Type → Subtype row to the master hierarchy"
+        title="Profile template"
         footer={
           <>
             <Button onClick={() => setOpen(false)}>Cancel</Button>
             <Button
               variant="primary"
-              disabled={!form.type.trim() || !form.subtype.trim() || !form.description.trim()}
+              disabled={!form.domain || !form.category || !form.type.trim() || !form.subtype.trim() || !form.description.trim()}
               onClick={() => {
+                if (!form.category) return
                 add(form.category, form.type.trim(), form.subtype.trim(), form.description.trim())
-                setForm({ category: 'L2VPN', type: '', subtype: '', description: '' })
+                setForm({ domain: '', category: '', type: '', subtype: '', description: '' })
                 setOpen(false)
               }}
             >Create</Button>
           </>
         }
       >
-        <div className="flex flex-col gap-4">
-          <Field label="Profile category" required>
-            <Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value as Category })}>
-              {CATS.map((c) => <option key={c}>{c}</option>)}
-            </Select>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-lg border border-line p-3">
+            <Field label="Domain" required>
+              <Select value={form.domain} onChange={(e) => {
+                const nextDomain = e.target.value as Domain
+                setForm({ ...form, domain: nextDomain, category: '' })
+              }}>
+                <option value="" disabled>Select domain</option>
+                {DOMAINS.map((d) => <option key={d}>{d}</option>)}
+              </Select>
+            </Field>
+            <Field label="Category" required>
+              <Select value={form.category} disabled={!form.domain} onChange={(e) => setForm({ ...form, category: e.target.value as Category })}>
+                <option value="" disabled>Select category</option>
+                {form.domain && CATEGORIES_BY_DOMAIN[form.domain].map((c) => <option key={c}>{c}</option>)}
+              </Select>
+            </Field>
+          </div>
+          <Field label="Profile type" required>
+            <TextInput value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} placeholder="Enter profile type" />
           </Field>
-          <Field label="Profile type" required hint="Functional classification, for example Hub & Spoke or Transparent.">
-            <TextInput value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} placeholder="Hub & Spoke" />
+          <Field label="Subtype" required>
+            <TextInput value={form.subtype} onChange={(e) => setForm({ ...form, subtype: e.target.value })} placeholder="Enter subtype" />
           </Field>
-          <Field label="Subtype" required hint="Specialisation used during workflow mapping, for example BGP or Tagged.">
-            <TextInput value={form.subtype} onChange={(e) => setForm({ ...form, subtype: e.target.value })} placeholder="BGP" />
-          </Field>
-          <Field label="Description" required>
-            <TextInput value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="L3VPN Hub and Spoke profile for BGP-based connectivity." />
-          </Field>
-          {profileTypes.some((p) => p.category === form.category && p.type === form.type.trim() && p.subtype === form.subtype.trim()) && (
+          <div className="sm:col-span-2">
+            <Field label="Description" required>
+              <TextInput value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Enter description" />
+            </Field>
+          </div>
+          {form.category && profileTypes.some((p) => p.category === form.category && p.type === form.type.trim() && p.subtype === form.subtype.trim()) && (
             <Note tone="warn">A profile type with this exact hierarchy already exists. Reuse it rather than creating a duplicate.</Note>
           )}
         </div>
       </Modal>
 
       {/* -------- view details -------- */}
-      <Drawer
+      <Modal
         open={!!view} onClose={() => setView(null)}
         title={view ? `${view.category} · ${view.type} · ${view.subtype}` : ''}
         sub={view?.id}
-        width={520}
-        footer={view && (
-          <Button variant="primary" onClick={() => { startEdit(view); setView(null) }}>
-            <Pencil size={15} />Edit
-          </Button>
-        )}
+        width={640}
+        footer={<Button onClick={() => setView(null)}>Cancel</Button>}
       >
         {view && (() => {
           const count = usage.get(`${view.category}|${view.type}|${view.subtype}`) ?? 0
           return (
-            <div className="flex flex-col gap-5">
-              <div className="border border-line rounded-lg px-4 py-4 bg-plane/50">
-                <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-3">Hierarchy</div>
-                <div className="flex items-center flex-wrap gap-x-2.5 gap-y-2">
-                  <Badge tone={CATEGORY_TONE[view.category]}>{view.category}</Badge>
-                  <ChevronRight size={15} className="text-ink-3 shrink-0" aria-hidden />
-                  <span className="text-[14px] font-medium text-ink-1">{view.type}</span>
-                  <ChevronRight size={15} className="text-ink-3 shrink-0" aria-hidden />
-                  <span className="text-[14px] font-semibold text-ink-1">{view.subtype}</span>
+            <div>
+              <div className="grid grid-cols-2 gap-x-5 gap-y-5">
+                <div>
+                  <div className="vw-label mb-1">Domain</div>
+                  <Badge tone={DOMAIN_TONE[domainOf(view.category)]}>{domainOf(view.category)}</Badge>
                 </div>
-              </div>
-
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3 mb-2">Description</div>
-                <p className="text-[13px] text-ink-2 leading-relaxed m-0">{view.description}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="vw-label mb-1">Category</div>
+                  <Badge tone={CATEGORY_TONE[view.category]}>{view.category}</Badge>
+                </div>
+                <div>
+                  <div className="vw-label mb-1">Type</div>
+                  <div className="vw-value font-medium">{view.type}</div>
+                </div>
+                <div>
+                  <div className="vw-label mb-1">Subtype</div>
+                  <div className="vw-value font-medium">{view.subtype}</div>
+                </div>
                 <div>
                   <div className="vw-label mb-1">Creator</div>
                   <div className="vw-value font-medium">{view.creator}</div>
@@ -223,11 +227,15 @@ export default function ProfileTypes() {
                 </div>
               </div>
 
+              <div className="mt-5">
+                <div className="vw-label mb-1">Description</div>
+                <div className="vw-value font-medium">{view.description}</div>
+              </div>
               {count > 0 ? (
                 <button
                   type="button"
                   onClick={() => { setView(null); nav(`/workflows?cat=${encodeURIComponent(view.category)}&type=${encodeURIComponent(view.type)}&subtype=${encodeURIComponent(view.subtype)}`) }}
-                  className="vw-card-child vw-card--clickable w-full text-left"
+                  className="vw-card-child vw-card--clickable w-full text-left mt-5"
                   aria-label={`${count} workflows use this profile. Open them in Workflows`}
                 >
                   <span className="vw-flex vw-items-center vw-justify-between vw-gap-sm">
@@ -244,62 +252,13 @@ export default function ProfileTypes() {
                   </span>
                 </button>
               ) : (
-                <Note tone="warn">
-                  No workflow references this profile yet — an order that selects it can't be fulfilled until one is mapped.
-                </Note>
+                <div className="mt-5"><Note tone="warn">No workflow references this profile yet — an order that selects it can't be fulfilled until one is mapped.</Note></div>
               )}
             </div>
           )
         })()}
-      </Drawer>
-
-      {/* -------- edit -------- */}
-      <Modal
-        open={!!edit} onClose={() => setEdit(null)}
-        title="Edit profile template" sub={edit?.id}
-        footer={
-          <>
-            <Button onClick={() => setEdit(null)}>Cancel</Button>
-            <Button
-              variant="primary"
-              disabled={!editForm.type.trim() || !editForm.subtype.trim() || !editForm.description.trim()}
-              onClick={() => {
-                if (edit) {
-                  update(edit.id, {
-                    category: editForm.category,
-                    type: editForm.type.trim(),
-                    subtype: editForm.subtype.trim(),
-                    description: editForm.description.trim(),
-                  })
-                }
-                setEdit(null)
-              }}
-            >Save</Button>
-          </>
-        }
-      >
-        <div className="flex flex-col gap-4">
-          <Field label="Profile category" required>
-            <Select value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value as Category })}>
-              {CATS.map((c) => <option key={c}>{c}</option>)}
-            </Select>
-          </Field>
-          <Field label="Profile type" required hint="Functional classification, for example Hub & Spoke or Transparent.">
-            <TextInput value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} placeholder="Hub & Spoke" />
-          </Field>
-          <Field label="Subtype" required hint="Specialisation used during workflow mapping, for example BGP or Tagged.">
-            <TextInput value={editForm.subtype} onChange={(e) => setEditForm({ ...editForm, subtype: e.target.value })} placeholder="BGP" />
-          </Field>
-          <Field label="Description" required>
-            <TextInput value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} placeholder="L3VPN Hub and Spoke profile for BGP-based connectivity." />
-          </Field>
-          {edit && (usage.get(`${edit.category}|${edit.type}|${edit.subtype}`) ?? 0) > 0 && (
-            <Note tone="warn">
-              {usage.get(`${edit.category}|${edit.type}|${edit.subtype}`)} workflow(s) are mapped to this exact hierarchy — changing Category, Type or Subtype breaks that mapping.
-            </Note>
-          )}
-        </div>
       </Modal>
+
     </>
   )
 }
