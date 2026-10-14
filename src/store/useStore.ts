@@ -6,7 +6,7 @@ import type {
 import { INTENTS, PROFILE_TYPES, pad } from '@/data/catalog'
 import { buildWorkflows } from '@/data/workflows'
 import { buildServices, serviceFromOrder } from '@/data/services'
-import { bindEndpoints, buildHistoricalOrders, buildOrders, buildRuns, claimFor, hasRetainedLog, linkProvenance, orderedTasks, WAITING } from '@/data/orders'
+import { bindEndpoints, buildHistoricalOrders, buildOrders, buildPreValidationRuns, buildRuns, claimFor, hasRetainedLog, linkProvenance, orderedTasks, WAITING } from '@/data/orders'
 import { renderCommand, workflowParams } from '@/data/templates'
 import { allocateForService, buildNotifications, buildPools, buildReports, releaseForService } from '@/data/misc'
 
@@ -197,7 +197,7 @@ interface State {
   abortRun: (runId: string) => void
   retryOrder: (orderId: string) => void
 
-  raiseChange: (serviceId: string, intent: OrderIntent, delta?: Order['delta'], params?: OrderParamValue[], notes?: string) => Order
+  raiseChange: (serviceId: string, intent: OrderIntent, delta?: Order['delta'], params?: OrderParamValue[], notes?: string, workflowId?: string) => Order
   reproveService: (serviceId: string) => void
 
   addProfileType: (category: string, type: string, subtype: string, description: string) => void
@@ -401,7 +401,21 @@ export const useStore = create<State>((set, get) => ({
       approvals: [{ role: 'NOC lead' }],
       slaBreached: false,
     }
-    set((s) => ({ orders: [order, ...s.orders] }))
+
+    const initialRuns = buildPreValidationRuns(order, get().workflows, {
+      attempt: 1,
+      state: 'Planned',
+      runIdPrefix: `RUN-N${pad(get().runs.length + 1, 4)}-`,
+      runIdOffset: 0,
+    })
+    const runIds = initialRuns.map((r) => r.id)
+    order.runIds = runIds
+
+    set((s) => ({
+      orders: [order, ...s.orders],
+      runs: [...initialRuns, ...s.runs],
+      activeRunId: runIds[0] ?? s.activeRunId,
+    }))
     get().pushToast('good', `${order.id} created. Pre-validation starting.`)
 
     /* Draft → Planned (pre-validation running) → Validated / Invalid — a
@@ -411,11 +425,33 @@ export const useStore = create<State>((set, get) => ({
     setTimeout(() => { get().setOrderState(order.id, 'Planned') }, 900)
     setTimeout(() => {
       const ok = Math.random() > 0.12
-      get().setOrderState(order.id, ok ? 'Validated' : 'Invalid')
+      const updatedRuns = buildPreValidationRuns(order, get().workflows, {
+        attempt: 1,
+        state: ok ? 'Validated' : 'Invalid',
+        runIdPrefix: `RUN-N${pad(get().runs.length + 1, 4)}-`,
+        runIdOffset: 0,
+      })
+      const failedTask = updatedRuns[0]?.tasks.find((t) => t.state === 'Failed')
+      const failureReason = failedTask?.failureReason
+
+      set((s) => ({
+        runs: s.runs.map((r) => {
+          const match = updatedRuns.find((ur) => ur.endpointId === r.endpointId && r.orderId === order.id)
+          return match ? { ...match, id: r.id } : r
+        }),
+        orders: s.orders.map((o) => (o.id === order.id ? {
+          ...o,
+          state: ok ? 'Validated' : 'Invalid',
+          waitingOn: WAITING[ok ? 'Validated' : 'Invalid'],
+          notes: ok ? o.notes : (failureReason ?? o.notes),
+          updatedAt: new Date().toISOString(),
+        } : o)),
+      }))
+
       get().pushToast(ok ? 'good' : 'crit', ok
         ? `${order.id} pre-validated. Awaiting approval.`
         : `${order.id} failed pre-validation. Needs rework before it can be approved.`)
-    }, 3200)
+    }, 2800)
 
     return order
   },
@@ -447,15 +483,56 @@ export const useStore = create<State>((set, get) => ({
   submitDraftForValidation: (id) => {
     const order = get().orderById(id)
     if (!order || order.state !== 'Draft') return
-    get().setOrderState(id, 'Planned')
+    const attempt = (Math.max(0, ...get().runs.filter((r) => r.orderId === id).map((r) => r.attempt))) + 1
+    const initialRuns = buildPreValidationRuns(order, get().workflows, {
+      attempt,
+      state: 'Planned',
+      runIdPrefix: `RUN-N${pad(get().runs.length + 1, 4)}-`,
+      runIdOffset: 0,
+    })
+    const runIds = initialRuns.map((r) => r.id)
+
+    set((s) => ({
+      runs: [...initialRuns, ...s.runs],
+      orders: s.orders.map((o) => (o.id === id ? {
+        ...o,
+        state: 'Planned',
+        waitingOn: WAITING.Planned,
+        runIds: [...runIds, ...o.runIds],
+        updatedAt: new Date().toISOString(),
+      } : o)),
+    }))
     get().pushToast('good', `${id} submitted. Pre-validation starting.`)
+
     setTimeout(() => {
       const ok = Math.random() > 0.12
-      get().setOrderState(id, ok ? 'Validated' : 'Invalid')
+      const updatedRuns = buildPreValidationRuns(get().orderById(id) ?? order, get().workflows, {
+        attempt,
+        state: ok ? 'Validated' : 'Invalid',
+        runIdPrefix: `RUN-N${pad(get().runs.length + 1, 4)}-`,
+        runIdOffset: 0,
+      })
+      const failedTask = updatedRuns[0]?.tasks.find((t) => t.state === 'Failed')
+      const failureReason = failedTask?.failureReason
+
+      set((s) => ({
+        runs: s.runs.map((r) => {
+          const match = updatedRuns.find((ur) => ur.endpointId === r.endpointId && r.orderId === id && r.attempt === attempt)
+          return match ? { ...match, id: r.id } : r
+        }),
+        orders: s.orders.map((o) => (o.id === id ? {
+          ...o,
+          state: ok ? 'Validated' : 'Invalid',
+          waitingOn: WAITING[ok ? 'Validated' : 'Invalid'],
+          notes: ok ? o.notes : (failureReason ?? o.notes),
+          updatedAt: new Date().toISOString(),
+        } : o)),
+      }))
+
       get().pushToast(ok ? 'good' : 'crit', ok
         ? `${id} pre-validated. Awaiting approval.`
         : `${id} failed pre-validation. Needs rework before it can be approved.`)
-    }, 2200)
+    }, 2400)
   },
 
   setOrderState: (id, state, note) =>
@@ -668,7 +745,7 @@ export const useStore = create<State>((set, get) => ({
     setTimeout(() => { get().startRun(orderId) }, 1100)
   },
 
-  raiseChange: (serviceId, intent, delta, params, notes) => {
+  raiseChange: (serviceId, intent, delta, params, notes, workflowId) => {
     const svc = get().serviceById(serviceId)!
     const seq = get().orders.length + 1
     const now = new Date().toISOString()
@@ -696,8 +773,13 @@ export const useStore = create<State>((set, get) => ({
       accountName: svc.accountName,
       serviceId,
       state: 'Validated',
-      workflowId: get().workflows.find((w) => w.intentId === svc.intentId && w.state === 'Active')?.id,
-      endpoints: bindEndpoints(svc.endpoints, svc.category, svc.type, '—', get().workflows, mergedAttrs, bandwidth),
+      workflowId: workflowId
+        ?? get().workflows.find((w) => (w.operation ?? 'Create') === intent && w.category === svc.category && w.state === 'Active')?.id
+        ?? get().workflows.find((w) => w.intentId === svc.intentId && w.state === 'Active')?.id,
+      endpoints: bindEndpoints(svc.endpoints, svc.category, svc.type, '—', get().workflows, mergedAttrs, bandwidth).map((e) => ({
+        ...e,
+        workflowId: workflowId ?? e.workflowId,
+      })),
       /* Only what was actually changed goes on the request — everything else
          about the service is unaffected and has no business being here. */
       params: params ?? mergedAttrs,
@@ -706,7 +788,17 @@ export const useStore = create<State>((set, get) => ({
       runIds: [], approvals: [{ role: 'NOC lead' }],
       delta, slaBreached: false, notes,
     }
-    set((s) => ({ orders: [order, ...s.orders] }))
+    const pvRuns = buildPreValidationRuns(order, get().workflows, {
+      attempt: 1,
+      state: 'Validated',
+      runIdPrefix: `RUN-N${pad(get().runs.length + 1, 4)}-`,
+      runIdOffset: 0,
+    })
+    order.runIds = pvRuns.map((r) => r.id)
+    set((s) => ({
+      orders: [order, ...s.orders],
+      runs: [...pvRuns, ...s.runs],
+    }))
     get().pushToast('good', `${intent} order ${order.id} raised against ${serviceId}.`)
     return order
   },

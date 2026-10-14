@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, CircleOff, PauseCircle, Pencil, PlayCircle, Plus, RefreshCcw, ShieldCheck, Trash2 } from 'lucide-react'
+import { ArrowLeft, CircleOff, PauseCircle, Pencil, PlayCircle, Plus, ShieldCheck } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import {
   Badge, Button, Card, CardBody, CardHead, KV, Mono, Note, Tabs,
@@ -10,12 +10,11 @@ import {
   relTime, RUN_TONE, SERVICE_TONE, shortDate,
 } from '@/lib/format'
 import { ORIGIN_BLURB, ORIGIN_LABEL, serviceOrigins } from '@/lib/traceability'
-import { CeaseServiceModal, ModifyServiceDrawer } from '@/components/ServiceChangeDialogs'
 import { RUN_LOG_RETENTION_DAYS } from '@/data/orders'
 import { endpointRole } from '@/types'
 import type { OrderIntent, Run } from '@/types'
 
-type Tab = 'overview' | 'realised' | 'evidence' | 'lifecycle' | 'history' | 'resources'
+type Tab = 'overview' | 'realised' | 'lifecycle' | 'history' | 'resources'
 
 /* The mark on each stop of the journey. Intent is the one thing that is true
    of a request before anything happens to it, so it carries the colour; the
@@ -35,8 +34,6 @@ export default function ServiceDetail() {
   const nav = useNavigate()
   const svc = useStore((s) => s.services.find((x) => x.id === id))
   const allOrders = useStore((s) => s.orders)
-  const raiseChange = useStore((s) => s.raiseChange)
-  const reprove = useStore((s) => s.reproveService)
   /* The tab lives in the URL so another screen can link straight to it — a
      change request points at this service's lifecycle, not at its overview. */
   const [sp, setSp] = useSearchParams()
@@ -46,8 +43,6 @@ export default function ServiceDetail() {
      list below it point at the same request instead of being two lists the
      reader has to line up by eye. */
   const [focus, setFocus] = useState<string | null>(null)
-  const [modifyOpen, setModifyOpen] = useState(false)
-  const [ceaseOpen, setCeaseOpen] = useState(false)
   const orders = useMemo(() => allOrders.filter((o) => o.serviceId === id), [allOrders, id])
   const origin = useMemo(() => serviceOrigins(allOrders).get(id ?? '') ?? 'inherited', [allOrders, id])
 
@@ -124,12 +119,10 @@ export default function ServiceDetail() {
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <Button onClick={() => setModifyOpen(true)}>Modify</Button>
-              <Button onClick={() => { raiseChange(svc.id, svc.state === 'Suspended' ? 'Resume' : 'Suspend'); nav('/change') }}>
-                {svc.state === 'Suspended' ? <><PlayCircle size={15} />Resume</> : <><PauseCircle size={15} />Suspend</>}
-              </Button>
-              <Button variant="danger" onClick={() => setCeaseOpen(true)}><Trash2 size={15} />Cease</Button>
-              <Button variant="primary" onClick={() => reprove(svc.id)}><RefreshCcw size={15} />Re-prove now</Button>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium bg-slate-100 text-ink-2 border border-line-soft">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                Service Inventory · Read Only
+              </span>
             </div>
           </div>
         </CardBody>
@@ -139,7 +132,6 @@ export default function ServiceDetail() {
             tabs={[
               { id: 'overview', label: 'Overview' },
               { id: 'realised', label: 'Intent vs realised', count: svc.attributes.length },
-              { id: 'evidence', label: 'Evidence' },
               { id: 'lifecycle', label: 'Lifecycle', count: orders.length },
               { id: 'history', label: 'Change history', count: svc.history.length },
               { id: 'resources', label: 'Resources', count: svc.resources.length },
@@ -270,44 +262,6 @@ export default function ServiceDetail() {
           <CardBody className="pt-4">
             <Note>Precedence when sources disagree: <b>Derived → Discovered → Reserved → Manual → Planned</b>. A designed-but-unbuilt service reads as <i>not yet built</i>, never as drifted.</Note>
           </CardBody>
-        </Card>
-      )}
-
-      {tab === 'evidence' && (
-        <Card>
-          <CardHead title="Acceptance evidence" sub="What the last proof actually asserted"
-            right={svc.acceptanceEvidence ? <Badge tone="good" dot>{svc.acceptanceEvidence.length} of {svc.acceptanceEvidence.length} passed</Badge> : <Badge tone="warn">No evidence</Badge>} />
-          {svc.acceptanceEvidence ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-[13px]">
-                <thead><tr>
-                  {['#', 'Claim', 'Layer', 'Expected', 'Actual', 'Verdict'].map((h) => (
-                    <th key={h} scope="col" className="text-left px-[18px] py-3 border-b border-line text-[12px] font-medium text-ink-3">{h}</th>
-                  ))}
-                </tr></thead>
-                <tbody>
-                  {svc.acceptanceEvidence.map((e, i) => (
-                    <tr key={i} className={`border-b border-line-soft last:border-0 ${e.layer === 'service' ? 'bg-good-50' : ''}`}>
-                      <td className="px-[18px] py-3 font-mono text-ink-3">{i + 1}</td>
-                      <td className="px-[18px] py-3 font-medium">{e.criterion}</td>
-                      <td className="px-[18px] py-3"><Badge tone={e.layer === 'service' ? 'good' : 'none'}>{e.layer}</Badge></td>
-                      <td className="px-[18px] py-3 font-mono text-ink-2">{e.expected}</td>
-                      <td className="px-[18px] py-3 font-mono">{e.actual}</td>
-                      <td className="px-[18px] py-3"><Badge tone={e.passed ? 'good' : 'crit'}>{e.passed ? 'Passed' : 'Failed'}</Badge></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <CardBody className="py-12 text-center">
-              <div className="text-[15px] font-semibold mb-1">No evidence on file</div>
-              <p className="text-[13px] text-ink-3 mb-4">
-                This service has never been proven end to end. Configuration may read back correctly while no customer traffic has ever been tested.
-              </p>
-              <Button variant="primary" onClick={() => reprove(svc.id)}><RefreshCcw size={15} />Re-prove now</Button>
-            </CardBody>
-          )}
         </Card>
       )}
 
@@ -530,9 +484,6 @@ export default function ServiceDetail() {
           </CardBody>
         </Card>
       )}
-
-      <ModifyServiceDrawer service={modifyOpen ? svc : null} onClose={() => setModifyOpen(false)} />
-      <CeaseServiceModal service={ceaseOpen ? svc : null} onClose={() => setCeaseOpen(false)} />
     </>
   )
 }

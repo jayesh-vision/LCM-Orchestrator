@@ -272,6 +272,7 @@ export interface Workflow {
   tasks: WorkflowTaskDef[]
   runs30d: number
   firstPassRate: number
+  operation?: OrderIntent
 }
 
 /* ---------- runs ---------- */

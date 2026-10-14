@@ -397,12 +397,14 @@ export function Modal({ open, onClose, title, sub, children, footer, width = 560
 }
 
 /* ----------------------------------------------------------------- forms */
-export function Field({ label, hint, required, children }:
-{ label: ReactNode; hint?: ReactNode; required?: boolean; children: ReactNode }) {
+export function Field({ label, hint, tooltip, required, children }:
+{ label: ReactNode; hint?: ReactNode; tooltip?: ReactNode; required?: boolean; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="nst-input-label block mb-1.5">
-        {label}{required && <span className="text-crit-500 ml-0.5">*</span>}
+      <span className="nst-input-label flex items-center gap-1.5 mb-1.5">
+        <span>{label}</span>
+        {required && <span className="text-crit-500">*</span>}
+        {tooltip && <InfoTip>{tooltip}</InfoTip>}
       </span>
       {children}
       {hint && <span className="nst-input-hint block mt-1">{hint}</span>}

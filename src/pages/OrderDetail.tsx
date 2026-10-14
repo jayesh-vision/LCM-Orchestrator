@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, Check, CheckCircle2, ChevronDown, GitBranch, Pencil, PlayCircle, RotateCcw, Send, Server, Square, XCircle,
@@ -29,7 +29,10 @@ const STAGE_KIND_TONE: Record<StageKind, Tone> = { 'Pre validation': 'teal', Con
  * record if it names what it was retrying after.
  */
 function attemptReason(group: Run[], r: Run): string {
-  if (r.attempt <= 1) return 'First attempt'
+  if (r.attempt <= 1) {
+    const hasWrites = r.tasks.some((t) => t.stageKind === 'Configuration' && t.state === 'Passed')
+    return hasWrites ? 'First attempt' : 'Pre-validation'
+  }
   const prev = group.find((x) => x.attempt === r.attempt - 1)
   return prev ? `Retry after ${prev.outcome.toLowerCase()}` : 'Retry'
 }
@@ -197,7 +200,23 @@ export default function OrderDetail() {
             : `request is ${order?.state.toLowerCase() ?? 'draft'}`,
       }
       : latest.some((r) => r.outcome === 'Running')
-        ? { tone: 'info', label: 'Applying now', note: `${writes.passed} of ${writes.total} commands written so far` }
+        ? {
+            tone: 'info',
+            label: order?.state === 'Planned' ? 'Pre-validating' : 'Applying now',
+            note: order?.state === 'Planned' ? 'Running automatic pre-validation checks' : `${writes.passed} of ${writes.total} commands written so far`,
+          }
+        : order?.state === 'Validated' || (order?.state === 'Approved' && writes.passed === 0)
+          ? {
+            tone: 'good',
+            label: 'Pre-validated',
+            note: 'All pre-validation checks passed · awaiting NOC approval',
+          }
+        : order?.state === 'Invalid'
+          ? {
+            tone: 'crit',
+            label: 'Pre-validation failed',
+            note: order?.notes ?? 'Pre-validation checks failed · returned for rework',
+          }
         : latest.every((r) => r.outcome === 'Accepted')
           ? {
             tone: 'good', label: 'Applied and proved',
@@ -245,6 +264,12 @@ export default function OrderDetail() {
 
   /* The run's stages in the order its workflow defines them. */
   const stages = useMemo(() => (run ? stagesOf(run) : []), [run])
+  useEffect(() => {
+    if (run) {
+      const idx = stages.findIndex((s) => s.tasks.some((t) => t.state === 'Failed' || t.state === 'Running'))
+      if (idx !== -1) setOpenStageIdx(idx)
+    }
+  }, [run?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const openStage = stages[Math.min(openStageIdx, Math.max(0, stages.length - 1))]
 
   if (!order) {
@@ -501,7 +526,7 @@ export default function OrderDetail() {
                 : order.approvals.length > 0 ? `waiting on ${order.approvals[0].role}` : 'no approval recorded'}
             />
             <ChangeFact
-              label="Executed"
+              label={changeAudit.writes.passed > 0 || !['Planned', 'Validated', 'Invalid'].includes(order.state) ? 'Executed' : 'Pre-validated'}
               value={changeAudit.startedAt ? dateTime(changeAudit.startedAt) : <span className="text-ink-3">Not executed yet</span>}
               sub={changeAudit.startedAt
                 ? <>{relTime(changeAudit.startedAt)}{changeAudit.elapsed !== undefined ? ` · took ${dur(changeAudit.elapsed)}` : ' · still running'}</>
@@ -788,6 +813,16 @@ export default function OrderDetail() {
                   {(() => {
                     const w = writesIn(run)
                     const what = changeSummary(order.intent, order.delta)
+                    if (order.state === 'Planned' || (run.outcome === 'Running' && w.passed === 0)) {
+                      return <>Running automatic pre-validation checks on <strong>{ep?.mgmtIp}</strong> — checking parameters, device reachability, and network state.</>
+                    }
+                    if (order.state === 'Invalid' || (run.outcome === 'Failed' && w.passed === 0)) {
+                      const failedTask = run.tasks.find((t) => t.state === 'Failed')
+                      return <>Pre-validation failed on <strong>{ep?.mgmtIp}</strong> — {failedTask?.failureReason ?? 'one or more assertions failed'}. No configuration was written.</>
+                    }
+                    if (order.state === 'Validated' || (run.outcome === 'Accepted' && w.passed === 0)) {
+                      return <>Pre-validation passed on <strong>{ep?.mgmtIp}</strong> — all read-only checks satisfied. Awaiting approval before configuration can be written.</>
+                    }
                     if (!w.total) return <>This run only read and validated <strong>{ep?.mgmtIp}</strong> — no configuration was written.</>
                     if (run.outcome === 'Running') return <>Applying <strong>{what}</strong> to {ep?.mgmtIp} — {w.passed} of {w.total} commands written so far.</>
                     if (run.outcome === 'Accepted') return <>Applied <strong>{what}</strong> to {ep?.mgmtIp}, writing {w.total} command{w.total === 1 ? '' : 's'}, and proved it afterwards.</>

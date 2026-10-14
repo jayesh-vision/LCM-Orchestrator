@@ -242,6 +242,8 @@ export function buildRequestGraph(order: Order, runs: Run[]): JGraph {
         facts: [['Runs', 'automatically, once the design is complete'], ['Checks', 'parameters, pools, device reachability, workflow coverage']],
         note: s === 'Planned' ? 'Running now.' : s === 'Invalid' ? (order.notes ?? 'Pre-validation failed.') : undefined,
         noteTone: s === 'Invalid' ? 'crit' : 'info',
+        runId: runs[0]?.id,
+        endpointId: runs[0]?.endpointId,
       },
     },
     {
@@ -251,7 +253,14 @@ export function buildRequestGraph(order: Order, runs: Run[]): JGraph {
     {
       id: 'invalid', shape: 'user', label: 'Invalid', sub: 'back to requester',
       x: X.gv, y: ROW.top, w: 112, h: 46, visit: visit('invalid'), tone: reached.has('invalid') ? 'crit' : 'none',
-      detail: { title: 'Invalid', facts: [['Waiting on', order.waitingOn ?? 'Requester']], note: order.notes, noteTone: 'crit' },
+      detail: {
+        title: 'Invalid',
+        facts: [['Waiting on', order.waitingOn ?? 'Requester'], ['Failure reason', order.notes ?? 'Pre-validation checks failed']],
+        note: order.notes,
+        noteTone: 'crit',
+        runId: runs[0]?.id,
+        endpointId: runs[0]?.endpointId,
+      },
     },
     {
       id: 'review', shape: 'user', label: 'NOC lead review', sub: decision ? `${decision.by} · ${fmt(decision.at)}` : order.approvals[0]?.role ?? 'approval',

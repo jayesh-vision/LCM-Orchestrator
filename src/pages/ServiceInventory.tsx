@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillIn } from '@/lib/useQueryState'
-import { Boxes, Eye, Ghost, GitBranch, RefreshCcw, ShieldCheck, ShieldQuestion, XCircle } from 'lucide-react'
+import { Boxes, Eye, Ghost, ShieldCheck, ShieldQuestion } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { Category, Conformance, Domain, Order, Service, ServiceState } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
@@ -13,7 +13,6 @@ import { CHART, Donut, FILL, type FillKey } from '@/components/charts'
 import { CATEGORY_TONE, CONFORMANCE_TONE, inr, relTime, SERVICE_TONE } from '@/lib/format'
 import { CONFORMANCE_ORDER, conformanceBreakdown } from '@/lib/conformance'
 import { byTraceability, serviceTrace, serviceOrigins, ORIGIN_LABEL, ORIGIN_BLURB, type ServiceOrigin } from '@/lib/traceability'
-import { CeaseServiceModal, ModifyServiceDrawer } from '@/components/ServiceChangeDialogs'
 
 const STATES: ServiceState[] = ['Live', 'Activating', 'Degraded', 'Suspended', 'Ceased']
 const CONFS: Conformance[] = ['Conformant', 'Drifted', 'Never proven', 'Ghost', 'Not checked']
@@ -61,11 +60,8 @@ export default function ServiceInventory() {
   const services = useStore((s) => s.services)
   const orders = useStore((s) => s.orders)
   const intents = useStore((s) => s.intents)
-  const reprove = useStore((s) => s.reproveService)
   const pushToast = useStore((s) => s.pushToast)
   const nav = useNavigate()
-  const [modifyTarget, setModifyTarget] = useState<Service | null>(null)
-  const [ceaseTarget, setCeaseTarget] = useState<Service | null>(null)
 
   const [q, setQ] = useQueryState('q', '')
   const [qservice, setQservice] = useQueryState('service', '')
@@ -292,9 +288,6 @@ export default function ServiceInventory() {
       render: (r) => (
         <Kebab items={[
           { label: 'View details', icon: Eye, onClick: () => nav(`/inventory/${r.id}`) },
-          { label: 'Re-prove now', icon: RefreshCcw, onClick: () => reprove(r.id) },
-          { label: 'Modify service', icon: GitBranch, onClick: () => setModifyTarget(r) },
-          { label: 'Cease service', icon: XCircle, onClick: () => setCeaseTarget(r), danger: true },
         ]} />
       ),
     },
@@ -436,9 +429,6 @@ export default function ServiceInventory() {
           onRefresh: () => pushToast('info', 'Inventory refreshed.'),
         }}
       />
-
-      <ModifyServiceDrawer service={modifyTarget} onClose={() => setModifyTarget(null)} />
-      <CeaseServiceModal service={ceaseTarget} onClose={() => setCeaseTarget(null)} />
     </>
   )
 }

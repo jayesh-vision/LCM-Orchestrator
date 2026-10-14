@@ -1,6 +1,6 @@
-import type { Vendor, Workflow, WorkflowState } from '@/types'
+import type { Category, OrderIntent, Vendor, Workflow, WorkflowState } from '@/types'
 import { DEVICE_MODELS, PROFILE_TYPES, between, modelsForCategory, pad, rnd } from './catalog'
-import { templateFor } from './templates'
+import { lifecycleTemplateFor, templateFor } from './templates'
 
 /* Vendor as it appears in a workflow name on the platform. */
 export const VENDOR_LABEL: Record<Vendor, string> = {
@@ -73,6 +73,7 @@ export function buildWorkflows(): Workflow[] {
       category: pt.category, type: pt.type, subtype: pt.subtype,
       vendor: dm.vendor, kind: dm.kind, model: dm.model, models, osRange: dm.osRange,
       intentId, endpointRole: role, state, version,
+      operation: 'Create',
       modifiedOn: new Date(2025, 11 - (n % 12), 1 + (n % 27)).toISOString(),
       createdBy: n % 4 === 0 ? 'Priya S.' : n % 3 === 0 ? 'Ravi K.' : 'Jayesh',
       stages, tasks,
@@ -142,6 +143,63 @@ export function buildWorkflows(): Workflow[] {
     const dm = models[k % models.length]
     const role = (pt.category === 'IBW' || pt.category === 'VLAN' || pt.category === 'RAN VNF' || pt.category === 'GPON') ? undefined : (k % 2 ? 'Destination' : 'Source')
     push(pt, dm, role, state, String(2 + (k % 3)))
+  })
+
+  /* ------------------------------------------------------------------
+     Dedicated lifecycle operational workflows for Day-2 actions:
+     Modify, Suspend, Resume, Cease, Re-prove
+     ------------------------------------------------------------------ */
+  const DAY2_OPS: OrderIntent[] = ['Modify', 'Suspend', 'Resume', 'Cease', 'Re-prove']
+  const OP_TITLES: Record<OrderIntent, string> = {
+    Create: 'Provisioning',
+    Modify: 'Modify Policer & Bandwidth',
+    Suspend: 'Suspend Administrative Traffic Hold',
+    Resume: 'Resume Interface & Policer Un-shut',
+    Cease: 'Cease Teardown & Quarantine',
+    'Re-prove': 'Re-prove End-to-End Conformance Audit',
+  }
+
+  const ALL_CATS: Category[] = [
+    'L2VPN', 'L3VPN', 'IBW', 'VLAN', 'Microwave', 'DWDM', 'RAN VNF', 'GPON',
+  ]
+
+  let opCount = 0
+  ALL_CATS.forEach((cat) => {
+    const models = modelsForCategory(cat)
+    const uniqueVendors = [...new Set(models.map((m) => m.vendor))]
+    const pt = PROFILE_TYPES.find((p) => p.category === cat)
+
+    DAY2_OPS.forEach((op) => {
+      uniqueVendors.forEach((vendor) => {
+        opCount += 1
+        const dm = models.find((m) => m.vendor === vendor)!
+        const { stages, tasks } = lifecycleTemplateFor(cat, vendor, op)
+        const name = `${cat} | ${OP_TITLES[op]} | ${VENDOR_LABEL[vendor]}`
+        out.push({
+          id: `CF-${op.slice(0, 3).toUpperCase()}-${pad(opCount, 4)}`,
+          name,
+          displayName: name,
+          category: cat,
+          type: pt?.type || 'Standard',
+          subtype: pt?.subtype || 'Tagged',
+          vendor,
+          kind: dm.kind,
+          model: dm.model,
+          models: [dm.model],
+          osRange: dm.osRange,
+          intentId: pt?.category === 'IBW' ? 'INT-IBW-ACCESS' : cat === 'L2VPN' ? 'INT-L2-P2P' : cat === 'L3VPN' ? 'INT-L3-MESH' : 'INT-L2-P2P',
+          state: 'Active',
+          operation: op,
+          version: 1,
+          modifiedOn: new Date().toISOString(),
+          createdBy: 'Jayesh',
+          stages,
+          tasks,
+          runs30d: between(15, 200),
+          firstPassRate: Math.round((0.86 + rnd() * 0.12) * 100),
+        })
+      })
+    })
   })
 
   /* Back-fill the profile-type usage counter. */

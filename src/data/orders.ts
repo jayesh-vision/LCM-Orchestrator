@@ -52,7 +52,7 @@ export function bindEndpoints(
   eps: Endpoint[], category: string, type: string, subtype: string, workflows: Workflow[],
   params: OrderParamValue[], bandwidth: number,
 ): Endpoint[] {
-  const active = workflows.filter((w) => w.state === 'Active')
+  const active = workflows.filter((w) => w.state === 'Active' && (w.operation ?? 'Create') === 'Create')
   /* Vendor is not negotiable: a template is a set of commands in one vendor's
      CLI, so binding an endpoint to another vendor's template would produce a
      run that could never succeed on that device. Where the estate has no
@@ -966,13 +966,356 @@ function runTasksFor(wf: Workflow, ep: Endpoint, startAt: number, opts: {
   return { tasks, preEndAt, endAt: cursor }
 }
 
+/**
+ * Builds pre-validation run(s) for a request.
+ *
+ * For Validated orders: all tasks in the Pre validation stage pass, while
+ * Configuration and Post validation tasks remain Not started (awaiting approval/execution).
+ *
+ * For Invalid orders: exactly one task in the Pre validation stage fails with
+ * a detailed, realistic error reason and payload, and subsequent tasks are blocked.
+ */
+export function buildPreValidationRuns(
+  order: Order,
+  workflows: Workflow[],
+  opts?: {
+    attempt?: number
+    state?: 'Planned' | 'Validated' | 'Invalid'
+    failedTaskIndex?: number
+    failureReason?: string
+    startAt?: number
+    runIdPrefix?: string
+    runIdOffset?: number
+  },
+): Run[] {
+  if (!order.endpoints || order.endpoints.length === 0) return []
+
+  const attempt = opts?.attempt ?? 1
+  const state = opts?.state ?? (order.state === 'Invalid' ? 'Invalid' : order.state === 'Planned' ? 'Planned' : 'Validated')
+  const startAt = opts?.startAt ?? (order.createdAt ? Date.parse(order.createdAt) : Date.now())
+  const sourceEp = order.endpoints[0]
+  const fallbackWf: Workflow = (sourceEp?.workflowId ? workflows.find((w) => w.id === sourceEp.workflowId) : undefined)
+    ?? (order.workflowId ? workflows.find((w) => w.id === order.workflowId) : undefined)
+    ?? workflows.find((w) => w.state === 'Active')
+    ?? workflows[0]
+
+  const runs: Run[] = []
+  const prefix = opts?.runIdPrefix ?? 'RUN-N'
+  let offset = opts?.runIdOffset ?? 0
+
+  order.endpoints.forEach((ep, epIdx) => {
+    const isSource = epIdx === 0
+    const wf: Workflow = (ep.workflowId ? workflows.find((w) => w.id === ep.workflowId) : undefined) ?? fallbackWf
+    const ordered = orderedTasks(wf)
+    const cfgIdx = firstConfigIndex(wf)
+    const values = Object.fromEntries((ep.params ?? order.params ?? []).map((p) => [p.name, p.value]))
+
+    const preCount = Math.max(1, cfgIdx)
+    const failIdx = opts?.failedTaskIndex !== undefined
+      ? Math.min(preCount - 1, opts.failedTaskIndex)
+      : Math.min(preCount - 1, Math.max(0, (order.id ? order.id.charCodeAt(order.id.length - 1) % preCount : 1)))
+
+    const failedDef = ordered[failIdx] || ordered[0]
+    let taskFailureReason = opts?.failureReason
+    let errorOutput = ['error: assertion rule violated', 'Invalid input: validation failed']
+    let actual = 'output contains "Invalid input"'
+    let parsed = 'rule_satisfied = false'
+
+    if (!taskFailureReason && failedDef) {
+      const nameLower = failedDef.name.toLowerCase()
+      if (nameLower.includes('ping') || nameLower.includes('reachab') || nameLower.includes('neighbour') || nameLower.includes('neighbor')) {
+        const targetIp = values['Neighbor IP'] || values['PE IP'] || '172.31.28.1'
+        taskFailureReason = `Validation failed: Neighbour reachability test failed — 100% packet loss to ${targetIp}. Rule "Contains 0% packet loss" was not satisfied.`
+        errorOutput = [
+          `PING ${targetIp} (${targetIp}): 56 data bytes`,
+          'Request timeout for icmp_seq 0',
+          'Request timeout for icmp_seq 1',
+          `--- ${targetIp} ping statistics ---`,
+          '5 packets transmitted, 0 packets received, 100.0% packet loss',
+        ]
+        actual = 'output contains "100.0% packet loss"'
+        parsed = 'packets_received = 0, loss = 100%'
+      } else if (nameLower.includes('vrf') || nameLower.includes('routing-instance')) {
+        const vrfName = values['VRF'] || 'VRF_DEFAULT'
+        taskFailureReason = `Validation failed: Routing instance ${vrfName} check failed — instance already defined or interface binding conflict detected on ${ep.mgmtIp}.`
+        errorOutput = [
+          `error: routing-instance ${vrfName} already exists under network routing-options`,
+          'error: interface ge-0/0/2.100 already assigned to active instance',
+          'Invalid input: duplicate routing instance definition detected',
+        ]
+        actual = 'output contains "Invalid input"'
+        parsed = 'duplicate_instance = true'
+      } else if (nameLower.includes('interface') || nameLower.includes('running') || nameLower.includes('config')) {
+        const ifName = values['Interface'] || 'xe-0/0/1'
+        taskFailureReason = `Validation failed: Interface ${ifName} check failed — port link is administratively down on PE router ${ep.mgmtIp}.`
+        errorOutput = [
+          `Interface ${ifName} is administratively down, line protocol is down`,
+          'Hardware is 10GE, address is 001b.7856.9201',
+          'error: admin-down state prevents circuit provisioning',
+        ]
+        actual = 'output contains "admin-down"'
+        parsed = 'admin_state = down, line_protocol = down'
+      } else if (nameLower.includes('policy') || nameLower.includes('community') || nameLower.includes('route-policy')) {
+        const policyName = values['Import Route-Policy'] || values['Export Route-Policy'] || 'POLICY_DEFAULT'
+        taskFailureReason = `Validation failed: Route policy check failed — policy-statement ${policyName} not defined in local router prefix-list on ${ep.mgmtIp}.`
+        errorOutput = [
+          `error: policy-statement ${policyName} is not configured in local policy-options`,
+          'error: unreferenced policy cannot be bound to service routing-instance',
+        ]
+        actual = 'output contains "error"'
+        parsed = 'policy_referenced = false'
+      } else {
+        taskFailureReason = `Validation failed: Output assertion for "${failedDef.name}" was not satisfied on device ${ep.mgmtIp}. Rule "${claimFor(failedDef, values)}" failed.`
+        errorOutput = [
+          `error: assertion failed for "${failedDef.name}"`,
+          'Invalid input: pre-validation condition mismatch',
+        ]
+        actual = 'output contains "Invalid input"'
+        parsed = 'condition_matched = false'
+      }
+    }
+
+    let cursor = startAt
+    const tasks: RunTask[] = ordered.map((td, i) => {
+      const isPre = td.stageKind === 'Pre validation'
+      const dur = 700 + Math.round(((i * 37) % 15) * 100)
+
+      if (state === 'Planned') {
+        const started = cursor
+        const taskState: TaskState = i === 0 ? 'Running' : 'Not started'
+        return {
+          taskDefId: td.id,
+          name: td.name,
+          stage: td.stage,
+          stageKind: td.stageKind,
+          sequence: i + 1,
+          state: taskState,
+          direction: 'forward',
+          claim: claimFor(td, values),
+          command: renderCommand(td.setCommand, values),
+          requestPayload: JSON.stringify({ device: ep.mgmtIp, transport: 'ssh', commands: renderCommand(td.setCommand, values).split('\n') }, null, 2),
+          responsePayload: '',
+          transportExit: 0,
+          expected: claimFor(td, values),
+          startedAt: i === 0 ? new Date(started).toISOString() : undefined,
+        }
+      }
+
+      if (state === 'Validated') {
+        if (isPre) {
+          const started = cursor
+          cursor += dur
+          return {
+            taskDefId: td.id,
+            name: td.name,
+            stage: td.stage,
+            stageKind: td.stageKind,
+            sequence: i + 1,
+            state: 'Passed' as TaskState,
+            direction: 'forward',
+            claim: claimFor(td, values),
+            command: renderCommand(td.setCommand, values),
+            requestPayload: JSON.stringify({ device: ep.mgmtIp, transport: 'ssh', commands: renderCommand(td.setCommand, values).split('\n') }, null, 2),
+            responsePayload: JSON.stringify({ transportExit: 0, output: td.kind === 'read' ? ['Success rate is 100 percent (5/5), round-trip min/avg/max = 2/3/5 ms'] : ['commit complete'] }, null, 2),
+            transportExit: 0,
+            parsed: 'status = ok, exit = 0',
+            expected: claimFor(td, values),
+            actual: 'every rule satisfied',
+            startedAt: new Date(started).toISOString(),
+            endedAt: new Date(started + dur).toISOString(),
+            durationMs: dur,
+          }
+        }
+        return {
+          taskDefId: td.id,
+          name: td.name,
+          stage: td.stage,
+          stageKind: td.stageKind,
+          sequence: i + 1,
+          state: 'Not started' as TaskState,
+          direction: 'forward',
+          claim: claimFor(td, values),
+          command: renderCommand(td.setCommand, values),
+          requestPayload: JSON.stringify({ device: ep.mgmtIp, transport: 'ssh', commands: renderCommand(td.setCommand, values).split('\n') }, null, 2),
+          responsePayload: '',
+          transportExit: 0,
+          expected: claimFor(td, values),
+        }
+      }
+
+      // state === 'Invalid'
+      if (isSource) {
+        if (i < failIdx) {
+          const started = cursor
+          cursor += dur
+          return {
+            taskDefId: td.id,
+            name: td.name,
+            stage: td.stage,
+            stageKind: td.stageKind,
+            sequence: i + 1,
+            state: 'Passed' as TaskState,
+            direction: 'forward',
+            claim: claimFor(td, values),
+            command: renderCommand(td.setCommand, values),
+            requestPayload: JSON.stringify({ device: ep.mgmtIp, transport: 'ssh', commands: renderCommand(td.setCommand, values).split('\n') }, null, 2),
+            responsePayload: JSON.stringify({ transportExit: 0, output: ['Success rate is 100 percent (5/5)'] }, null, 2),
+            transportExit: 0,
+            parsed: 'status = ok',
+            expected: claimFor(td, values),
+            actual: 'every rule satisfied',
+            startedAt: new Date(started).toISOString(),
+            endedAt: new Date(started + dur).toISOString(),
+            durationMs: dur,
+          }
+        }
+        if (i === failIdx) {
+          const started = cursor
+          cursor += dur
+          return {
+            taskDefId: td.id,
+            name: td.name,
+            stage: td.stage,
+            stageKind: td.stageKind,
+            sequence: i + 1,
+            state: 'Failed' as TaskState,
+            direction: 'forward',
+            claim: claimFor(td, values),
+            command: renderCommand(td.setCommand, values),
+            requestPayload: JSON.stringify({ device: ep.mgmtIp, transport: 'ssh', commands: renderCommand(td.setCommand, values).split('\n') }, null, 2),
+            responsePayload: JSON.stringify({ transportExit: 1, output: errorOutput }, null, 2),
+            transportExit: 1,
+            parsed,
+            expected: claimFor(td, values),
+            actual,
+            startedAt: new Date(started).toISOString(),
+            endedAt: new Date(started + dur).toISOString(),
+            durationMs: dur,
+            failureReason: taskFailureReason,
+          }
+        }
+        return {
+          taskDefId: td.id,
+          name: td.name,
+          stage: td.stage,
+          stageKind: td.stageKind,
+          sequence: i + 1,
+          state: 'Blocked' as TaskState,
+          direction: 'forward',
+          claim: claimFor(td, values),
+          command: renderCommand(td.setCommand, values),
+          requestPayload: JSON.stringify({ device: ep.mgmtIp, transport: 'ssh', commands: renderCommand(td.setCommand, values).split('\n') }, null, 2),
+          responsePayload: '',
+          transportExit: 0,
+          expected: claimFor(td, values),
+          blockedBy: isPre ? failedDef.name : 'Pre-validation failed',
+        }
+      }
+
+      // Destination endpoint on an Invalid order
+      if (isPre) {
+        const started = cursor
+        cursor += dur
+        return {
+          taskDefId: td.id,
+          name: td.name,
+          stage: td.stage,
+          stageKind: td.stageKind,
+          sequence: i + 1,
+          state: 'Passed' as TaskState,
+          direction: 'forward',
+          claim: claimFor(td, values),
+          command: renderCommand(td.setCommand, values),
+          requestPayload: JSON.stringify({ device: ep.mgmtIp, transport: 'ssh', commands: renderCommand(td.setCommand, values).split('\n') }, null, 2),
+          responsePayload: JSON.stringify({ transportExit: 0, output: ['Success rate is 100 percent (5/5)'] }, null, 2),
+          transportExit: 0,
+          expected: claimFor(td, values),
+          actual: 'every rule satisfied',
+          startedAt: new Date(started).toISOString(),
+          endedAt: new Date(started + dur).toISOString(),
+          durationMs: dur,
+        }
+      }
+      return {
+        taskDefId: td.id,
+        name: td.name,
+        stage: td.stage,
+        stageKind: td.stageKind,
+        sequence: i + 1,
+        state: 'Blocked' as TaskState,
+        direction: 'forward',
+        claim: claimFor(td, values),
+        command: renderCommand(td.setCommand, values),
+        requestPayload: JSON.stringify({ device: ep.mgmtIp, transport: 'ssh', commands: renderCommand(td.setCommand, values).split('\n') }, null, 2),
+        responsePayload: '',
+        transportExit: 0,
+        expected: claimFor(td, values),
+        blockedBy: 'Source endpoint failed pre-validation',
+      }
+    })
+
+    offset += 1
+    const runId = `${prefix}${pad(offset, 6)}`
+    const endAt = state === 'Planned' ? undefined : cursor
+    const outcome: Run['outcome'] = state === 'Planned'
+      ? 'Running'
+      : state === 'Validated'
+        ? 'Accepted'
+        : isSource
+          ? 'Failed'
+          : 'Aborted'
+
+    runs.push({
+      id: runId,
+      attempt,
+      orderId: order.id,
+      endpointId: ep.id,
+      workflowId: wf.id,
+      direction: 'forward',
+      outcome,
+      startedAt: new Date(startAt).toISOString(),
+      endedAt: endAt ? new Date(endAt).toISOString() : undefined,
+      durationMs: endAt ? endAt - startAt : undefined,
+      orchestratorClock: new Date(startAt).toISOString(),
+      deviceClock: new Date(startAt - 3100).toISOString(),
+      clockSkewMs: -3100,
+      tasks,
+    })
+  })
+
+  return runs
+}
+
 export function buildRuns(orders: Order[], workflows: Workflow[]): Run[] {
   const runs: Run[] = []
   let n = 0
   for (const o of orders) {
+    if (['Planned', 'Validated', 'Invalid', 'Approved', 'Rejected'].includes(o.state)) {
+      if (o.endpoints.length === 0) continue
+      const pvRuns = buildPreValidationRuns(o, workflows, {
+        attempt: 1,
+        state: o.state === 'Invalid' ? 'Invalid' : o.state === 'Planned' ? 'Planned' : 'Validated',
+        startAt: Date.parse(o.createdAt || new Date().toISOString()),
+        runIdPrefix: 'RUN-',
+        runIdOffset: n,
+      })
+      n += pvRuns.length
+      pvRuns.forEach((r) => {
+        runs.push(r)
+        o.runIds.push(r.id)
+      })
+      if (o.state === 'Invalid') {
+        const failedTask = pvRuns[0]?.tasks.find((t) => t.state === 'Failed')
+        if (failedTask?.failureReason) {
+          o.notes = failedTask.failureReason
+        }
+      }
+      continue
+    }
+
     /* A run exists only once execution has actually started — Draft through
        Queued are all still waiting for that to happen and have no run yet. */
-    if (['Draft', 'Planned', 'Validated', 'Invalid', 'Approved', 'Rejected', 'Queued'].includes(o.state)) continue
+    if (['Draft', 'Queued'].includes(o.state)) continue
     if (o.endpoints.length === 0) continue
     /* Reinstantiate carries the failed run it's about to retry. */
     const stateFailed = o.state === 'Failed' || o.state === 'Reinstantiate'

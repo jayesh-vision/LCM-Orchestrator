@@ -1,5 +1,5 @@
 import type {
-  Category, EndpointRole, StageKind, ValidationRule, ValidationType, Vendor, WorkflowStage, WorkflowTaskDef,
+  Category, EndpointRole, OrderIntent, StageKind, ValidationRule, ValidationType, Vendor, WorkflowStage, WorkflowTaskDef,
 } from '@/types'
 import { pad } from './catalog'
 
@@ -537,6 +537,258 @@ export function templateFor(category: Category, vendor: Vendor, type: string, _r
               : category === 'L2VPN' ? (vendor === 'JUNIPER' ? l2vpnJuniper(subtype) : l2vpnCisco(subtype))
                 : category === 'L3VPN' ? (vendor === 'JUNIPER' ? (/hub/i.test(type) ? l3vpnHubSpokeJuniper() : l3vpnMeshJuniper()) : l3vpnCisco(type))
                   : (vendor === 'JUNIPER' ? (/bgp|ospf|vrf/i.test(type) ? ibwBgpJuniper() : ibwStaticJuniper()) : ibwCisco(type))
+  return materialise(seeds)
+}
+
+/** Operational lifecycle templates for Day-2 actions (Modify, Suspend, Resume, Cease, Re-prove) */
+export function lifecycleTemplateFor(
+  category: Category,
+  vendor: Vendor,
+  operation: OrderIntent,
+): { stages: WorkflowStage[]; tasks: WorkflowTaskDef[] } {
+  const seeds: StageSeed[] = []
+  if (operation === 'Modify') {
+    if (vendor === 'JUNIPER') {
+      seeds.push(
+        {
+          name: 'Pre-Validation',
+          kind: 'Pre validation',
+          tasks: [
+            { name: 'Check Junos Interface State', set: 'show interfaces ${Interface} brief', rules: [rule('up', 'Contains'), rule('admin-down')] },
+            { name: 'Audit Existing Firewall Policer', set: 'show firewall policer POL-${Bandwidth}M', rules: [rule('error', 'Not contains')] },
+          ],
+        },
+        {
+          name: 'Policer Reconfiguration',
+          kind: 'Configuration',
+          tasks: [
+            {
+              name: 'Set Junos Firewall Policer',
+              set: 'set firewall policer POL-${Bandwidth}M if-exceeding bandwidth-limit ${Bandwidth}m burst-size-limit ${Burst size}\nset firewall policer POL-${Bandwidth}M then ${Policer action}\ncommit',
+              rules: [rule('Failed'), rule('error')],
+              rollback: 'delete firewall policer POL-${Bandwidth}M\ncommit',
+              timeoutMs: 60000,
+              breaker: true,
+            },
+            {
+              name: 'Bind Policer Filter to Interface Unit',
+              set: 'set interfaces ${Interface} unit 0 family inet filter input POL-${Bandwidth}M\ncommit',
+              rules: [rule('Failed'), rule('error')],
+              rollback: 'delete interfaces ${Interface} unit 0 family inet filter input POL-${Bandwidth}M\ncommit',
+              timeoutMs: 60000,
+            },
+          ],
+        },
+        {
+          name: 'Post-Validation',
+          kind: 'Post validation',
+          tasks: [
+            { name: 'Verify Policer Statistics', set: 'show firewall policer POL-${Bandwidth}M', rules: [rule('error', 'Not contains')] },
+            { name: 'Test Peer Path Reachability', set: 'ping ${Neighbor IP} count 5', rules: [rule('Success rate is 100 percent', 'Contains')] },
+          ],
+        },
+      )
+    } else if (vendor === 'NOKIA') {
+      seeds.push(
+        {
+          name: 'Pre-Validation',
+          kind: 'Pre validation',
+          tasks: [
+            { name: 'Check Port Operational State', set: 'show port ${Interface}', rules: [rule('Up', 'Contains'), rule('error', 'Not contains')] },
+          ],
+        },
+        {
+          name: 'QoS Reconfiguration',
+          kind: 'Configuration',
+          tasks: [
+            {
+              name: 'Update Nokia SAP Ingress QoS Queue',
+              set: 'configure qos sap-ingress 10 queue 1 rate ${Bandwidth}000 cir ${Bandwidth}000\nconfigure qos sap-ingress 10 queue 1 mbs ${Burst size}',
+              rules: [rule('Failed'), rule('error')],
+              timeoutMs: 60000,
+              breaker: true,
+            },
+            {
+              name: 'Bind SAP Ingress Policy',
+              set: 'configure service ${category} sap ${Interface} ingress qos 10',
+              rules: [rule('Failed'), rule('error')],
+              timeoutMs: 60000,
+            },
+          ],
+        },
+        {
+          name: 'Post-Validation',
+          kind: 'Post validation',
+          tasks: [
+            { name: 'Verify SAP QoS Allocation', set: 'show service sap-using | match ${Interface}', rules: [rule('error', 'Not contains')] },
+            { name: 'Test Peer Path Reachability', set: 'ping ${Neighbor IP} count 5', rules: [rule('Success rate is 100 percent', 'Contains')] },
+          ],
+        },
+      )
+    } else {
+      seeds.push(
+        {
+          name: 'Pre-Validation',
+          kind: 'Pre validation',
+          tasks: [
+            { name: 'Check Interface Operational State', set: 'show interfaces ${Interface} brief', rules: [rule('up', 'Contains'), rule('admin-down')] },
+            { name: 'Verify Bandwidth Headroom', set: 'show policy-map interface ${Interface} input', rules: [rule('error', 'Not contains')] },
+          ],
+        },
+        {
+          name: 'Policer Reconfiguration',
+          kind: 'Configuration',
+          tasks: [
+            {
+              name: 'Update Policer Rate & Burst',
+              set: 'policy-map PM-${Bandwidth}M\n class class-default\n  police rate ${Bandwidth} mbps burst ${Burst size}\n  ${Policer action}\n!\ncommit',
+              rules: [rule('Failed'), rule('error')],
+              rollback: 'policy-map PM-${Bandwidth}M\n class class-default\n  no police\n!\ncommit',
+              timeoutMs: 60000,
+              breaker: true,
+            },
+            {
+              name: 'Rebind Interface QoS Profile',
+              set: 'interface ${Interface}\n service-policy input PM-${Bandwidth}M\n!\ncommit',
+              rules: [rule('Failed'), rule('error')],
+              timeoutMs: 60000,
+            },
+          ],
+        },
+        {
+          name: 'Post-Validation',
+          kind: 'Post validation',
+          tasks: [
+            { name: 'Verify Policer Status on Device', set: 'show policy-map interface ${Interface} input | include rate', rules: [rule('${Bandwidth}', 'Contains')] },
+            { name: 'Test Packet Flow Reachability', set: 'ping ${Neighbor IP} count 5', rules: [rule('Success rate is 100 percent', 'Contains')] },
+          ],
+        },
+      )
+    }
+  } else if (operation === 'Suspend') {
+    seeds.push(
+      {
+        name: 'Pre-Validation',
+        kind: 'Pre validation',
+        tasks: [
+          { name: 'Verify Active Peer Status', set: 'ping ${Neighbor IP} count 3', rules: [rule('Success rate', 'Contains')] },
+        ],
+      },
+      {
+        name: 'Administrative Hold',
+        kind: 'Configuration',
+        tasks: [
+          {
+            name: 'Apply Administrative Shutdown',
+            set: 'interface ${Interface}\n shutdown\n description SUSPENDED-ADMIN\n!\ncommit',
+            rules: [rule('Failed'), rule('error')],
+            rollback: 'interface ${Interface}\n no shutdown\n!\ncommit',
+            timeoutMs: 60000,
+            breaker: true,
+          },
+        ],
+      },
+      {
+        name: 'Post-Validation',
+        kind: 'Post validation',
+        tasks: [
+          { name: 'Assert Admin Down Status', set: 'show interfaces ${Interface} brief', rules: [rule('admin-down', 'Contains'), rule('error')] },
+        ],
+      },
+    )
+  } else if (operation === 'Resume') {
+    seeds.push(
+      {
+        name: 'Pre-Validation',
+        kind: 'Pre validation',
+        tasks: [
+          { name: 'Verify Physical Link Readiness', set: 'show interfaces ${Interface} hardware', rules: [rule('error', 'Not contains')] },
+        ],
+      },
+      {
+        name: 'Service Restoration',
+        kind: 'Configuration',
+        tasks: [
+          {
+            name: 'Clear Administrative Shutdown',
+            set: 'interface ${Interface}\n no shutdown\n description ${Description}\n!\ncommit',
+            rules: [rule('Failed'), rule('error')],
+            timeoutMs: 60000,
+            breaker: true,
+          },
+        ],
+      },
+      {
+        name: 'Post-Validation',
+        kind: 'Post validation',
+        tasks: [
+          { name: 'Assert Interface Active & Up', set: 'show interfaces ${Interface} brief', rules: [rule('up', 'Contains')] },
+          { name: 'Verify End-to-End Restoration', set: 'ping ${Neighbor IP} count 5', rules: [rule('Success rate is 100 percent', 'Contains')] },
+        ],
+      },
+    )
+  } else if (operation === 'Cease') {
+    seeds.push(
+      {
+        name: 'Pre-Validation',
+        kind: 'Pre validation',
+        tasks: [
+          { name: 'Verify Decommission Ticket Approval', set: 'show running-config interface ${Interface}.${Vlan-ID}', rules: [rule('interface', 'Contains')] },
+        ],
+      },
+      {
+        name: 'Decommissioning',
+        kind: 'Configuration',
+        tasks: [
+          {
+            name: 'Wipe Interface & Delete Path',
+            set: 'no interface ${Interface}.${Vlan-ID}\n!\ncommit',
+            rules: [rule('Failed'), rule('error')],
+            timeoutMs: 60000,
+            breaker: true,
+          },
+        ],
+      },
+      {
+        name: 'Post-Validation',
+        kind: 'Post validation',
+        tasks: [
+          { name: 'Assert Config Absence on Router', set: 'show running-config interface ${Interface}.${Vlan-ID}', rules: [rule('interface', 'Not contains'), rule('Invalid')] },
+        ],
+      },
+    )
+  } else if (operation === 'Re-prove') {
+    seeds.push(
+      {
+        name: 'Pre-Validation',
+        kind: 'Pre validation',
+        tasks: [
+          { name: 'Audit Device Running Configuration', set: 'show running-config interface ${Interface}.${Vlan-ID}', rules: [rule('error', 'Not contains')] },
+        ],
+      },
+      {
+        name: 'Telemetry Probe',
+        kind: 'Configuration',
+        tasks: [
+          {
+            name: 'Execute Synthetic SLA Ping Probes',
+            set: 'ping ${Neighbor IP} count 50 size 1400',
+            rules: [rule('Success rate is 100 percent', 'Contains'), rule('error')],
+            timeoutMs: 90000,
+          },
+        ],
+      },
+      {
+        name: 'Post-Validation',
+        kind: 'Post validation',
+        tasks: [
+          { name: 'Record Telemetry Evidence Verdict', set: 'show interfaces ${Interface} statistics', rules: [rule('error', 'Not contains')] },
+        ],
+      },
+    )
+  } else {
+    return templateFor(category, vendor, 'Standard')
+  }
   return materialise(seeds)
 }
 

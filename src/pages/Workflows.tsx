@@ -6,7 +6,7 @@ import {
   RadioTower, Router, Send, ShieldCheck, Trash2, Network as SwitchIcon, Wifi, XCircle,
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
-import type { Category, Domain, Vendor, Workflow, WorkflowState } from '@/types'
+import type { Category, Domain, OrderIntent, Vendor, Workflow, WorkflowState } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Card, CardBody, CardHead, CellMain, Chip, DataTable,
@@ -81,17 +81,18 @@ export default function Workflows() {
   const [st, setSt] = useQueryState<WorkflowState | 'All' | string>('state', 'All')
   const [intentId, setIntentId] = useQueryState('intent', 'All')
   const [vendor, setVendor] = useQueryState<Vendor | 'All'>('vendor', 'All')
+  const [op, setOp] = useQueryState<OrderIntent | 'All'>('op', 'All')
   const stList = st === 'All' ? [] : st.split(',')
   const patch = useQueryPatch()
-  const clear = useClearQuery(['q', 'name', 'code', 'domain', 'cat', 'type', 'subtype', 'state', 'intent', 'vendor'])
+  const clear = useClearQuery(['q', 'name', 'code', 'domain', 'cat', 'type', 'subtype', 'state', 'intent', 'vendor', 'op'])
   const domainCats = domain === 'All' ? CATS : CATEGORIES_BY_DOMAIN[domain]
   const setDomainScoped = (next: Domain | 'All') => {
     setDomain(next)
     if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
   }
   const pickDomain = (d: Domain) => setDomainScoped(domain === d ? 'All' : d)
-  const anyFilter = domain !== 'All' || cat !== 'All' || st !== 'All' || intentId !== 'All' || vendor !== 'All'
-  const { ref: resultsRef, scrollToResults } = useScrollToResultsOnDrillIn(anyFilter ? `d=${domain}|c=${cat}|s=${st}|i=${intentId}|v=${vendor}` : '')
+  const anyFilter = domain !== 'All' || cat !== 'All' || st !== 'All' || intentId !== 'All' || vendor !== 'All' || op !== 'All'
+  const { ref: resultsRef, scrollToResults } = useScrollToResultsOnDrillIn(anyFilter ? `d=${domain}|c=${cat}|s=${st}|i=${intentId}|v=${vendor}|op=${op}` : '')
 
   const n = {
     state: (s: WorkflowState) => workflows.filter((w) => w.state === s).length,
@@ -106,6 +107,7 @@ export default function Workflows() {
     if (stList.length && !stList.includes(w.state)) return false
     if (intentId !== 'All' && w.intentId !== intentId) return false
     if (vendor !== 'All' && w.vendor !== vendor) return false
+    if (op !== 'All' && (w.operation ?? 'Create') !== op) return false
     if (q) {
       const t = q.toLowerCase()
       if (!(w.id.toLowerCase().includes(t) || w.name.toLowerCase().includes(t) || w.vendor.toLowerCase().includes(t) || w.model.toLowerCase().includes(t))) return false
@@ -113,7 +115,7 @@ export default function Workflows() {
     if (qname && !w.name.toLowerCase().includes(qname.toLowerCase())) return false
     if (qcode && !w.id.toLowerCase().includes(qcode.toLowerCase())) return false
     return true
-  }), [workflows, domain, cat, wtype, wsubtype, st, intentId, vendor, q, qname, qcode]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [workflows, domain, cat, wtype, wsubtype, st, intentId, vendor, op, q, qname, qcode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Coverage: which intent × vendor combinations actually have an active workflow. */
   const coverage = useMemo(() => {
@@ -191,6 +193,14 @@ export default function Workflows() {
     {
       key: 'state', header: 'Status', width: '120px', sortValue: (r) => r.state,
       render: (r) => <Badge tone={WORKFLOW_TONE[r.state]}>{r.state}</Badge>,
+    },
+    {
+      key: 'operation', header: 'Operation', width: '110px', sortValue: (r) => r.operation ?? 'Create',
+      render: (r) => (
+        <Badge tone={(r.operation ?? 'Create') === 'Create' ? 'none' : 'info'}>
+          {r.operation ?? 'Create'}
+        </Badge>
+      ),
     },
     {
       key: 'wf', header: 'Name', width: '340px', sortValue: (r) => r.name,
@@ -313,6 +323,15 @@ export default function Workflows() {
           filters: [
             { key: 'state', label: 'Status', value: st, onChange: (v) => setSt(v),
               options: STATES.filter((x) => n.state(x) > 0).map((x) => ({ value: x, label: x, count: n.state(x) })) },
+            { key: 'op', label: 'Operation', value: op, onChange: (v) => setOp(v as OrderIntent | 'All'),
+              options: [
+                { value: 'Create', label: 'Create (Day-0)', count: workflows.filter((w) => (w.operation ?? 'Create') === 'Create').length },
+                { value: 'Modify', label: 'Modify', count: workflows.filter((w) => w.operation === 'Modify').length },
+                { value: 'Suspend', label: 'Suspend', count: workflows.filter((w) => w.operation === 'Suspend').length },
+                { value: 'Resume', label: 'Resume', count: workflows.filter((w) => w.operation === 'Resume').length },
+                { value: 'Cease', label: 'Cease', count: workflows.filter((w) => w.operation === 'Cease').length },
+                { value: 'Re-prove', label: 'Re-prove', count: workflows.filter((w) => w.operation === 'Re-prove').length },
+              ] },
             { key: 'type', label: 'Type', value: wtype, onChange: (v) => patch({ type: v === 'All' ? null : v, subtype: null }),
               options: [...new Set(workflows.filter((w) => cat === 'All' || w.category === cat).map((w) => w.type))].sort()
                 .map((t) => ({ value: t, label: t, count: workflows.filter((w) => (cat === 'All' || w.category === cat) && w.type === t).length })) },
@@ -327,6 +346,7 @@ export default function Workflows() {
             { key: 'code', label: 'Code', type: 'text', value: qcode, onChange: setQcode },
           ],
           activeFilterChips: [
+            ...(op !== 'All' ? [{ key: 'op', label: 'Operation', value: op, onRemove: () => setOp('All') }] : []),
             ...(wtype !== 'All' ? [{ key: 'type', label: 'Type', value: wtype, onRemove: () => setWtype('All') }] : []),
             ...(wsubtype !== 'All' ? [{ key: 'subtype', label: 'Subtype', value: wsubtype, onRemove: () => setWsubtype('All') }] : []),
             ...(st !== 'All' ? [{ key: 'state', label: 'State', value: stList.join(' or '), onRemove: () => setSt('All') }] : []),
