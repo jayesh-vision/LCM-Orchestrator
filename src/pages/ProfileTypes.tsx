@@ -283,12 +283,12 @@ export default function ProfileTypes() {
                 <button
                   type="button"
                   onClick={() => { setView(null); nav(`/workflows?cat=${encodeURIComponent(view.category)}&type=${encodeURIComponent(view.type)}&subtype=${encodeURIComponent(view.subtype)}`) }}
-                  className="vw-card-child vw-card--clickable w-full max-w-[400px] text-left mt-5"
+                  className="vw-card-child vw-card--clickable w-full text-left mt-5"
                   aria-label={`${count} workflows use this profile. Open them in Workflows`}
                 >
                   <span className="vw-flex vw-items-center vw-justify-between vw-gap-sm">
                     <span className="vw-flex vw-items-center vw-gap-sm">
-                      <span className="w-9 h-9 rounded-lg grid place-items-center shrink-0 ring-1 ring-inset bg-brand-50 text-brand-600 ring-brand-200/60" aria-hidden>
+                      <span className="w-9 h-9 rounded-lg grid place-items-center shrink-0 ring-1 ring-inset bg-emerald-50 text-emerald-600 ring-emerald-200/70" aria-hidden>
                         <WorkflowIcon size={16} />
                       </span>
                       <span>
