@@ -23,8 +23,8 @@ const POOL_KINDS: PoolKind[] = [
   'Frequency Channel', 'Wavelength', 'PCI', 'ONT Serial', 'PON Port',
 ]
 
-interface IntentForm { profileTypeId: string; name: string; topology: ServiceIntent['topology']; endpointArity: string }
-const blankIntentForm = (): IntentForm => ({ profileTypeId: '', name: '', topology: 'Two-ended', endpointArity: 'exactly 2' })
+interface IntentForm { profileTypeId: string; name: string; topology: ServiceIntent['topology'] | ''; endpointArity: string }
+const blankIntentForm = (): IntentForm => ({ profileTypeId: '', name: '', topology: '', endpointArity: '' })
 
 interface ParamForm {
   mode: 'add' | 'edit'; original?: string
@@ -190,6 +190,7 @@ export default function ServiceIntents() {
   }
 
   const columns: Column<ServiceIntent>[] = [
+    { key: 'cat', header: 'Category', width: '110px', sortValue: (r) => r.category, render: (r) => <Badge tone={CATEGORY_TONE[r.category]}>{r.category}</Badge> },
     { key: 'id', header: 'Code', width: '160px', sortValue: (r) => r.id, render: (r) => <Mono className="text-[12px]">{r.id}</Mono> },
     {
       key: 'name', header: 'Name', sortValue: (r) => r.name,
@@ -206,7 +207,6 @@ export default function ServiceIntents() {
       key: 'state', header: 'State', width: '124px', sortValue: (r) => r.state,
       render: (r) => <Badge tone={WORKFLOW_TONE[r.state]} dot={r.state === 'Active'}>{r.state} · v{r.version}</Badge>,
     },
-    { key: 'cat', header: 'Category', width: '110px', sortValue: (r) => r.category, render: (r) => <Badge tone={CATEGORY_TONE[r.category]}>{r.category}</Badge> },
     { key: 'topology', header: 'Topology', width: '130px', sortValue: (r) => r.topology, render: (r) => r.topology },
     { key: 'params', header: 'Params', align: 'center', width: '80px', sortValue: (r) => r.params.length, render: (r) => <span className="tnum">{r.params.length}</span> },
     {
@@ -255,59 +255,55 @@ export default function ServiceIntents() {
           chips: [
             <FieldDropdown key="domain" label="Domain" value={domain} onChange={(v) => setDomainScoped(v as Domain | 'All')}
               options={DOMAINS.map((d) => ({ value: d, label: d, count: intents.filter((i) => domainOf(i.category) === d).length }))} />,
+            <FieldDropdown key="category" label="Category" value={cat} onChange={(v) => setCat(v as Category | 'All')}
+              options={domainCats.map((c) => ({ value: c, label: c, count: families.filter((i) => i.category === c).length }))} />,
           ],
           filters: [
             { key: 'state', label: 'State', value: state, onChange: (v) => setState(v as ServiceIntentState | 'All'),
               options: STATES.map((s) => ({ value: s, label: s, count: families.filter((i) => i.state === s).length })) },
-            { key: 'cat', label: 'Category', value: cat, onChange: (v) => setCat(v as Category | 'All'),
-              options: domainCats.map((c) => ({ value: c, label: c, count: families.filter((i) => i.category === c).length })) },
             { key: 'topology', label: 'Topology', value: topology, onChange: (v) => setTopology(v as ServiceIntent['topology'] | 'All'),
               options: TOPOLOGIES.map((t) => ({ value: t, label: t, count: families.filter((i) => i.topology === t).length })) },
           ],
           onResetFilters: () => { setDomain('All'); setCat('All'); setTopology('All'); setState('All'); setQ('') },
           onRefresh: () => pushToast('info', 'Service intents refreshed.'),
-          actions: [{ label: 'Create service intent', icon: Plus, onClick: () => { setForm(blankIntentForm()); setOpen(true) } }],
+          actions: [{ label: 'Service intent', icon: Plus, onClick: () => { setForm(blankIntentForm()); setOpen(true) } }],
         }}
       />
 
       {/* -------- create -------- */}
       <Modal
         open={open} onClose={() => setOpen(false)}
-        title="Create service intent" sub="Starts as Draft — activate it from the list once its parameters are defined"
+        title="Service intent"
         footer={
           <>
             <Button onClick={() => setOpen(false)}>Cancel</Button>
             <Button
               variant="primary"
-              disabled={!form.profileTypeId || !form.name.trim() || !form.endpointArity.trim()}
-              onClick={() => { addIntent(form); setForm(blankIntentForm()); setOpen(false) }}
+              disabled={!form.profileTypeId || !form.name.trim() || !form.topology || !form.endpointArity.trim()}
+              onClick={() => { addIntent({ ...form, topology: form.topology as ServiceIntent['topology'] }); setForm(blankIntentForm()); setOpen(false) }}
             >Create</Button>
           </>
         }
       >
-        <div className="flex flex-col gap-4">
-          <Field label="Profile Type" required hint="Category → Type → Subtype this intent is built from.">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Profile Type" required>
             <Select value={form.profileTypeId} onChange={(e) => setForm({ ...form, profileTypeId: e.target.value })}>
               <option value="">Select a profile type</option>
               {profileTypes.map((p) => <option key={p.id} value={p.id}>{p.category} · {p.type} · {p.subtype}</option>)}
             </Select>
           </Field>
           <Field label="Name" required>
-            <TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="L3VPN Hub & Spoke" />
+            <TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Enter name" />
           </Field>
           <Field label="Topology" required>
             <Select value={form.topology} onChange={(e) => setForm({ ...form, topology: e.target.value as ServiceIntent['topology'] })}>
+              <option value="">Select topology</option>
               {TOPOLOGIES.map((t) => <option key={t}>{t}</option>)}
             </Select>
           </Field>
-          <Field label="Endpoint arity" required hint="For example exactly 2, exactly 1, or 1 hub + 1…n spokes.">
-            <TextInput value={form.endpointArity} onChange={(e) => setForm({ ...form, endpointArity: e.target.value })} placeholder="exactly 2" />
+          <Field label="Endpoint arity" required>
+            <TextInput value={form.endpointArity} onChange={(e) => setForm({ ...form, endpointArity: e.target.value })} placeholder="Enter endpoint arity" />
           </Field>
-          <Note tone="info">
-            Profile Type, name, topology and endpoint arity are permanent once created — there's no edit for them afterwards.
-            Only the parameter catalog can change later, and every change to it opens as a new Draft version rather than
-            overwriting this one.
-          </Note>
         </div>
       </Modal>
 
