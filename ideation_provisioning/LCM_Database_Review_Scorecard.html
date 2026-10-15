@@ -721,13 +721,13 @@
         <strong>Existing Schema (<code>/Users/ent-00349/Downloads/browser_files/service_provisoning_31.sql</code>):</strong> PHPMyAdmin DDL export of database <code>SP_STG_31_AUG1</code> containing 31 tables. It tightly coupled internal workflow call flows with commercial billing tables, lacked tenant isolation, used deprecated <code>utf8mb3</code>, and stored comma-separated lists in <code>VARCHAR(1000)</code> columns.
       </li>
       <li>
-        <strong>Redesigned Schema (<code>lcm_orchestrator_schema.sql</code>):</strong> 24-table pure InnoDB architecture. Decoupled Order Management (OMS) via external Feign client REST integration (retaining <code>ORDER_ID</code> linkage), and structured the database around <code>PROVISIONING_REQUEST</code>, <code>SERVICE</code>, <code>WORKFLOW</code>, and <code>RESOURCE_POOL</code>.
+        <strong>Redesigned Schema (<code>lcm_orchestrator_schema.sql</code>):</strong> 24-table pure InnoDB architecture. Decoupled Order Management (OMS) via external Feign client REST integration (retaining <code>ORDER_ID</code> linkage), and structured the database around <code>PROVISIONING_REQUEST</code>, <code>SERVICE</code>, <code>WORKFLOW</code>, and <code>RESOURCE_POOL</code>. Enhanced with Day-2 operational support (<code>WORKFLOW.OPERATION</code>, <code>IDX_WF_OP_VENDOR</code>, <code>PROVISIONING_REQUEST.REASON_CATEGORY</code>, <code>AUDIT_SCOPE</code>, <code>DECOMMISSION_CONFIRMED</code>).
       </li>
       <li>
-        <strong>Ideated GUI Alignment (<code>LCM-Orchestrator</code>):</strong> Directly powers Screen 1 (Requests), Screen 2 (Service Inventory), Screen 3 (Change & Cease), Screen 4 (Workflows), Screen 5 (Catalog), Screen 6 (Resource Pools), and the Runs Drawer.
+        <strong>Ideated GUI Alignment (<code>LCM-Orchestrator</code>):</strong> Directly powers Screen 1 (Requests), Screen 2 (Service Inventory), Screen 3 (Change & Cease), Screen 4 (Workflows), Screen 5 (Catalog), Screen 6 (Resource Pools), Day-2 Lifecycle Operations (Modify, Suspend, Resume, Cease, Re-prove with strict endpoint vendor matching), and the Runs Drawer.
       </li>
       <li>
-        <strong>Test Seed Data Verification:</strong> Replayed 35 multi-row INSERT statements (144 verified rows) in <code>lcm_orchestrator_seed.sql</code> with zero foreign key, nullability, or sign errors.
+        <strong>Test Seed Data Verification:</strong> Replayed 35 multi-row INSERT statements (144 verified rows) in <code>lcm_orchestrator_seed.sql</code> with zero foreign key, nullability, or sign errors. Includes realistic Day-2 operational seed records (CF-MOD-0074, CF-SUS-0075, CF-CEA-0089, ORD-2026-009105, ORD-2026-009108).
       </li>
     </ul>
   </div>

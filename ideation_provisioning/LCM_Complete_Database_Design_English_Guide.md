@@ -213,11 +213,13 @@ Below is the complete dictionary of all 24 tables. Every table's columns, data t
   3. **8 Device Kinds (`DEVICE_KIND`):** `Router`, `Switch`, `CPE`, `Radio`, `Optical`, `VNF`, `OLT`, `ONT`.
   4. **Supported OS Range (`OS_RANGE`):** Device OS compatibility (e.g. `'7.3 – 7.11'`, `'JunOS 21.4R – 23.4R'`).
   5. **Endpoint Role & State:** `ENDPOINT_ROLE` (`Source`, `Destination`, `Hub`, `Spoke`, `A`, `Z`), `STATE` (`Draft`, `Assigned`, `Awaiting approval`, `Active`, `Rejected`, `Retired`).
-* **What Is Stored in This Table:** Recipe tracking code (`CF-000248`), intent contract FK (`SERVICE_INTENT_ID_FK`), composite workflow name, breadcrumb display name (`L3VPN Cisco ASR9k Hub`), vendor name (`CISCO`, `JUNIPER`, etc.), device kind (8 UI kinds), supported OS range (`OS_RANGE`), target role (`Source`, `Destination`), lifecycle state, template version, 30-day run count (`42`), first-pass yield rate (`95.20%`).
-* **Real-World Telecom Example:** Workflow `CF-000248` (`L3VPN Cisco ASR9k Hub`), active production recipe for Cisco ASR9k routers (OS `7.3 – 7.11`) executed 42 times in the last 30 days with a 95.2% first-pass success rate.
+  6. **Lifecycle Operation Targeting (`OPERATION`):** Filters recipes based on the requested operational intent: `'Create'`, `'Modify'`, `'Suspend'`, `'Resume'`, `'Cease'`, `'Re-prove'`. Indexed via `IDX_WF_OP_VENDOR (OPERATION, VENDOR, STATE)` for instant sub-millisecond wizard lookup.
+* **What Is Stored in This Table:** Recipe tracking code (`CF-000248`), intent contract FK (`SERVICE_INTENT_ID_FK`), composite workflow name, breadcrumb display name (`L3VPN Cisco ASR9k Hub`), vendor name (`CISCO`, `JUNIPER`, etc.), device kind (8 UI kinds), supported OS range (`OS_RANGE`), target role (`Source`, `Destination`), lifecycle state, lifecycle operation (`Create`, `Modify`, `Suspend`, `Cease`), template version, 30-day run count (`42`), first-pass yield rate (`95.20%`).
+* **Real-World Telecom Example:** Workflow `CF-000248` (`L3VPN Cisco ASR9k Hub`), active production recipe for Cisco ASR9k routers (OS `7.3 – 7.11`) executed 42 times in the last 30 days with a 95.2% first-pass success rate; and `CF-MOD-0074` (`IBW Modify Adva`), Day-2 modification recipe for Adva optical edge devices.
 * **UI Screen & Component Location:**
   - **Screen 4: Workflows (`Workflows.tsx`):** Recipe directory table with Vendor filter tabs, State badge (`Active`), 30-Day Runs column, and First-Pass Rate progress bar.
   - **Workflow Builder Canvas (`WorkflowBuilder.tsx`):** Pipeline header bar with Intent binding, Vendor, Models multi-select, Location (Source/Destination toggle), OS range, Auto-name generator, and Save/Submit for Approval controls.
+  - **Screen 2 / Screen 3 Day-2 Wizards (`NewServiceWizard.tsx`):** Filters workflows by the selected service's endpoint vendor and current operation (`Modify`, `Suspend`, `Cease`).
 
 | Column Name | Data Type | Nullable | Key | Default | Functional Description | Dummy / Seed Example Value |
 | :--- | :--- | :---: | :---: | :--- | :--- | :--- |
@@ -232,6 +234,7 @@ Below is the complete dictionary of all 24 tables. Every table's columns, data t
 | `OS_RANGE` | `VARCHAR(128)`| YES | | `NULL` | Supported device OS range (e.g. 7.3 – 7.11, JunOS 21.4R – 23.4R) | `'7.3 – 7.11'` |
 | `ENDPOINT_ROLE` | `ENUM` | YES | | `NULL` | Target endpoint role: `'Source'`, `'Destination'`, `'Hub'`, `'Spoke'`, `'A'`, `'Z'` | `'Source'` |
 | `STATE` | `ENUM` | NO | MUL | `'Draft'` | Template status: `'Draft'`, `'Assigned'`, `'Awaiting approval'`, `'Active'`, `'Rejected'`, `'Retired'` | `'Active'` |
+| `OPERATION` | `ENUM` | NO | MUL | `'Create'` | Lifecycle operation: `'Create'`, `'Modify'`, `'Suspend'`, `'Resume'`, `'Cease'`, `'Re-prove'` | `'Create'` |
 | `VERSION` | `INT UNSIGNED` | NO | | `1` | Template revision number | `1` |
 | `RUNS_30D` | `INT UNSIGNED` | NO | | `0` | Number of executions in last 30 days | `42` |
 | `FIRST_PASS_RATE`| `DECIMAL(5,2)` | NO | | `0.00` | First-pass yield percentage | `95.20` |
@@ -574,12 +577,13 @@ Below is the complete dictionary of all 24 tables. Every table's columns, data t
 
 ### 2.18. Table: `PROVISIONING_REQUEST`
 * **Architecture Module:** Provisioning & Changes (Screen 1: Requests & Screen 3: Change & Cease)
-* **Table Purpose & Why It Exists:** Central in-flight execution engine ticket. Decoupled from external OMS but linked via `ORDER_ID`; manages fast UI rendering cache columns and inline NOC Lead approvals.
-* **What Is Stored in This Table:** UUID request ID (`ORD-2026-004417`), tracking code (`NS-000114`), external OMS Order ID (`OMS-ORD-04417`), commercial service code, circuit label, customer account ID & name, profile type FK, intent FK, intent action (`Create`, `Modify`, `Suspend`, `Cease`), target live service FK, request state (`Draft`, `Planned`, `Validated`, `In progress`, `Ready`, `Failed`), bound workflow FK, assigned engineer owner, waiting-on stakeholder, SLA breach flag, notes, inline approval status (`PENDING`, `APPROVED`, `REJECTED`), approver user FK (`USER.ID`), approval timestamp, comments.
-* **Real-World Telecom Example:** `ORD-2026-004417`: Modify request for customer `Excitel Business Solutions` upgrading circuit `SVC-L2-018842` from 100M to 200M. Approved by NOC Lead `Ravi K.` (`523456789012345601`), Status = `In progress`, SLA = `Healthy`.
+* **Table Purpose & Why It Exists:** Central in-flight execution engine ticket. Decoupled from external OMS but linked via `ORDER_ID`; manages fast UI rendering cache columns, Day-2 lifecycle changes (Modify, Suspend, Resume, Cease, Re-prove), and inline NOC Lead approvals.
+* **What Is Stored in This Table:** UUID request ID (`ORD-2026-004417`), tracking code (`NS-000114`), external OMS Order ID (`OMS-ORD-04417`), commercial service code, circuit label, customer account ID & name, profile type FK, intent FK, intent action (`Create`, `Modify`, `Suspend`, `Resume`, `Cease`, `Re-prove`), Day-2 reason preset category (`REASON_CATEGORY`), Re-prove verification scope (`AUDIT_SCOPE`), target live service FK, request state (`Draft`, `Planned`, `Validated`, `In progress`, `Ready`, `Failed`), bound workflow FK, assigned engineer owner, waiting-on stakeholder, SLA breach flag, operator operation notes (`NOTES`), decommission confirmation compliance flag (`DECOMMISSION_CONFIRMED`), inline approval status (`PENDING`, `APPROVED`, `REJECTED`), approver user FK (`USER.ID`), approval timestamp, comments.
+* **Real-World Telecom Example:** `ORD-2026-004417`: Modify request for customer `Excitel Business Solutions` upgrading circuit `SVC-L2-018842` from 100M to 200M (`REASON_CATEGORY` = `'Scheduled customer maintenance window'`). Approved by NOC Lead `Ravi K.` (`523456789012345601`), Status = `In progress`, SLA = `Healthy`.
 * **UI Screen & Component Location:**
   - **Screen 1: Requests (`ProvisioningRequests.tsx`):** Primary data grid with State tabs, Customer name, SLA status, Assigned owner, and Approval status badge.
   - **Screen 3: Change & Cease (`ChangeCease.tsx`):** In-flight change requests table.
+  - **Screen 2 / Screen 3 Day-2 Wizards (`NewServiceWizard.tsx`):** Captures operation intent, reason dropdown (`REASON_CATEGORY`), operation notes (`NOTES`), and confirmation checkbox (`DECOMMISSION_CONFIRMED`).
   - **Approval Action Modal:** Populated when NOC Lead clicks Approve / Reject in the kebab menu.
 
 | Column Name | Data Type | Nullable | Key | Default | Functional Description | Dummy / Seed Example Value |
@@ -594,14 +598,17 @@ Below is the complete dictionary of all 24 tables. Every table's columns, data t
 | `ACCOUNT_NAME` | `VARCHAR(128)` | NO | | — | Customer company name (Screen 1 Customer column) | `'Excitel Business Solutions'` |
 | `PROFILE_TYPE_ID_FK`| `INT UNSIGNED` | YES | FK | `NULL` | FK to `PROFILE_TYPE` | `5` |
 | `SERVICE_INTENT_ID_FK`| `INT UNSIGNED`| YES | FK | `NULL` | FK to `SERVICE_INTENT` | `2` |
-| `INTENT` | `ENUM` | NO | | `'Create'` | Action: `'Create'`, `'Modify'`, `'Suspend'`, `'Cease'` | `'Modify'` |
+| `INTENT` | `ENUM` | NO | | `'Create'` | Action: `'Create'`, `'Modify'`, `'Suspend'`, `'Resume'`, `'Cease'`, `'Re-prove'` | `'Modify'` |
+| `REASON_CATEGORY` | `VARCHAR(128)`| YES | | `NULL` | Structured Day-2 reason category preset | `'Scheduled customer maintenance window'` |
+| `AUDIT_SCOPE` | `VARCHAR(128)`| YES | | `NULL` | Verification scope for Re-prove requests | `'Synthetic SLA probe'` |
 | `TARGET_SERVICE_ID_FK`| `VARCHAR(36)` | YES | FK | `NULL` | FK to `SERVICE(ID)` if Day-2 modify/cease | `'SVC-L2-018842'` |
 | `REQUEST_STATE` | `ENUM` | NO | | `'Draft'` | Status: `'Draft'`, `'Planned'`, `'Validated'`, `'In progress'`, `'Ready'`, `'Failed'` | `'In progress'` |
 | `WORKFLOW_ID_FK`| `BIGINT UNSIGNED`| YES | FK | `NULL` | FK to bound `WORKFLOW(ID)` | `700100200300400103` |
 | `OWNER` | `VARCHAR(64)` | YES | | `NULL` | Engineer owner (Assigned column) | `'Priya S.'` |
 | `WAITING_ON` | `VARCHAR(64)` | YES | | `NULL` | Stakeholder holding action (Waiting On column) | `'Worker Execution'` |
 | `SLA_BREACHED` | `BOOLEAN` | NO | | `FALSE` | Delivery SLA breach status flag | `FALSE` |
-| `NOTES` | `TEXT` | YES | | `NULL` | Operator notes / justification | `'Bandwidth upgrade'` |
+| `NOTES` | `TEXT` | YES | | `NULL` | Operator notes / operational change justification | `'Bandwidth upgrade'` |
+| `DECOMMISSION_CONFIRMED` | `BOOLEAN` | NO | | `FALSE` | Mandatory confirmation checkbox flag for Cease teardown | `FALSE` |
 | `IS_ARCHIVED` | `BOOLEAN` | NO | | `FALSE` | History archive flag | `FALSE` |
 | `APPROVAL_STATUS`| `ENUM` | NO | | `'NOT_REQUIRED'`| Inline approval: `'PENDING'`, `'APPROVED'`, `'REJECTED'` | `'APPROVED'` |
 | `APPROVED_BY_USER_ID_FK`| `BIGINT UNSIGNED`| YES | FK | `NULL`| NOC Lead approver (FK to `USER.ID`) | `523456789012345601` |
