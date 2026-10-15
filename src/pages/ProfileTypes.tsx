@@ -1,23 +1,17 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Eye, FolderTree, Layers, Plus, Workflow as WorkflowIcon } from 'lucide-react'
+import { CircleAlert, Eye, FolderTree, Layers, Plus, Shapes, Workflow as WorkflowIcon } from 'lucide-react'
 import { useQueryState } from '@/lib/useQueryState'
 import { useStore } from '@/store/useStore'
 import type { Category, Domain, ProfileType } from '@/types'
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
-  Badge, Button, CellMain, DataTable, InfoTip,
-  Field, FieldDropdown, Kebab, Modal, Note, Select, TextInput, type Column, type Tone,
+  Badge, Button, CellMain, DataTable,
+  Field, FieldDropdown, Kebab, Modal, Note, Select, Stat, TextInput, type Column,
 } from '@/components/ui'
-import { Donut, DonutLegend } from '@/components/charts'
 import { CATEGORY_TONE, DOMAIN_TONE, shortDate } from '@/lib/format'
 
 const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'VLAN', 'Microwave', 'DWDM', 'RAN VNF', 'GPON']
-const TONE_CHART_COLOR: Record<Tone, string> = {
-  good: '#6ee7b7', warn: '#fcd34d', crit: '#fca5a5', info: '#93c5fd',
-  plum: '#d8b4fe', teal: '#67e8f9', none: '#d1d5db',
-}
-const TRANSPORT_CHART_COLOR = '#a5b4fc'
 
 export default function ProfileTypes() {
   const profileTypes = useStore((s) => s.profileTypes)
@@ -63,25 +57,7 @@ export default function ProfileTypes() {
     return true
   }), [profileTypes, domain, cat, ptype, usedFilter, usage, q, qsubtype])
 
-  const profileTypesByDomain = useMemo(
-    () => DOMAINS.map((d) => ({ domain: d, count: profileTypes.filter((p) => domainOf(p.category) === d).length })),
-    [profileTypes],
-  )
-  const profileTypesByCategory = useMemo(
-    () => CATS.map((c) => ({ category: c, count: profileTypes.filter((p) => p.category === c).length })),
-    [profileTypes],
-  )
-  const domainSegments = profileTypesByDomain.map(({ domain: d, count }) => ({ label: d, value: count, fill: 'brand' as const, color: d === 'Transport' ? TRANSPORT_CHART_COLOR : TONE_CHART_COLOR[DOMAIN_TONE[d]] }))
-  const categorySegments = profileTypesByCategory.map(({ category: c, count }) => ({ label: c, value: count, fill: 'brand' as const, color: TONE_CHART_COLOR[CATEGORY_TONE[c]] }))
-  const workflowDomainSegments = useMemo(
-    () => DOMAINS.map((d) => ({
-      label: d,
-      value: workflows.filter((w) => domainOf(w.category) === d).length,
-      fill: 'brand' as const,
-      color: d === 'Transport' ? TRANSPORT_CHART_COLOR : TONE_CHART_COLOR[DOMAIN_TONE[d]],
-    })),
-    [workflows],
-  )
+  const types = useMemo(() => new Set(profileTypes.map((p) => `${p.category}|${p.type}`)).size, [profileTypes])
   const unused = useMemo(
     () => profileTypes.filter((p) => !(usage.get(`${p.category}|${p.type}|${p.subtype}`) ?? 0)).length,
     [profileTypes, usage],
@@ -115,40 +91,16 @@ export default function ProfileTypes() {
   return (
     <>
 
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
-        <div className="vw-card-section relative overflow-hidden p-4">
-          <span className="absolute inset-x-0 top-0 h-1 bg-blue-300" aria-hidden />
-          <div className="vw-flex vw-items-center vw-justify-between vw-gap-sm">
-            <span className="vw-flex vw-items-center vw-gap-sm min-w-0">
-              <span className="w-12 h-12 rounded-xl grid place-items-center shrink-0 ring-1 ring-inset bg-blue-50 text-blue-600 ring-blue-200/70" aria-hidden><Layers size={22} /></span>
-              <span className="vw-card-metric-label font-normal text-gray-500 vw-flex vw-items-center vw-gap-xxs">Profile types <InfoTip>The number of profile type records in each domain. Each record is one Category → Type → Subtype combination.</InfoTip></span>
-            </span>
-            <Donut size={88} segments={domainSegments} soft />
-          </div>
-          <div className="mt-2"><DonutLegend segments={domainSegments} columns={1} soft round /></div>
-        </div>
-        <div className="vw-card-section relative overflow-hidden p-4">
-          <span className="absolute inset-x-0 top-0 h-1 bg-violet-300" aria-hidden />
-          <div className="vw-flex vw-items-center vw-justify-between vw-gap-sm">
-            <span className="vw-flex vw-items-center vw-gap-sm min-w-0">
-              <span className="w-12 h-12 rounded-xl grid place-items-center shrink-0 ring-1 ring-inset bg-violet-50 text-violet-600 ring-violet-200/70" aria-hidden><FolderTree size={22} /></span>
-              <span className="vw-card-metric-label font-normal text-gray-500 vw-flex vw-items-center vw-gap-xxs">Categories <InfoTip>Profile type record counts for each service category.</InfoTip></span>
-            </span>
-            <Donut size={88} segments={categorySegments} soft />
-          </div>
-          <div className="mt-2"><DonutLegend segments={categorySegments} columns={2} soft round /></div>
-        </div>
-        <div className="vw-card-section relative overflow-hidden p-4">
-          <span className="absolute inset-x-0 top-0 h-1 bg-emerald-300" aria-hidden />
-          <div className="vw-flex vw-items-center vw-justify-between vw-gap-sm">
-            <span className="vw-flex vw-items-center vw-gap-sm min-w-0">
-              <span className="w-12 h-12 rounded-xl grid place-items-center shrink-0 ring-1 ring-inset bg-emerald-50 text-emerald-600 ring-emerald-200/70" aria-hidden><WorkflowIcon size={22} /></span>
-              <span className="vw-card-metric-label font-normal text-gray-500 vw-flex vw-items-center vw-gap-xxs">Workflow references <InfoTip>Number of workflows associated with profile templates in each domain. The donut total is all workflows.</InfoTip></span>
-            </span>
-            <Donut size={88} total={workflows.length} segments={workflowDomainSegments} soft />
-          </div>
-          <div className="mt-2"><DonutLegend segments={workflowDomainSegments} columns={1} soft round /></div>
-        </div>
+      <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
+        <Stat label="Profile types" icon={Layers} value={profileTypes.length} note="Category → Type → Subtype combinations"
+          info="The master hierarchy of service profiles. Each row is one Category → Type → Subtype combination that workflows are scoped to and provisioning requests select from." />
+        <Stat label="Categories" icon={FolderTree} value={CATS.length} note="Across Transport, Access, Radio and Fiber domains"
+          info="The top level of the hierarchy — the broad service families the platform provisions. Every profile type belongs to exactly one category, and every category belongs to exactly one domain." />
+        <Stat label="Distinct types" icon={Shapes} value={types} note="Functional classifications across all categories"
+          info="The middle level of the hierarchy — functional classifications such as Hub & Spoke or Point-to-point. One type can carry several subtypes." />
+        <Stat label="Unused" icon={CircleAlert} value={unused} tone={unused > 0 ? 'warn' : 'good'}
+          note={unused > 0 ? 'No workflow references these yet' : 'Every profile is referenced by a workflow'}
+          info="Profile types no workflow references yet. An order that selects one of these cannot be fulfilled until a workflow is mapped to it — either build the workflow or retire the profile." />
       </div>
 
       <DataTable
@@ -241,14 +193,14 @@ export default function ProfileTypes() {
         open={!!view} onClose={() => setView(null)}
         title={view ? `${view.category} · ${view.type} · ${view.subtype}` : ''}
         sub={view?.id}
-        width={500}
+        width={640}
         footer={<Button onClick={() => setView(null)}>Cancel</Button>}
       >
         {view && (() => {
           const count = usage.get(`${view.category}|${view.type}|${view.subtype}`) ?? 0
           return (
             <div>
-              <div className="grid grid-cols-[180px_180px] gap-x-10 gap-y-5">
+              <div className="grid grid-cols-2 gap-x-5 gap-y-5">
                 <div>
                   <div className="vw-label mb-1">Domain</div>
                   <Badge tone={DOMAIN_TONE[domainOf(view.category)]}>{domainOf(view.category)}</Badge>
