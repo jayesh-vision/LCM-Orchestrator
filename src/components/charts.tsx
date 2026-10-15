@@ -201,26 +201,26 @@ export interface DonutSegment { label: string; value: number; fill: FillKey; col
  * The legend beside a donut. Every row is a drill-down when given an onClick,
  * which is also what makes the chart keyboard-reachable — the arcs alone are not.
  */
-export function DonutLegend({ segments, columns = 1 }: { segments: DonutSegment[]; columns?: 1 | 2 }) {
+export function DonutLegend({ segments, columns = 1, soft = false, round = false }: { segments: DonutSegment[]; columns?: 1 | 2; soft?: boolean; round?: boolean }) {
   return (
     <div className={`grid gap-x-3 gap-y-1.5 text-[12px] ${columns === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
       {segments.map((s) => {
         const body = (
           <>
             <span className="flex items-center gap-1.5 min-w-0">
-              <i className="w-2 h-2 rounded-[2px] shrink-0" style={{ background: paint(s.fill, s.color) }} />
+              <i className={`w-2 h-2 shrink-0 ${round ? 'rounded-full' : 'rounded-[2px]'}`} style={{ background: paint(s.fill, s.color) }} />
               <span className="truncate">{s.label}</span>
             </span>
-            <span className="font-semibold tnum text-ink-1">{s.value.toLocaleString()}</span>
+            <span className={`${soft ? 'font-medium text-gray-600' : 'font-semibold text-ink-1'} tnum`}>{s.value.toLocaleString()}</span>
           </>
         )
-        if (!s.onClick) return <div key={s.label} className="flex items-center justify-between gap-2 text-ink-2">{body}</div>
+        if (!s.onClick) return <div key={s.label} className={`flex items-center justify-between gap-2 ${soft ? 'text-gray-600' : 'text-ink-2'}`}>{body}</div>
         return (
           <button
             key={s.label} type="button" onClick={s.onClick}
             aria-label={`${s.label}: ${s.value}. Open the matching list`}
-            className="flex items-center justify-between gap-2 text-ink-2 text-left rounded -mx-1 px-1 cursor-pointer
-              hover:bg-plane hover:text-brand-600 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
+            className={`flex items-center justify-between gap-2 ${soft ? 'text-gray-600' : 'text-ink-2'} text-left rounded -mx-1 px-1 cursor-pointer
+              hover:bg-plane hover:text-brand-600 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100`}
           >
             {body}
           </button>
@@ -230,8 +230,8 @@ export function DonutLegend({ segments, columns = 1 }: { segments: DonutSegment[
   )
 }
 
-export function Donut({ segments, total, caption, size = 132 }:
-{ segments: DonutSegment[]; total?: number; caption?: ReactNode; size?: number }) {
+export function Donut({ segments, total, caption, size = 132, soft = false }:
+{ segments: DonutSegment[]; total?: number; caption?: ReactNode; size?: number; soft?: boolean }) {
   const sum = total ?? segments.reduce((a, s) => a + s.value, 0)
   const r = 54; const c = 2 * Math.PI * r
   let offset = 0
@@ -258,7 +258,7 @@ export function Donut({ segments, total, caption, size = 132 }:
           offset += dash
           return el
         })}
-        <text x="66" y="62" textAnchor="middle" className="fill-ink-1" style={{ fontSize: 24, fontWeight: 600 }}>{sum.toLocaleString()}</text>
+        <text x="66" y="62" textAnchor="middle" className={soft ? 'fill-gray-600' : 'fill-ink-1'} style={{ fontSize: 24, fontWeight: soft ? 500 : 600 }}>{sum.toLocaleString()}</text>
         <text x="66" y="80" textAnchor="middle" className="fill-ink-3" style={{ fontSize: 10.5 }}>total</text>
       </svg>
       {caption && <div className="min-w-0 flex-1">{caption}</div>}
