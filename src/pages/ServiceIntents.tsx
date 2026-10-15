@@ -190,7 +190,7 @@ export default function ServiceIntents() {
   }
 
   const columns: Column<ServiceIntent>[] = [
-    { key: 'cat', header: 'Category', width: '110px', sortValue: (r) => r.category, render: (r) => <Badge tone={CATEGORY_TONE[r.category]}>{r.category}</Badge> },
+    { key: 'cat', header: 'Category', width: '110px', align: 'center', sortValue: (r) => r.category, render: (r) => <Badge tone={CATEGORY_TONE[r.category]}>{r.category}</Badge> },
     { key: 'id', header: 'Code', width: '160px', sortValue: (r) => r.id, render: (r) => <Mono className="text-[12px]">{r.id}</Mono> },
     {
       key: 'name', header: 'Name', sortValue: (r) => r.name,
@@ -204,7 +204,7 @@ export default function ServiceIntents() {
       ),
     },
     {
-      key: 'state', header: 'State', width: '124px', sortValue: (r) => r.state,
+      key: 'state', header: 'State', width: '124px', align: 'center', sortValue: (r) => r.state,
       render: (r) => <Badge tone={WORKFLOW_TONE[r.state]} dot={r.state === 'Active'}>{r.state} · v{r.version}</Badge>,
     },
     { key: 'topology', header: 'Topology', width: '130px', sortValue: (r) => r.topology, render: (r) => r.topology },
