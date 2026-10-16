@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowUpRight, Check, ChevronDown, Copy, Filter, Info, MoreVertical, RefreshCcw, Search, X } from 'lucide-react'
 /* format.ts only imports `Tone` back from here as a type, so this pair is a
@@ -465,6 +465,19 @@ export function SearchBox({ value, onChange, placeholder = 'Search…', width = 
 export type IconType = ComponentType<{ size?: number; className?: string; 'aria-hidden'?: boolean }>
 export interface MenuItem { label: string; onClick: () => void; icon?: IconType; danger?: boolean }
 
+let activeKebabId: string | null = null
+const kebabListeners = new Set<() => void>()
+const subscribeToKebab = (listener: () => void) => {
+  kebabListeners.add(listener)
+  return () => kebabListeners.delete(listener)
+}
+const getActiveKebab = () => activeKebabId
+const setActiveKebab = (id: string | null) => {
+  if (activeKebabId === id) return
+  activeKebabId = id
+  kebabListeners.forEach((listener) => listener())
+}
+
 /* NST registry: .nst-action-menu / .nst-action-menu-item / .nst-action-menu-icon.
    Row actions carry an icon each, as the platform's own grid does.
    The menu renders in a portal, positioned from the trigger's own
@@ -474,16 +487,21 @@ export interface MenuItem { label: string; onClick: () => void; icon?: IconType;
    almost every row is "near the bottom"). */
 export function Kebab({ items, align = 'right', variant = 'inline' }: { items: MenuItem[]; align?: 'right' | 'left'; variant?: 'inline' | 'icon-btn' }) {
   const [pos, setPos] = useState<{ top: number; left?: number; right?: number } | null>(null)
+  const id = useId()
+  const activeId = useSyncExternalStore(subscribeToKebab, getActiveKebab, () => null)
   const btnRef = useRef<HTMLButtonElement>(null)
-  const open = !!pos
+  const open = activeId === id
+  useEffect(() => () => {
+    if (activeKebabId === id) setActiveKebab(null)
+  }, [id])
   useEffect(() => {
     if (!open) return
-    const h = () => setPos(null)
+    const h = () => setActiveKebab(null)
     window.addEventListener('click', h)
     return () => window.removeEventListener('click', h)
   }, [open])
   const toggle = () => {
-    if (open) { setPos(null); return }
+    if (open) { setActiveKebab(null); return }
     const r = btnRef.current?.getBoundingClientRect()
     if (!r) return
     setPos({
@@ -491,6 +509,7 @@ export function Kebab({ items, align = 'right', variant = 'inline' }: { items: M
       left: align === 'left' ? r.left : undefined,
       right: align === 'right' ? window.innerWidth - r.right : undefined,
     })
+    setActiveKebab(id)
   }
   return (
     <div className="inline-block" onClick={(e) => e.stopPropagation()}>
@@ -498,12 +517,12 @@ export function Kebab({ items, align = 'right', variant = 'inline' }: { items: M
         className={variant === 'icon-btn' ? `nst-icon-btn ${open ? 'is-active' : ''}` : 'nst-table-kebab w-8 h-8 rounded-[var(--vw-radius-sm)] hover:bg-plane'}>
         <MoreVertical size={16} />
       </button>
-      {pos && createPortal(
+      {open && pos && createPortal(
         <div className="nst-action-menu min-w-[220px] anim-in" style={{ position: 'fixed', top: pos.top, left: pos.left, right: pos.right }} role="menu">
           {items.map((it) => (
             <button
               key={it.label} role="menuitem"
-              onClick={() => { setPos(null); it.onClick() }}
+              onClick={() => { setActiveKebab(null); it.onClick() }}
               className={`nst-action-menu-item w-full text-left gap-2.5 whitespace-nowrap ${it.danger ? 'nst-action-menu-item--danger' : ''}`}
             >
               {it.icon && <it.icon size={18} className="nst-action-menu-icon" aria-hidden />}

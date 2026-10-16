@@ -357,7 +357,6 @@ export default function Workflows() {
             ...(qcode ? [{ key: 'code', label: 'Code', value: qcode, onRemove: () => setQcode('') }] : []),
           ],
           onResetFilters: clear,
-          onRefresh: () => pushToast('info', 'Workflow list refreshed.'),
           actions: [{ label: 'New workflow', icon: Plus, onClick: () => nav('/workflows/new') }, { label: 'Export to CSV', icon: Download, onClick: () => pushToast('info', 'Export queued — the file will appear in Reports.') }],
         }}
       />

@@ -238,7 +238,6 @@ export default function Reports() {
             { key: 'question', label: 'Question', type: 'text', value: qquestion, onChange: setQquestion },
           ],
           onResetFilters: () => { setState('All'); setQ(''); setQreport(''); setQquestion('') },
-          onRefresh: () => pushToast('info', 'Report catalog refreshed.'),
           actions: [
             { label: 'New report', icon: Plus, onClick: () => pushToast('info', 'Report queued. It will appear here when generation completes.') },
             { label: 'Schedules', icon: CalendarClock, onClick: () => pushToast('info', 'Schedules are not wired in this prototype.') },

@@ -92,7 +92,10 @@ export default function OrderDetail() {
      replays that exact selection. */
   const listBase = loc.pathname.startsWith('/execution') ? '/execution' : '/requests'
   const fromList = (loc.state as { fromList?: string } | null)?.fromList
-  const listPath = `${listBase}${fromList || ''}`
+  const listParams = new URLSearchParams((fromList ?? '').replace(/^\?/, ''))
+  if (!listParams.has('view')) listParams.set('view', 'listing')
+  const listQuery = listParams.toString()
+  const listPath = `${listBase}${listQuery ? `?${listQuery}` : ''}`
   const listLabel = listBase === '/execution' ? 'Provisioning Execution' : 'Provisioning Requests'
   const order = useStore((s) => s.orders.find((o) => o.id === id))
   const allRuns = useStore((s) => s.runs)

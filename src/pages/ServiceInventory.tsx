@@ -4,19 +4,17 @@ import { useClearQuery, useQueryPatch, useQueryState, useScrollToResultsOnDrillI
 import { Boxes, Eye, Ghost, ShieldCheck, ShieldQuestion } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { Category, Conformance, Domain, Order, Service, ServiceState } from '@/types'
-import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
+import { domainOf } from '@/types'
 import {
   Badge, Card, CardBody, CardHead, CellMain, CellSub, DataTable,
   FieldDropdown, Kebab, Mono, Stat, stampColumn, type Column,
 } from '@/components/ui'
-import { CHART, Donut, FILL, type FillKey } from '@/components/charts'
+import { CHART } from '@/components/charts'
 import { CATEGORY_TONE, CONFORMANCE_TONE, inr, relTime, SERVICE_TONE } from '@/lib/format'
-import { CONFORMANCE_ORDER, conformanceBreakdown } from '@/lib/conformance'
 import { byTraceability, serviceTrace, serviceOrigins, ORIGIN_LABEL, ORIGIN_BLURB, type ServiceOrigin } from '@/lib/traceability'
 
 const STATES: ServiceState[] = ['Live', 'Activating', 'Degraded', 'Suspended', 'Ceased']
 const CONFS: Conformance[] = ['Conformant', 'Drifted', 'Never proven', 'Ghost', 'Not checked']
-const CATS: Category[] = ['L2VPN', 'L3VPN', 'IBW', 'VLAN', 'Microwave', 'DWDM', 'RAN VNF', 'GPON']
 
 /**
  * When this service was last changed. Unlike an order, a service carries no
@@ -65,7 +63,9 @@ export default function ServiceInventory() {
 
   const [q, setQ] = useQueryState('q', '')
   const [qservice, setQservice] = useQueryState('service', '')
+  const [qorder, setQorder] = useQueryState('order', '')
   const [qcustomer, setQcustomer] = useQueryState('customer', '')
+  const [qkind, setQkind] = useQueryState('kind', '')
   const [state, setState] = useQueryState<ServiceState | 'All'>('state', 'All')
   const [conf, setConf] = useQueryState<Conformance | 'All'>('conf', 'All')
   const [domain, setDomain] = useQueryState<Domain | 'All'>('domain', 'All')
@@ -73,49 +73,27 @@ export default function ServiceInventory() {
   const [intent, setIntent] = useQueryState('intent', 'All')
   const [origin, setOrigin] = useQueryState<ServiceOrigin | 'All'>('origin', 'All')
   const patch = useQueryPatch()
-  const clear = useClearQuery(['q', 'service', 'customer', 'state', 'conf', 'domain', 'cat', 'intent', 'origin'])
-  const domainCats = domain === 'All' ? CATS : CATEGORIES_BY_DOMAIN[domain]
+  const clear = useClearQuery(['q', 'service', 'order', 'customer', 'kind', 'state', 'conf', 'domain', 'cat', 'intent', 'origin'])
   const setDomainScoped = (next: Domain | 'All') => {
     setDomain(next)
     if (next !== 'All' && cat !== 'All' && domainOf(cat) !== next) setCat('All')
   }
   const anyFilter = state !== 'All' || conf !== 'All' || domain !== 'All' || cat !== 'All' || intent !== 'All' || origin !== 'All'
+    || !!qservice || !!qorder || !!qcustomer || !!qkind
   const { ref: resultsRef, scrollToResults } = useScrollToResultsOnDrillIn(
-    anyFilter ? `s=${state}|cf=${conf}|d=${domain}|c=${cat}|i=${intent}|o=${origin}` : '',
+    anyFilter ? `s=${state}|cf=${conf}|d=${domain}|c=${cat}|i=${intent}|o=${origin}|svc=${qservice}|ord=${qorder}|cust=${qcustomer}|kind=${qkind}` : '',
   )
   const intentName = intents.find((i) => i.id === intent)?.name ?? intent
 
   const n = {
     state: (s: ServiceState) => services.filter((x) => x.state === s).length,
     conf: (c: Conformance) => services.filter((x) => x.conformance === c).length,
-    cat: (c: Category) => services.filter((x) => x.category === c).length,
   }
 
   const ghostValue = useMemo(
     () => services.filter((s) => s.conformance === 'Ghost').reduce((a, s) => a + s.monthlyValueInr * 12, 0),
     [services],
   )
-
-  /* Five segments, not four. "Never proven" used to absorb "Not checked" here
-     so the donut would sum to the base — but they mean different things, and
-     the KPI card above counts only the real never-proven figure, so the same
-     page reported two numbers for the same thing. Every verdict now gets its
-     own segment and the total is the whole base by construction. */
-  const health = useMemo(() => conformanceBreakdown(services), [services])
-  const CONF_FILL: Record<Conformance, FillKey> = {
-    Conformant: 'good', Drifted: 'warn', 'Never proven': 'none', Ghost: 'crit', 'Not checked': 'none',
-  }
-  const CONF_NOTE: Record<Conformance, string> = {
-    Conformant: 'device matches intent, proven recently',
-    Drifted: 'at least one attribute differs',
-    'Never proven': 'configured, never tested end to end',
-    Ghost: 'record exists, no configuration',
-    'Not checked': 'ceased or activating — conformance not applicable',
-  }
-  const confSegs: { label: string; value: number; fill: FillKey; note: string; onClick: () => void }[] =
-    CONFORMANCE_ORDER.map((c) => ({
-      label: c, value: health.counts[c], fill: CONF_FILL[c], note: CONF_NOTE[c], onClick: () => setConf(c),
-    }))
 
   /* Ranked, biggest first — the intent list has no fixed size (it grows with
      every new template), so this reads as a ranked grid of tiles rather than
@@ -140,6 +118,18 @@ export default function ServiceInventory() {
   const originOf = useMemo(() => serviceOrigins(orders), [orders])
   const origins = (id: string): ServiceOrigin => originOf.get(id) ?? 'inherited'
 
+  /* The request behind each service. Where several touched it, the create
+     wins — that is the one that brought the service into existence. */
+  const orderForService = useMemo(() => {
+    const m = new Map<string, Order>()
+    orders.forEach((o) => {
+      if (!o.serviceId) return
+      const held = m.get(o.serviceId)
+      if (!held || (held.intent !== 'Create' && o.intent === 'Create')) m.set(o.serviceId, o)
+    })
+    return m
+  }, [orders])
+
   const filtered = useMemo(() => services.filter((s) => {
     if (state !== 'All' && s.state !== state) return false
     if (conf !== 'All' && s.conformance !== conf) return false
@@ -157,9 +147,17 @@ export default function ServiceInventory() {
       if (!(s.id.toLowerCase().includes(t) || s.name.toLowerCase().includes(t))) return false
     }
     if (qcustomer && !s.accountName.toLowerCase().includes(qcustomer.toLowerCase())) return false
+    if (qorder) {
+      const order = orderForService.get(s.id)
+      const orderText = order
+        ? `${order.id} ${order.code} ${order.intent} ${order.state}`.toLowerCase()
+        : ORIGIN_LABEL.inherited.toLowerCase()
+      if (!orderText.includes(qorder.toLowerCase())) return false
+    }
+    if (qkind && !`${s.category} ${s.type}`.toLowerCase().includes(qkind.toLowerCase())) return false
     return true
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [services, state, conf, cat, intent, origin, q, qservice, qcustomer, originOf])
+  }), [services, state, conf, cat, intent, origin, q, qservice, qorder, qcustomer, qkind, originOf, orderForService])
 
   /* Services the platform can account for — provisioned through a request in
      the system, holding pool resources, with the evidence that proved them —
@@ -169,19 +167,6 @@ export default function ServiceInventory() {
     const referenced = new Set(orders.map((o) => o.serviceId).filter(Boolean) as string[])
     return byTraceability(filtered, (s) => serviceTrace(s, referenced))
   }, [filtered, orders])
-
-  /* The request behind each service. Where several touched it, the create
-     wins — that is the one that actually brought the service into existence,
-     and the one someone tracing provenance is looking for. */
-  const orderForService = useMemo(() => {
-    const m = new Map<string, Order>()
-    orders.forEach((o) => {
-      if (!o.serviceId) return
-      const held = m.get(o.serviceId)
-      if (!held || (held.intent !== 'Create' && o.intent === 'Create')) m.set(o.serviceId, o)
-    })
-    return m
-  }, [orders])
 
   const columns: Column<Service>[] = [
     {
@@ -225,7 +210,7 @@ export default function ServiceInventory() {
     },
     { key: 'acct', header: 'Customer', width: '186px', sortValue: (r) => r.accountName, render: (r) => r.accountName },
     {
-      key: 'kind', header: 'Kind', width: '112px', sortValue: (r) => r.category,
+      key: 'kind', header: 'Kind', width: '112px', align: 'center', sortValue: (r) => r.category,
       render: (r) => (<><Badge tone={CATEGORY_TONE[r.category]}>{r.category}</Badge><CellSub>{r.type}</CellSub></>),
     },
     {
@@ -238,7 +223,7 @@ export default function ServiceInventory() {
       ),
     },
     {
-      key: 'state', header: 'State', width: '128px', sortValue: (r) => r.state,
+      key: 'state', header: 'State', width: '128px', align: 'center', sortValue: (r) => r.state,
       render: (r) => (<><Badge tone={SERVICE_TONE[r.state]} dot>{r.state}</Badge>
         {r.state === 'Live' && <CellSub>{inr(r.monthlyValueInr)}/mo</CellSub>}</>),
     },
@@ -248,7 +233,7 @@ export default function ServiceInventory() {
         {r.conformance === 'Ghost' && <CellSub>no configuration on device</CellSub>}</>),
     },
     { key: 'proven', header: 'Last proven', width: '116px', sortValue: (r) => r.lastProvenAt ?? '', render: (r) => <span className="text-ink-3">{relTime(r.lastProvenAt)}</span> },
-    { key: 'age', header: 'Age', align: 'right', width: '86px', sortValue: (r) => new Date(r.liveSince).getTime(), render: (r) => r.ageLabel },
+    { key: 'age', header: 'Age', align: 'center', width: '86px', sortValue: (r) => new Date(r.liveSince).getTime(), render: (r) => r.ageLabel },
     {
       /* Next to Created / Modified on purpose: that column says when the
          service last moved, this one says how often and whether anyone
@@ -323,41 +308,6 @@ export default function ServiceInventory() {
 
       <div className="flex flex-col gap-4">
         <Card className="flex flex-col">
-          <CardHead title="Conformance across the base" sub="Each service holds exactly one of these verdicts"
-            info="Compares what each order says the service should be (the intent) with what is actually configured on the devices. Every service holds exactly one of five verdicts, so the counts always add up to the whole base. Not checked means conformance does not apply — the service is ceased, or still activating — which is different from Never proven, where a live service has simply never been tested. Click any segment or tile to open those services." />
-          <CardBody className="flex items-center gap-6 flex-wrap">
-            <Donut
-              size={158}
-              segments={confSegs.map(({ label, value, fill, onClick }) => ({ label, value, fill, onClick }))}
-            />
-            <div className="flex-1 min-w-[280px] grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-              {/* All five verdicts share one tile shape at every breakpoint —
-                 no special-cased "wide" tile for the odd one out, so nothing
-                 ever hangs alone as a stretched bar underneath the row. */}
-              {confSegs.map((s) => (
-                <button
-                  key={s.label} type="button" onClick={s.onClick}
-                  aria-label={`${s.label}: ${s.value}. Open the matching services`}
-                  className="flex items-start gap-2.5 border border-line rounded-lg px-3.5 py-2.5 text-left cursor-pointer
-                    transition-colors hover:bg-plane hover:border-brand-200
-                    focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-100"
-                >
-                  <i className="w-2.5 h-2.5 rounded-[3px] shrink-0 mt-1.5" style={{ background: FILL[s.fill] }} aria-hidden />
-                  <span className="min-w-0">
-                    <span className="block text-[16px] font-semibold tnum text-ink-1 leading-tight">
-                      {s.value.toLocaleString()}
-                      <span className="text-[11px] text-ink-3 font-medium ml-1.5">{Math.round((s.value / services.length) * 100)}%</span>
-                    </span>
-                    <span className="block text-[12px] font-medium text-ink-2 mt-0.5">{s.label}</span>
-                    <span className="block text-[11px] text-ink-3 leading-snug">{s.note}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card className="flex flex-col">
           <CardHead title="Services by intent" sub="Volume by provisioning intent, ranked biggest first"
             info="Every service in the base, grouped by the template that provisioned it and ranked by volume — darker tiles carry more of the base. Click a tile to open just that intent's services." />
           <CardBody className="vw-scroll-hint grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2.5 max-h-[360px] overflow-y-auto">
@@ -393,29 +343,26 @@ export default function ServiceInventory() {
         fillHeight
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Service, Customer' },
-          /* Domain and Category are the facets worth one click rather than a
-             trip through the filter icon, matching Provisioning Requests.
-             State now lives in the popover along with everything else. */
+          /* State and conformance are visible columns and the most useful
+             one-click cuts for an inventory list. */
           chips: [
-            <FieldDropdown key="domain" label="Domain" value={domain} onChange={(v) => setDomainScoped(v as Domain | 'All')}
-              options={DOMAINS.map((d) => ({ value: d, label: d, count: services.filter((x) => domainOf(x.category) === d).length }))} />,
-            <FieldDropdown key="cat" label="Category" value={cat} onChange={(v) => setCat(v as Category | 'All')}
-              options={domainCats.map((c) => ({ value: c, label: c, count: n.cat(c) }))} />,
+            <FieldDropdown key="state" label="State" value={state} onChange={(v) => setState(v as ServiceState | 'All')}
+              options={STATES.filter((st) => n.state(st) > 0).map((st) => ({ value: st, label: st, count: n.state(st) }))} />,
+            <FieldDropdown key="conf" label="Conformance" value={conf} onChange={(v) => setConf(v as Conformance | 'All')}
+              options={CONFS.filter((c) => n.conf(c) > 0).map((c) => ({ value: c, label: c, count: n.conf(c) }))} />,
           ],
           filters: [
+            { key: 'service', label: 'Service', type: 'text', value: qservice, onChange: setQservice },
+            { key: 'order', label: 'Order', type: 'text', value: qorder, onChange: setQorder },
+            { key: 'customer', label: 'Customer', type: 'text', value: qcustomer, onChange: setQcustomer },
+            { key: 'kind', label: 'Kind', type: 'text', value: qkind, onChange: setQkind },
             { key: 'state', label: 'State', value: state, onChange: (v) => setState(v as ServiceState | 'All'),
               options: STATES.filter((st) => n.state(st) > 0).map((st) => ({ value: st, label: st, count: n.state(st) })) },
             { key: 'conf', label: 'Conformance', value: conf, onChange: (v) => setConf(v as Conformance | 'All'),
               options: CONFS.filter((c) => n.conf(c) > 0).map((c) => ({ value: c, label: c, count: n.conf(c) })) },
-            { key: 'origin', label: 'Origin', value: origin, onChange: (v) => setOrigin(v as ServiceOrigin | 'All'),
-              options: (['provisioned', 'managed', 'inherited'] as ServiceOrigin[])
-                .map((o) => ({ value: o, label: ORIGIN_LABEL[o], count: services.filter((x) => origins(x.id) === o).length })) },
-            { key: 'intent', label: 'Intent', value: intent, onChange: setIntent,
-              options: intents.map((i) => ({ value: i.id, label: i.name, count: services.filter((x) => x.intentId === i.id).length })) },
-            { key: 'service', label: 'Service', type: 'text', value: qservice, onChange: setQservice },
-            { key: 'customer', label: 'Customer', type: 'text', value: qcustomer, onChange: setQcustomer },
           ],
           activeFilterChips: [
+            ...(domain !== 'All' ? [{ key: 'domain', label: 'Domain', value: domain, onRemove: () => setDomainScoped('All') }] : []),
             ...(cat !== 'All' ? [{ key: 'cat', label: 'Category', value: cat, onRemove: () => setCat('All') }] : []),
             ...(state !== 'All' ? [{ key: 'state', label: 'State', value: state, onRemove: () => setState('All') }] : []),
             ...(conf !== 'All' ? [{ key: 'conf', label: 'Conformance', value: conf, onRemove: () => setConf('All') }] : []),
@@ -423,10 +370,11 @@ export default function ServiceInventory() {
             ...(origin !== 'All' ? [{ key: 'origin', label: 'Origin', value: ORIGIN_LABEL[origin], onRemove: () => setOrigin('All') }] : []),
             ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
             ...(qservice ? [{ key: 'service', label: 'Service', value: qservice, onRemove: () => setQservice('') }] : []),
+            ...(qorder ? [{ key: 'order', label: 'Order', value: qorder, onRemove: () => setQorder('') }] : []),
             ...(qcustomer ? [{ key: 'customer', label: 'Customer', value: qcustomer, onRemove: () => setQcustomer('') }] : []),
+            ...(qkind ? [{ key: 'kind', label: 'Kind', value: qkind, onRemove: () => setQkind('') }] : []),
           ],
           onResetFilters: clear,
-          onRefresh: () => pushToast('info', 'Inventory refreshed.'),
         }}
       />
     </>

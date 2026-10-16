@@ -265,7 +265,6 @@ export default function ServiceIntents() {
               options: TOPOLOGIES.map((t) => ({ value: t, label: t, count: families.filter((i) => i.topology === t).length })) },
           ],
           onResetFilters: () => { setDomain('All'); setCat('All'); setTopology('All'); setState('All'); setQ('') },
-          onRefresh: () => pushToast('info', 'Service intents refreshed.'),
           actions: [{ label: 'Service intent', icon: Plus, onClick: () => { setForm(blankIntentForm()); setOpen(true) } }],
         }}
       />

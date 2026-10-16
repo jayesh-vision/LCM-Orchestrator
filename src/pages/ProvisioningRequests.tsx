@@ -53,12 +53,10 @@ export default function ProvisioningRequests() {
   const [vendor, setVendor] = useQueryState<Vendor | 'All'>('vendor', 'All')
   const [intent, setIntent] = useQueryState<OrderIntent | 'All'>('intent', 'All')
   const [customer, setCustomer] = useQueryState('customer', '')
-  /* Independent name/code/model filters for the popover — separate from
-     the toolbar's broad `q` search box, which still matches across all
-     three at once for a quick look-up. */
+  /* Independent name/code filters for the popover — separate from the
+     toolbar's broad `q` search box. */
   const [qname, setQname] = useQueryState('name', '')
   const [qcode, setQcode] = useQueryState('code', '')
-  const [qmodel, setQmodel] = useQueryState('model', '')
   const [view, setView] = useQueryState<'listing' | 'insights'>('view', 'insights')
   const patch = useQueryPatch()
   const clear = useClearQuery(['q', 'domain', 'cat', 'state', 'vendor', 'intent', 'customer', 'name', 'code', 'model'])
@@ -106,15 +104,13 @@ export default function ProvisioningRequests() {
     if (customer && !o.accountName.toLowerCase().includes(customer.toLowerCase())) return false
     if (qname && !o.name.toLowerCase().includes(qname.toLowerCase())) return false
     if (qcode && !o.code.toLowerCase().includes(qcode.toLowerCase())) return false
-    if (qmodel && !o.endpoints.some((e) => e.deviceName.toLowerCase().includes(qmodel.toLowerCase()))) return false
     if (q) {
       const t = q.toLowerCase()
       if (!(o.id.toLowerCase().includes(t) || o.code.toLowerCase().includes(t)
-        || o.name.toLowerCase().includes(t) || o.accountName.toLowerCase().includes(t)
-        || o.endpoints.some((e) => e.deviceName.toLowerCase().includes(t)))) return false
+        || o.name.toLowerCase().includes(t) || o.accountName.toLowerCase().includes(t))) return false
     }
     return true
-  }), [orders, domain, cat, state, vendor, intent, customer, qname, qcode, qmodel, q]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [orders, domain, cat, state, vendor, intent, customer, qname, qcode, q]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Newest first — raise a change against a service and the request for it is
      the top row here, which is where someone goes looking for it. Within the
@@ -141,15 +137,13 @@ export default function ProvisioningRequests() {
     if (customer && !o.accountName.toLowerCase().includes(customer.toLowerCase())) return false
     if (qname && !o.name.toLowerCase().includes(qname.toLowerCase())) return false
     if (qcode && !o.code.toLowerCase().includes(qcode.toLowerCase())) return false
-    if (qmodel && !o.endpoints.some((e) => e.deviceName.toLowerCase().includes(qmodel.toLowerCase()))) return false
     if (q) {
       const t = q.toLowerCase()
       if (!(o.id.toLowerCase().includes(t) || o.code.toLowerCase().includes(t)
-        || o.name.toLowerCase().includes(t) || o.accountName.toLowerCase().includes(t)
-        || o.endpoints.some((e) => e.deviceName.toLowerCase().includes(t)))) return false
+        || o.name.toLowerCase().includes(t) || o.accountName.toLowerCase().includes(t))) return false
     }
     return true
-  }), [orders, domain, cat, vendor, intent, customer, qname, qcode, qmodel, q]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [orders, domain, cat, vendor, intent, customer, qname, qcode, q]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const columns: Column<Order>[] = [
     {
@@ -173,17 +167,17 @@ export default function ProvisioningRequests() {
          this list is actually trying to make. */
       key: 'intent', header: 'Request type', width: '132px', align: 'center',
       sortValue: (r) => r.intent,
-      render: (r) => (
-        <>
-          <Badge tone={INTENT_TONE[r.intent]}>{r.intent}</Badge>
-          <CellSub>{r.intent === 'Create' ? 'new build' : 'change request'}</CellSub>
-        </>
-      ),
+      render: (r) => <Badge tone={INTENT_TONE[r.intent]}>{r.intent}</Badge>,
     },
     {
       key: 'name', header: 'Name', width: '180px',
       sortValue: (r) => r.name,
       render: (r) => (<><CellMain>{r.name}</CellMain><CellSub>{r.subtype}</CellSub></>),
+    },
+    {
+      key: 'domain', header: 'Domain', width: '110px', align: 'center',
+      sortValue: (r) => domainOf(r.category),
+      render: (r) => domainOf(r.category),
     },
     {
       key: 'category', header: 'Category / Type', width: '126px',
@@ -260,7 +254,7 @@ export default function ProvisioningRequests() {
             fillHeight
             onRowClick={(r) => nav(`/requests/${r.id}`, fromList)}
             toolbar={{
-              search: { value: q, onChange: setQ, placeholder: 'Name, Code, Model' },
+              search: { value: q, onChange: setQ, placeholder: 'Name, Code' },
               /* Domain and Category are the common quick-chip facets kept
                  inline, matching the other listings — Request type and
                  Vendor live in the filter popover instead. */
@@ -293,7 +287,6 @@ export default function ProvisioningRequests() {
                 { key: 'customer', label: 'Customer Name', type: 'text', value: customer, onChange: setCustomer },
                 { key: 'name', label: 'Name', type: 'text', value: qname, onChange: setQname },
                 { key: 'code', label: 'Code', type: 'text', value: qcode, onChange: setQcode },
-                { key: 'model', label: 'Model', type: 'text', value: qmodel, onChange: setQmodel },
               ],
               activeFilterChips: [
                 ...(state !== 'All' ? [{ key: 'state', label: 'Status', value: stateList.join(' or '), onRemove: () => setState('All') }] : []),
@@ -302,11 +295,9 @@ export default function ProvisioningRequests() {
                 ...(customer ? [{ key: 'customer', label: 'Customer', value: customer, onRemove: () => setCustomer('') }] : []),
                 ...(qname ? [{ key: 'name', label: 'Name', value: qname, onRemove: () => setQname('') }] : []),
                 ...(qcode ? [{ key: 'code', label: 'Code', value: qcode, onRemove: () => setQcode('') }] : []),
-                ...(qmodel ? [{ key: 'model', label: 'Model', value: qmodel, onRemove: () => setQmodel('') }] : []),
                 ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
               ],
               onResetFilters: clear,
-              onRefresh: () => pushToast('info', 'Request list refreshed.'),
               actions: [
                 { label: 'Provisioning request', icon: Plus, onClick: () => nav('/requests/new') },
               ],

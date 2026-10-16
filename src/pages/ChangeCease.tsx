@@ -162,7 +162,6 @@ export default function ChangeCease() {
             { key: 'customer', label: 'Customer', type: 'text', value: qcustomer, onChange: setQcustomer },
           ],
           onResetFilters: () => { setIntent('All'); setCstate('All'); setQ(''); setQservice(''); setQcustomer('') },
-          onRefresh: () => pushToast('info', 'Change orders refreshed.'),
           actions: [
             { label: 'Raise a change', icon: Plus, onClick: () => setOpen(true) },
           ],

@@ -127,7 +127,6 @@ export default function ProfileTypes() {
               options: [{ value: 'unused', label: 'Unused only', count: unused }] },
           ],
           onResetFilters: () => { setDomain('All'); setCat('All'); setPtype('All'); setUsedFilter('All'); setQ(''); setQsubtype('') },
-          onRefresh: () => pushToast('info', 'Profile types refreshed.'),
           actions: [
             { label: 'Profile template', icon: Plus, onClick: () => setOpen(true) },
           ],

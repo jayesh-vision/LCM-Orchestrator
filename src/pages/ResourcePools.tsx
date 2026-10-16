@@ -167,7 +167,6 @@ export default function ResourcePools() {
             ...(q ? [{ key: 'q', label: 'Search', value: q, onRemove: () => setQ('') }] : []),
           ],
           onResetFilters: clear,
-          onRefresh: () => pushToast('info', 'Pool utilisation refreshed.'),
           actions: [{ label: 'Run pool audit', icon: ShieldCheck, onClick: () => pushToast('info', 'Pool audit queued. Results appear in Reports.') }],
         }}
       />
