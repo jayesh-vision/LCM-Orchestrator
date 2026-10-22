@@ -605,14 +605,14 @@ export function FilterPopover({ fields, onReset, onClose }:
                 <span className="nst-input-label block mb-1.5" id={`filter-label-${field.key}`}>{field.label}</span>
                 {field.type === 'text' ? (
                   <input className="nst-input w-full" aria-labelledby={`filter-label-${field.key}`} value={isAll(draft[field.key]) ? '' : draft[field.key]}
-                    onChange={(e) => setDraft((d) => ({ ...d, [field.key]: e.target.value }))} placeholder={`Type a ${field.label.toLowerCase()}`} />
+                    onChange={(e) => setDraft((d) => ({ ...d, [field.key]: e.target.value }))} />
                 ) : (
                   <div className="relative">
                     <button type="button" onClick={() => setListOpen((v) => !v)}
                       className={`nst-input w-full text-left vw-flex vw-items-center vw-justify-between ${listOpen ? 'ring-2 ring-ink-1 border-ink-1' : ''}`}
                       aria-haspopup="listbox" aria-expanded={listOpen} aria-labelledby={`filter-label-${field.key}`}>
                       <span className={isAll(draft[field.key]) ? 'text-ink-3' : ''}>
-                        {isAll(draft[field.key]) ? 'Any' : (field.options?.find((o) => o.value === draft[field.key])?.label ?? draft[field.key])}
+                        {isAll(draft[field.key]) ? '' : (field.options?.find((o) => o.value === draft[field.key])?.label ?? draft[field.key])}
                       </span>
                       <ChevronDown size={15} className="text-ink-3" />
                     </button>
@@ -623,16 +623,11 @@ export function FilterPopover({ fields, onReset, onClose }:
                          back up to find the box you type into. */
                       <div className="nst-surface--raised absolute left-0 right-0 top-[calc(100%+6px)] z-20 p-1 anim-in flex flex-col max-h-[min(320px,50vh)]" role="listbox">
                         <div className="relative mb-1 shrink-0">
-                          <input autoFocus className="nst-input has-icon-right w-full border-0 border-b border-line-soft rounded-none focus:ring-0" placeholder="Search"
+                          <input autoFocus className="nst-input has-icon-right w-full border-0 border-b border-line-soft rounded-none focus:ring-0"
                             value={q} onChange={(e) => setQ(e.target.value)} />
                           <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none" />
                         </div>
                         <div className="min-h-0 overflow-y-auto">
-                          <button role="option" aria-selected={isAll(draft[field.key])}
-                            onClick={() => { setDraft((d) => ({ ...d, [field.key]: 'All' })); setListOpen(false) }}
-                            className={`w-full text-left px-2.5 py-2 rounded-[var(--vw-radius-xs)] vw-value text-[13px] hover:bg-plane ${isAll(draft[field.key]) ? 'bg-plane' : ''}`}>
-                            Any
-                          </button>
                           {options.map((o) => (
                             <button key={o.value} role="option" aria-selected={draft[field.key] === o.value}
                               onClick={() => { setDraft((d) => ({ ...d, [field.key]: o.value })); setListOpen(false) }}
@@ -681,15 +676,24 @@ export function FieldDropdown({ label, value, onChange, options, width = 220 }:
   const filtered = options.filter((o) => !q || o.label.toLowerCase().includes(q.toLowerCase()))
   return (
     <div className="relative">
-      <button
-        type="button" onClick={() => { setOpen((v) => !v); setQ('') }}
-        className={`nst-input h-9 px-3 vw-flex vw-items-center vw-gap-xs whitespace-nowrap
-          ${open ? 'ring-2 ring-ink-1 border-ink-1' : ''} ${!isAll ? 'border-brand-300 bg-brand-50/60' : ''}`}
-        aria-haspopup="listbox" aria-expanded={open}
-      >
-        <span className={isAll ? 'text-ink-3' : 'font-medium text-ink-1'}>{isAll ? label : (selected?.label ?? value)}</span>
-        <ChevronDown size={14} className="text-ink-3" />
-      </button>
+      <div className={`nst-input h-9 px-1.5 vw-flex vw-items-center gap-0 whitespace-nowrap
+        ${open ? 'ring-2 ring-ink-1 border-ink-1' : ''} ${!isAll ? 'border-brand-300 bg-brand-50/60' : ''}`}>
+        <button
+          type="button" onClick={() => { setOpen((v) => !v); setQ('') }}
+          className={`h-full px-1.5 vw-flex vw-items-center vw-gap-xs ${isAll ? 'text-ink-3' : 'font-medium text-ink-1'}`}
+          aria-haspopup="listbox" aria-expanded={open}
+        >
+          <span>{isAll ? label : `${label} = ${selected?.label ?? value}`}</span>
+          <ChevronDown size={14} className="text-ink-3" />
+        </button>
+        {!isAll && (
+          <button type="button" onClick={() => { onChange('All'); setOpen(false) }}
+            aria-label={`Clear ${label} filter`} title={`Clear ${label} filter`}
+            className="w-6 h-6 grid place-items-center rounded-full text-ink-2 hover:bg-white/70">
+            <X size={13} />
+          </button>
+        )}
+      </div>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
@@ -697,7 +701,7 @@ export function FieldDropdown({ label, value, onChange, options, width = 220 }:
               scrolling under it — so the two behave identically. */}
           <div className="nst-surface--raised absolute left-0 top-[calc(100%+6px)] z-50 anim-in p-1 flex flex-col max-h-[min(320px,50vh)]" style={{ width }} role="listbox" aria-label={label}>
             <div className="relative mb-1 shrink-0">
-              <input autoFocus className="nst-input has-icon-right w-full border-0 border-b border-line-soft rounded-none focus:ring-0" placeholder="Search"
+              <input autoFocus className="nst-input has-icon-right w-full border-0 border-b border-line-soft rounded-none focus:ring-0"
                 value={q} onChange={(e) => setQ(e.target.value)} />
               <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none" />
             </div>
@@ -771,6 +775,21 @@ export function DataTable<T extends { id: string }>({
   const scrollRef = useRef<HTMLDivElement>(null)
   const visibleCountRef = useRef(pageSize)
   const activeFilters = (toolbar?.filters ?? []).filter((f) => f.value && f.value !== 'All').length
+  const explicitChips = toolbar?.activeFilterChips ?? []
+  const explicitChipKeys = new Set(explicitChips.map((f) => f.key))
+  const activeFilterChips: ActiveFilter[] = [
+    ...(toolbar?.filters ?? [])
+      .filter((f) => f.value && f.value !== 'All' && !explicitChipKeys.has(f.key))
+      .map((f) => ({
+        key: f.key,
+        label: f.label,
+        value: f.type !== 'text'
+          ? (f.options?.find((o) => o.value === f.value)?.label ?? f.value)
+          : f.value,
+        onRemove: () => f.onChange(f.type === 'text' ? '' : 'All'),
+      })),
+    ...explicitChips,
+  ]
 
   const sorted = useMemo(() => {
     if (!sort) return rows
@@ -867,10 +886,10 @@ export function DataTable<T extends { id: string }>({
         )}
         {toolbar.chips && <div className="vw-flex vw-items-center vw-wrap vw-gap-sm">{toolbar.chips}</div>}
         <div className="flex-1" />
-        {toolbar.activeFilterChips && toolbar.activeFilterChips.length > 0 && (
+        {activeFilterChips.length > 0 && (
           <div className="vw-flex vw-items-center vw-wrap vw-gap-xs">
-            {toolbar.activeFilterChips.map((f) => (
-              <span key={f.key} className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-[3px] rounded-full bg-plane text-[12px] text-ink-2 whitespace-nowrap">
+            {activeFilterChips.map((f) => (
+              <span key={f.key} className="inline-flex items-center gap-1.5 pl-3 pr-2 py-2 rounded-full bg-[#e3edf2] text-[12px] text-ink-2 whitespace-nowrap">
                 {f.label} = <b className="font-medium text-ink-1">{f.value}</b>
                 <button
                   type="button" onClick={f.onRemove} aria-label={`Remove the ${f.label} filter`}
@@ -880,7 +899,7 @@ export function DataTable<T extends { id: string }>({
                 </button>
               </span>
             ))}
-            {toolbar.activeFilterChips.length > 1 && toolbar.onResetFilters && (
+            {activeFilterChips.length > 1 && toolbar.onResetFilters && (
               <button type="button" onClick={toolbar.onResetFilters} className="text-[12px] text-brand-600 hover:underline whitespace-nowrap">
                 Clear all
               </button>

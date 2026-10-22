@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Check, CheckCircle2, ChevronRight, Eye, Pencil, Plus, RotateCcw,
+  AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Check, CheckCircle2, ChevronRight, Eye, Plus, RotateCcw,
   Save, Send, ShieldCheck, Trash2, X,
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
@@ -282,7 +282,8 @@ export default function WorkflowBuilder() {
     const stored = { ...wf, state, version: wf.id !== 'new' && source?.state === 'Active' && state === 'Active' ? wf.version + 1 : wf.version }
     const newId = saveWorkflow(stored, note)
     setWf({ ...stored, id: newId }); setDirty(false)
-    if (newId !== id) nav(`/workflows/${newId}`, { replace: true })
+    if (id === 'new') nav('/workflows', { replace: true })
+    else if (newId !== id) nav(`/workflows/${newId}`, { replace: true })
   }
 
   if (id !== 'new' && !source) {
@@ -325,9 +326,7 @@ export default function WorkflowBuilder() {
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <Button onClick={() => nav('/workflows')}>{readOnly ? 'Close' : 'Cancel'}</Button>
-              {readOnly ? (
-                <Button variant="primary" onClick={() => nav(`/workflows/${wf.id}?edit=1`)}><Pencil size={15} />Edit workflow</Button>
-              ) : (
+              {!readOnly && (
                 <>
                   <Button onClick={() => persist(wf.state === 'Active' ? 'Active' : 'Draft', wf.state === 'Active' ? `${wf.id} saved as version ${wf.version + 1}.` : undefined)} disabled={!wf.type || !wf.models.length || !wf.displayName.trim()}>
                     <Save size={15} />{wf.state === 'Active' ? `Save as v${wf.version + 1}` : 'Save draft'}
