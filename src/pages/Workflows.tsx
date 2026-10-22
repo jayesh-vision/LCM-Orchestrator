@@ -10,7 +10,7 @@ import type { Category, Domain, OrderIntent, Vendor, Workflow, WorkflowState } f
 import { CATEGORIES_BY_DOMAIN, DOMAINS, domainOf } from '@/types'
 import {
   Badge, Card, CardBody, CardHead, CellMain, Chip, DataTable,
-  FieldDropdown, Kebab, Mono, Note, Stat, type Column,
+  FieldDropdown, Kebab, Mono, Stat, type Column,
 } from '@/components/ui'
 import { CoverageMatrix, type CoverageCol } from '@/components/charts'
 import {
@@ -299,10 +299,6 @@ export default function Workflows() {
               return { state: 'gap' as const }
             }}
           />
-          <Note className="mt-4">
-            A workflow is bound to <b>category, type, subtype, vendor and model</b>. Adding a vendor means one workflow per
-            intent, not one per combination — the tasks, assertions and acceptance criteria come from the intent.
-          </Note>
         </CardBody>
       </Card>
 
