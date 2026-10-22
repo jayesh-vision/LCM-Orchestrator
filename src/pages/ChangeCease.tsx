@@ -35,7 +35,6 @@ export default function ChangeCease() {
   const [q, setQ] = useQueryState('q', '')
   const [qservice, setQservice] = useQueryState('service', '')
   const [qcustomer, setQcustomer] = useQueryState('customer', '')
-  const pushToast = useStore((st) => st.pushToast)
   const [open, setOpen] = useState(false)
   const [newIntent, setNewIntent] = useState<OrderIntent>('Modify')
   const [serviceId, setServiceId] = useState('')

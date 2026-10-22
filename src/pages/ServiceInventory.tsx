@@ -58,7 +58,6 @@ export default function ServiceInventory() {
   const services = useStore((s) => s.services)
   const orders = useStore((s) => s.orders)
   const intents = useStore((s) => s.intents)
-  const pushToast = useStore((s) => s.pushToast)
   const nav = useNavigate()
 
   const [q, setQ] = useQueryState('q', '')

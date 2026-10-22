@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type {
-  Category, EndpointRole, IntentParam, StageKind, ValidationRule, ValidationType, Vendor, Workflow, WorkflowStage, WorkflowTaskDef,
+  Category, EndpointRole, IntentParam, OrderIntent, StageKind, ValidationRule, ValidationType, Vendor, Workflow, WorkflowStage, WorkflowTaskDef,
 } from '@/types'
 import { STAGE_KINDS, VALIDATION_TYPES } from '@/types'
 import { DEVICE_MODELS, modelsForCategory } from '@/data/catalog'
@@ -64,11 +64,16 @@ function blankWorkflow(from?: Workflow): Workflow {
     tasks: from ? from.tasks.map((t) => ({ ...t, validations: t.validations.map((r) => ({ ...r })), rollbackValidations: t.rollbackValidations.map((r) => ({ ...r })) })) : [],
     runs30d: 0,
     firstPassRate: 0,
+    operation: from?.operation ?? 'Create',
   }
 }
 
 const composeName = (w: Workflow, n: number) => {
-  const parts = [w.category, w.type || '…', w.subtype || '…', VENDOR_LABEL[w.vendor]]
+  const parts: string[] = [w.category]
+  if (w.operation && w.operation !== 'Create') {
+    parts.push(w.operation)
+  }
+  parts.push(w.type || '…', w.subtype || '…', VENDOR_LABEL[w.vendor])
   if (w.models.some((m) => m.startsWith('NCS'))) parts.push('NCS')
   /* Two-ended: "… | Source n"; single-ended IBW: "… | Juniper n" — the platform's own convention. */
   if (w.category !== 'IBW' && w.endpointRole) parts.push(`${w.endpointRole} ${n}`)
@@ -315,6 +320,7 @@ export default function WorkflowBuilder() {
               <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
                 <h1 className="text-[21px] font-semibold tracking-[-.4px] m-0 truncate max-w-[60vw]">{wf.displayName || (isNew ? 'New workflow' : wf.name)}</h1>
                 <Badge tone={WORKFLOW_TONE[wf.state]} dot={wf.state === 'Active'}>{wf.state} · v{wf.version}</Badge>
+                <Badge tone={(wf.operation ?? 'Create') === 'Create' ? 'none' : 'info'}>{wf.operation ?? 'Create'}</Badge>
                 <Badge tone={CATEGORY_TONE[wf.category]}>{wf.category}</Badge>
                 {readOnly && <Badge tone="none"><Eye size={11} className="inline -mt-px mr-1" />View only</Badge>}
                 {dirty && <Badge tone="warn">Unsaved changes</Badge>}
@@ -348,7 +354,21 @@ export default function WorkflowBuilder() {
         </CardBody>
 
         <div className="px-5 pb-5 border-t border-line-soft pt-4">
-          <div className="grid gap-x-4 gap-y-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-x-4 gap-y-3 md:grid-cols-2 xl:grid-cols-5">
+            <Field label="Operation" required hint="Lifecycle operation this workflow runs for.">
+              <Select
+                value={wf.operation ?? 'Create'}
+                disabled={readOnly}
+                onChange={(e) => patch({ operation: e.target.value as OrderIntent })}
+              >
+                <option value="Create">Create (Day-0)</option>
+                <option value="Modify">Modify</option>
+                <option value="Suspend">Suspend</option>
+                <option value="Resume">Resume</option>
+                <option value="Cease">Cease</option>
+                <option value="Re-prove">Re-prove</option>
+              </Select>
+            </Field>
             <Field label="Service Intent" required hint="The tasks, assertions and parameters this workflow can use all come from the intent. Only Active intents can be selected.">
               <Select value={wf.intentId} disabled={readOnly} onChange={(e) => setIntent(e.target.value)}>
                 {/* Draft/Retired intents aren't offered for new selection — but the

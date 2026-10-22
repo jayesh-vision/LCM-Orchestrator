@@ -84,7 +84,6 @@ export default function ServiceIntents() {
   const reorderIntentParam = useStore((s) => s.reorderIntentParam)
   const deleteIntent = useStore((s) => s.deleteIntent)
   const setIntentState = useStore((s) => s.setIntentState)
-  const pushToast = useStore((s) => s.pushToast)
 
   const [q, setQ] = useQueryState('q', '')
   const [domain, setDomain] = useQueryState<Domain | 'All'>('domain', 'All')

@@ -19,7 +19,6 @@ export default function ProfileTypes() {
   const add = useStore((s) => s.addProfileType)
 
   const nav = useNavigate()
-  const pushToast = useStore((st) => st.pushToast)
   const [q, setQ] = useQueryState('q', '')
   const [qsubtype, setQsubtype] = useQueryState('subtype', '')
   const [domain, setDomain] = useQueryState<Domain | 'All'>('domain', 'All')

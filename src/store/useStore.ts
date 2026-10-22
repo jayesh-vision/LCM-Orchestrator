@@ -197,7 +197,16 @@ interface State {
   abortRun: (runId: string) => void
   retryOrder: (orderId: string) => void
 
-  raiseChange: (serviceId: string, intent: OrderIntent, delta?: Order['delta'], params?: OrderParamValue[], notes?: string, workflowId?: string) => Order
+  raiseChange: (
+    serviceId: string,
+    intent: OrderIntent,
+    delta?: Order['delta'],
+    params?: OrderParamValue[],
+    notes?: string,
+    workflowId?: string,
+    endpointWorkflows?: Record<number, string>,
+    endpointParams?: Record<number, OrderParamValue[]>,
+  ) => Order
   reproveService: (serviceId: string) => void
 
   addProfileType: (category: string, type: string, subtype: string, description: string) => void
@@ -745,7 +754,7 @@ export const useStore = create<State>((set, get) => ({
     setTimeout(() => { get().startRun(orderId) }, 1100)
   },
 
-  raiseChange: (serviceId, intent, delta, params, notes, workflowId) => {
+  raiseChange: (serviceId, intent, delta, params, notes, workflowId, endpointWorkflows, endpointParams) => {
     const svc = get().serviceById(serviceId)!
     const seq = get().orders.length + 1
     const now = new Date().toISOString()
@@ -776,9 +785,10 @@ export const useStore = create<State>((set, get) => ({
       workflowId: workflowId
         ?? get().workflows.find((w) => (w.operation ?? 'Create') === intent && w.category === svc.category && w.state === 'Active')?.id
         ?? get().workflows.find((w) => w.intentId === svc.intentId && w.state === 'Active')?.id,
-      endpoints: bindEndpoints(svc.endpoints, svc.category, svc.type, '—', get().workflows, mergedAttrs, bandwidth).map((e) => ({
+      endpoints: bindEndpoints(svc.endpoints, svc.category, svc.type, '—', get().workflows, mergedAttrs, bandwidth).map((e, idx) => ({
         ...e,
-        workflowId: workflowId ?? e.workflowId,
+        workflowId: endpointWorkflows?.[idx] ?? workflowId ?? e.workflowId,
+        params: endpointParams?.[idx] ?? e.params,
       })),
       /* Only what was actually changed goes on the request — everything else
          about the service is unaffected and has no business being here. */

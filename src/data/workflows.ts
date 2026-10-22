@@ -175,6 +175,7 @@ export function buildWorkflows(): Workflow[] {
         const dm = models.find((m) => m.vendor === vendor)!
         const { stages, tasks } = lifecycleTemplateFor(cat, vendor, op)
         const name = `${cat} | ${OP_TITLES[op]} | ${VENDOR_LABEL[vendor]}`
+        const vendorModels = models.filter((m) => m.vendor === vendor).map((m) => m.model)
         out.push({
           id: `CF-${op.slice(0, 3).toUpperCase()}-${pad(opCount, 4)}`,
           name,
@@ -185,7 +186,7 @@ export function buildWorkflows(): Workflow[] {
           vendor,
           kind: dm.kind,
           model: dm.model,
-          models: [dm.model],
+          models: vendorModels.length > 0 ? vendorModels : [dm.model],
           osRange: dm.osRange,
           intentId: pt?.category === 'IBW' ? 'INT-IBW-ACCESS' : cat === 'L2VPN' ? 'INT-L2-P2P' : cat === 'L3VPN' ? 'INT-L3-MESH' : 'INT-L2-P2P',
           state: 'Active',
