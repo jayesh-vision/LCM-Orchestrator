@@ -285,31 +285,31 @@ export default function ServiceInventory() {
         <Stat label="Total services" icon={Boxes} value={services.length.toLocaleString()}
           progress={(n.state('Live') / services.length) * 100}
           note={`${n.state('Live').toLocaleString()} live · ${n.state('Degraded')} degraded · ${n.state('Suspended')} suspended`}
-          info="Every service record in the inventory, in any state — live, activating, degraded, suspended or ceased. The bar shows how much of the base is live."
+          info="All services in the inventory. The bar shows the live share."
           drillLabel="the unfiltered installed base" onClick={() => { clear(); scrollToResults() }} />
         <Stat label="Conformant" icon={ShieldCheck} value={n.conf('Conformant').toLocaleString()} tone="good"
           delta={{ text: '▲ 34 this week', tone: 'good' }}
           progress={(n.conf('Conformant') / services.length) * 100}
           note={`${Math.round((n.conf('Conformant') / services.length) * 100)}% of the base — device matches intent`}
-          info="Services where the configuration found on the device matches what the order asked for, and a recent end-to-end test proved traffic actually flows. This is the healthy state."
+          info="Configuration matches the request and a recent test confirmed traffic flows."
           drillLabel="conformant services" onClick={() => patch({ conf: 'Conformant', state: null })} />
         <Stat label="Never proven end to end" icon={ShieldQuestion} value={n.conf('Never proven')} tone="warn"
           delta={{ text: '▼ 22 this week', tone: 'good' }}
           progress={(n.conf('Never proven') / services.length) * 100}
           note={`${Math.round((n.conf('Never proven') / services.length) * 100)}% of the base — configured, never tested`}
-          info="Services that were configured on the device but have never had an end-to-end test proving customer traffic actually moves. The config may be right — nobody has checked."
+          info="Configured services without a successful end-to-end traffic test."
           drillLabel="services never proven end to end" onClick={() => patch({ conf: 'Never proven', state: null })} />
         <Stat label="Ghost services" icon={Ghost} value={n.conf('Ghost')} tone="crit"
           progress={(n.conf('Ghost') / services.length) * 100}
           note={`${inr(ghostValue)} billed per year, nothing on the device`}
-          info="Services billed and marked live in the record, but with no matching configuration on any device — the customer is invoiced for something the network isn't delivering. The highest-priority cleanup."
+          info="Marked live and billed, but missing configuration on the device."
           drillLabel="ghost services" onClick={() => patch({ conf: 'Ghost', state: null })} />
       </div>
 
       <div className="flex flex-col gap-4">
         <Card className="flex flex-col">
           <CardHead title="Services by intent" sub="Volume by provisioning intent, ranked biggest first"
-            info="Every service in the base, grouped by the template that provisioned it and ranked by volume — darker tiles carry more of the base. Click a tile to open just that intent's services." />
+            info="Services grouped by workflow and ranked by volume. Select a tile to view that intent." />
           <CardBody className="vw-scroll-hint grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2.5 max-h-[360px] overflow-y-auto">
             {intentItems.map((it) => (
               <button

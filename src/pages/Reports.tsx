@@ -134,16 +134,16 @@ export default function Reports() {
          below to that state and jump to it. */}
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
         <KpiTile label="Report definitions" icon={FileText} value={reports.length}
-          info="Every report the platform can produce — some generated on a schedule, some on demand. Each definition answers one operational question from live data."
+          info="Reports available to run against current operational data."
           drillLabel="every report definition" onClick={() => drillTo('All')} />
         <KpiTile label="Current" icon={CheckCircle2} value={n('Current')} tone="good"
-          info="Reports whose source data has not changed since the file was generated — what you download is still true right now."
+          info="Source data is unchanged since the report was generated."
           drillLabel="current reports" onClick={() => drillTo('Current')} />
         <KpiTile label="Stale" icon={Hourglass} value={n('Stale')} tone="warn"
-          info="Reports generated before the underlying data last changed. Still valid as a statement about that moment, but regenerate before using one to describe the present."
+          info="Source data changed after generation. Regenerate for current results."
           drillLabel="stale reports" onClick={() => drillTo('Stale')} />
         <KpiTile label="Failed" icon={XCircle} value={n('Failed')} tone={n('Failed') ? 'crit' : 'brand'}
-          info="Reports whose last generation attempt errored — no fresh file was produced. Retry from the row's actions."
+          info="The latest report generation failed. Retry from the row actions."
           drillLabel="failed reports" onClick={() => drillTo('Failed')} />
       </div>
 

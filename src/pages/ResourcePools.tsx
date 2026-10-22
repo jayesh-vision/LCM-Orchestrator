@@ -73,23 +73,23 @@ export default function ResourcePools() {
         <Stat label="Pools" icon={Database} value={pools.length}
           progress={(totals.allocated / totals.total) * 100} progressColor={SOFT.brand}
           note={`${totals.total.toLocaleString()} addressable values`}
-          info="Each pool holds one kind of network value — VLAN IDs, IP blocks, route targets, pseudowire IDs — that provisioning allocates automatically when a service is built and releases when it is ceased."
+          info="Pools hold network values that provisioning allocates and releases for services."
           drillLabel="every pool, unfiltered" onClick={clear} />
         <Stat label="Allocated" icon={Gauge} value={totals.allocated.toLocaleString()}
           progress={(totals.allocated / totals.total) * 100} progressColor={SOFT.brand}
-          info="Values currently held by live services across all pools. The bar shows how much of the total estate is in use."
+          info="Values currently allocated to live services."
           note={`${((totals.allocated / totals.total) * 100).toFixed(0)}% of the estate`}
           drillLabel="the pool with the least headroom"
           onClick={() => { const t = [...pools].sort((a, b) => freePct(a) - freePct(b))[0]; if (t) openPool(t) }} />
         <Stat label="Quarantined" icon={Hourglass} value={totals.quarantined} tone="warn"
           progress={(totals.quarantined / totals.total) * 100} progressColor={SOFT.warn}
           note={`${((totals.quarantined / totals.total) * 100).toFixed(0)}% of the estate · held 30 days before reissue`}
-          info="Values released by a ceased service but deliberately held back before reissue. Handing a route target or IP block straight to a new customer while stale configuration might still reference it can leak traffic between customers."
+          info="Released values held temporarily before they can be reused."
           drillLabel="the pool holding the most quarantined values"
           onClick={() => { const t = [...pools].sort((a, b) => b.quarantined - a.quarantined)[0]; if (t) openPool(t) }} />
         <Stat label="Pools under 10% free" icon={TriangleAlert} value={critical.length} tone={critical.length ? 'crit' : 'good'}
           progress={(critical.length / pools.length) * 100} progressColor={critical.length ? SOFT.crit : SOFT.good}
-          info="Pools close to exhaustion. A new order that needs a value from one of these pools will fail validation before anything is configured — expand the range or reclaim values to restore headroom."
+          info="Low capacity may block new orders. Expand the range or reclaim values."
           note={critical.length ? [...new Set(critical.map((p) => p.kind))].join(' · ') : 'All pools have headroom'}
           drillLabel={critical.length ? 'the tightest pool' : 'all pools'}
           onClick={() => { const t = critical.slice().sort((a, b) => freePct(a) - freePct(b))[0]; if (t) openPool(t); else clear() }} />
@@ -98,7 +98,7 @@ export default function ResourcePools() {
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
         <Card className="flex flex-col">
           <CardHead title="Headroom by pool" sub="Percentage free, sorted by how close each pool is to exhaustion"
-            info="Each bar is one pool's remaining free capacity as a percentage. Red = under 10% free (new orders will be blocked), amber = under 25%, green = healthy. Click a bar to browse that pool's individual values." />
+            info="Bars show free capacity: red under 10%, amber under 25%, green otherwise. Select a bar to browse values." />
           <CardBody className="flex-1 flex flex-col gap-4">
             <BarList
               labelWidth={190}
@@ -124,7 +124,7 @@ export default function ResourcePools() {
 
         <Card className="flex flex-col">
           <CardHead title="Why quarantine" sub="Not every released value can be reissued immediately"
-            info="When a service is ceased its values return to the pool, but some kinds are dangerous to reissue straight away. This panel explains the hold policy per kind: 30 days where stale state could leak traffic between customers, immediate where reuse is provably safe." />
+            info="Shows how long released values are held before reuse, by value type." />
           <CardBody className="flex-1 flex flex-col gap-3">
             {[
               { k: 'Route targets', icon: Waypoints, why: 'Reissuing an RT that a peer still advertises leaks one customer\'s routes into another customer\'s VRF.', hold: '30 days' },

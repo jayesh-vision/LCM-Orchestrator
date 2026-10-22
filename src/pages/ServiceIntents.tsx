@@ -231,17 +231,17 @@ export default function ServiceIntents() {
     <>
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
         <Stat label="Service intents" icon={Layers} value={familyReps.length} note="Blueprint contracts across every domain"
-          info="Every Service Intent is the architectural contract a workflow implements — its topology, endpoint arity and the parameters a request for it can supply."
+          info="A Service Intent defines a workflow’s topology and request parameters."
           drillLabel="every service intent" onClick={() => setCat('All')} />
         <Stat label="Topologies" icon={GitBranch} value={distinctTopologies} note="Single-ended, Two-ended, Star, Full mesh"
-          info="The shapes a Service Intent's topology can take — how many endpoints a circuit built from it has, and how they relate."
+          info="Topology defines the number and relationship of a service’s endpoints."
           drillLabel="every topology" onClick={() => setTopology('All')} />
         <Stat label="Total parameters" icon={SlidersHorizontal} value={totalParams} note="On each intent's current version"
-          info="Every parameter each intent's current version defines — the full vocabulary a workflow's commands and a request's form can draw from."
+          info="Parameters are the values available to workflow commands and request forms."
           drillLabel="every parameter" onClick={() => setCat('All')} />
         <Stat label="Unused" icon={CircleAlert} value={unused} tone={unused > 0 ? 'warn' : 'good'}
           note={unused > 0 ? 'No workflow implements these yet' : 'Every intent has a workflow'}
-          info="Service Intents no workflow — at any version — references yet. An order that selects one of these can't be fulfilled until a workflow is built for it."
+          info="These intents have no workflow, so requests using them cannot run."
           drillLabel="every unused intent" onClick={() => setCat('All')} />
       </div>
 

@@ -585,9 +585,9 @@ export default function OrderDetail() {
                       <div className="vw-label mb-1">{endpointRole(e)} · <Mono>{e.mgmtIp}</Mono></div>
                       {w ? (
                         <>
-                          <Link to={`/workflows/${w.id}`} className="vw-value font-medium block hover:text-brand-600">
+                          <div className="vw-value font-medium block">
                             {w.name} — V {w.version}
-                          </Link>
+                          </div>
                           <div className="text-[12px] text-ink-3 mt-0.5">
                             {w.vendor} {e.deviceName} · {w.stages.length} stages · {cmds || 'no'} config command{cmds === 1 ? '' : 's'}
                           </div>

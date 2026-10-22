@@ -126,18 +126,18 @@ export default function ChangeCease() {
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
         <Stat label="Open modify orders" icon={Pencil} value={n('Modify')}
           note="Delta only — the renderer emits just the lines the change implies"
-          info="Orders that change an attribute of an existing live service, such as bandwidth. Only the delta is written to the device, and the change is hitless on this platform."
+          info="Modify an attribute of a live service. Only the requested change is applied."
           drillLabel="modify orders" onClick={() => setIntent('Modify')} />
         <Stat label="Suspend & resume" icon={PauseCircle} value={n('Suspend') + n('Resume')} tone="warn"
           note="Billing-driven · configuration retained for resume"
-          info="Billing-driven stops and restarts. A suspend zeroes the policer but keeps the configuration, so a later resume restores exactly the revision that was live. Both interrupt service."
+          info="Suspend pauses service while keeping its configuration; resume restores it. Both interrupt traffic."
           drillLabel="suspend orders" onClick={() => setIntent('Suspend')} />
         <Stat label="Cease orders" icon={CircleOff} value={n('Cease')} tone="crit" note="Resources quarantined for 30 days"
-          info="Permanent decommissions. Configuration is fully removed, absence is proven, and the service's resources move to quarantine — not straight back to the pool — so nothing stale can leak."
+          info="Cease removes configuration, verifies it is gone, and quarantines its resources before reuse."
           drillLabel="cease orders" onClick={() => setIntent('Cease')} />
         <Stat label="Next change window" icon={CalendarClock} value="01:00" tone="good"
           note="Tonight, IST · traffic-affecting changes only run inside a window"
-          info="Traffic-affecting changes (suspend, resume, cease) only execute inside the nightly maintenance window. Approved orders queue until it opens; hitless changes run any time."
+          info="Suspend, resume, and cease run during the nightly window. Hitless changes run any time."
           drillLabel="the execution queue waiting on a window" onClick={() => nav('/execution?state=Approved,Queued')} />
       </div>
 
@@ -170,7 +170,7 @@ export default function ChangeCease() {
 
       <Card>
         <CardHead title="Cease completion checklist" sub="A cease is not complete when the commands return — it is complete when absence is proven"
-          info="The five gates every cease must pass before it closes. Removing configuration and proving it is gone are different acts — discovery re-checks at day 7 and reopens the cease if residue is found, and billing only stops once the whole chain completes." />
+          info="Cease closes after removal, verification, a day-7 residue check, and billing completion." />
         <CardBody>
           <div className="grid gap-3 md:grid-cols-5">
             {[

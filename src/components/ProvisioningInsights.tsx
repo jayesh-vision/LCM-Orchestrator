@@ -394,7 +394,7 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
   const intentCard = (
     <Card className="h-full flex flex-col">
       <CardHead title="New vs Upgrade" sub="New services versus upgrades to ones already live"
-        info="Every request in the current selection counted by why it was raised. Create is the only type that builds something new — Modify, Suspend, Resume, Cease and Re-prove all act on a service that is already live, so the balance between Create and the rest says whether this queue is growing the estate or upgrading it. Each cell of the grid is one percent of the selection, coloured by type — the legend below names every colour; hover or click a cell, the bar, or a legend entry to isolate and open just those requests." />
+        info="Requests grouped by operation type. Select a segment or legend item to filter the list." />
       <CardBody className="flex-1 min-h-0 flex flex-col justify-center">
         <IntentWaffle counts={byIntent} total={total} onDrill={onDrill} />
       </CardBody>
@@ -412,7 +412,7 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
   const spotlightCard = (
     <Card className="h-full flex flex-col">
       <CardHead title="Where failures cluster" sub="The domain, vendor and model that fail most, and why"
-        info="The domain, vendor and device model with the highest failure rate in the current scope (vendor and model need at least 3 orders to qualify, so one unlucky order doesn't look like a trend), plus SLA breaches and the root causes behind every failed task. Click a metric to open those failures." />
+        info="Highlights the highest failure rate, SLA breaches, and common causes. Select a metric to view affected requests." />
       <CardBody className="flex-1 min-h-0 flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-x-4 gap-y-3.5">
           <SpotlightStat icon={Globe} value={worstDomain ? `${Math.round(worstDomain.rate * 100)}%` : '—'} label="Riskiest domain"
@@ -528,7 +528,7 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card className="h-full flex flex-col">
           <CardHead title="Where requests are waiting" sub="Who each request is waiting on before reaching a device"
-            info="Every request in the current selection, as one ring: how many are waiting on a decision, how many are cleared and ready to run, and how many failed. The grey slice is everything else in the pipeline — drafted, planned, in progress or already live. Click a slice or a row to open exactly those requests." />
+            info="Requests by approval state. Select a slice or row to view matching requests." />
           <CardBody className="flex-1 min-h-0 flex flex-col justify-center items-center gap-1 pt-1">
             <Donut size={116} total={total} segments={[
               { label: 'Waiting for approval', value: waiting, fill: 'brand', color: SOFT.purple, onClick: () => onDrill({ state: 'Validated' }) },
@@ -556,7 +556,7 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
         {intentCard}
         <Card className="h-full flex flex-col">
           <CardHead title="How execution is going" sub="What became of the requests that reached the devices"
-            info="Everything in the current selection that has moved into execution, as one ring: finished, still moving, or failed — every order in scope is exactly one of the three. Click a slice or a row to open exactly those orders." />
+            info="Execution outcomes: completed, in progress, or failed. Select a slice to view those orders." />
           <CardBody className="flex-1 min-h-0 flex flex-col justify-center items-center gap-1 pt-1">
             <Donut size={116} total={execTotal} segments={[
               { label: 'Ready', value: execReady, fill: 'good', color: SOFT.good, onClick: () => onDrill({ state: 'Ready' }) },
@@ -579,7 +579,7 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
         <Card className="h-full flex flex-col">
           <CardHead title="Where work sits in the pipeline" sub="Every stage from draft to ready, in the order a request moves through them"
-            info="Each bar is one stage of the provisioning pipeline for the current selection, left to right in the order a request moves through it. Grey bars are the request phase — still being designed, checked or decided. Coloured bars are the execution phase: blue is moving, green finished, red failed. The label under each stage names its phase." />
+            info="Request stages from design through execution. Colors show in progress, completed, or failed." />
           <ChartLegend items={[
             { label: 'Requests — awaiting design or decision', color: SOFT.none },
             { label: 'Execution — moving', color: SOFT.brand },
@@ -597,7 +597,7 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
         </Card>
         <Card className="h-full flex flex-col">
           <CardHead title="Is the backlog growing?" sub="Requests raised against executions completed, day by day over the last two weeks"
-            info="Both halves of the pipeline on one timeline: requests raised per day (blue) against executions that finished successfully per day (green), over the last 14 days for the current selection. When the blue line runs above the green one, work is arriving faster than it is being executed and the backlog grows. Hover the chart for exact daily numbers." />
+            info="Daily requests and successful executions over the last 14 days. Hover for counts." />
           <CardBody className="flex-1 min-h-0 flex flex-col">
             <TrendChart height={280} ariaLabel="Requests raised and executions completed per day, last 14 days" labels={trend.labels}
               series={[
@@ -609,7 +609,7 @@ export function ProvisioningInsights({ orders, runs, onDrill }: {
       </div>
 
       <RankedBreakdown title="Which categories carry the load" sub="Each service category by volume, split by where its requests stand"
-        info="Every service category in the current selection, biggest first, split into Ready, In progress, Waiting and Failed. Waiting is the request phase; the other three are execution. Click the count to open the whole category, or a segment of its bar to open just that slice."
+        info="Services by category and status. Select a count or segment to view matching services."
         groups={byCategory} noun={noun} onDrill={onDrill}
         renderLabel={(c) => <Badge tone={CATEGORY_TONE[c]}>{c}</Badge>}
         labelFor={(c) => c}
@@ -742,7 +742,7 @@ function VendorBreakdown({ orders, noun, onDrill }: {
   return (
     <Card>
       <CardHead title="Which vendors carry the load" sub="Each vendor by volume, by domain — the colour is its failure rate, not its size"
-        info="Every vendor in scope, by each order's primary endpoint, ranked by volume. Bar colour reflects failure rate: grey under 10%, amber at 10%+, red at 25%+. Pick a domain tab to see just that domain's vendors — volume and failure rate recompute for the domain, they aren't the vendor's overall figures. Scrolls past the top vendors instead of growing the page, since the vendor list has no fixed size — click a bar to open that vendor's requests." />
+        info="Vendors ranked by request volume. Bar color shows failure rate; select a bar to view requests." />
       <div className="px-4 pt-3 pb-1 flex flex-wrap gap-1.5">
         <Chip active={domain === 'All'} onClick={() => setDomain('All')} count={orders.length}>All domains</Chip>
         {activeDomains.map((d) => (

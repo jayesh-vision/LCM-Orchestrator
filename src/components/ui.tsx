@@ -39,7 +39,7 @@ export function InfoTip({ children, width = 270 }: { children: ReactNode; width?
       {pos && createPortal(
         <div
           role="tooltip"
-          className="fixed z-[120] rounded-lg bg-ink-1 text-white shadow-lg px-3.5 py-2.5 text-[12px] leading-relaxed font-normal normal-case tracking-normal text-left"
+          className="fixed z-[120] rounded-lg border border-line bg-white text-ink-1 shadow-xl px-3.5 py-2.5 text-[12px] leading-relaxed font-normal normal-case tracking-normal text-left"
           style={{
             top: pos.y, width, maxWidth: 'calc(100vw - 24px)',
             left: pos.alignRight ? undefined : pos.x,
@@ -793,7 +793,7 @@ export function DataTable<T extends { id: string }>({
   useEffect(() => {
     setVisibleCount(pageSize)
     scrollRef.current?.scrollTo({ top: 0 })
-  }, [rows.length, pageSize])
+  }, [rows, pageSize])
 
   /* Grid-scroll pagination: reveal the next `pageSize` rows once the user
      scrolls near the bottom of the grid's own viewport, instead of paging

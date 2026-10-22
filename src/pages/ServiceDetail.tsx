@@ -270,7 +270,7 @@ export default function ServiceDetail() {
           <CardHead
             title="Lifecycle"
             sub="Built, then every change since — oldest first, with the runs that carried each one out"
-            info="The audit trail for the service rather than for one request: who asked for what, who cleared it, when it reached the devices and what came back. Change history sits alongside this and records what changed on the device — including changes made outside the platform, which have no request behind them."
+            info="See who requested and approved each action, when it ran, and what changed on the device."
           />
           <CardBody>
             {lifecycle.length === 0 ? (

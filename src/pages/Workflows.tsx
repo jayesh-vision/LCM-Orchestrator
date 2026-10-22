@@ -110,7 +110,10 @@ export default function Workflows() {
     if (op !== 'All' && (w.operation ?? 'Create') !== op) return false
     if (q) {
       const t = q.toLowerCase()
-      if (!(w.id.toLowerCase().includes(t) || w.name.toLowerCase().includes(t) || w.vendor.toLowerCase().includes(t) || w.model.toLowerCase().includes(t))) return false
+      if (!(w.id.toLowerCase().includes(t) || w.name.toLowerCase().includes(t)
+        || w.vendor.toLowerCase().includes(t) || w.model.toLowerCase().includes(t)
+        || w.category.toLowerCase().includes(t) || w.type.toLowerCase().includes(t)
+        || w.subtype.toLowerCase().includes(t))) return false
     }
     if (qname && !w.name.toLowerCase().includes(qname.toLowerCase())) return false
     if (qcode && !w.id.toLowerCase().includes(qcode.toLowerCase())) return false
@@ -237,28 +240,28 @@ export default function Workflows() {
         <Stat label="Total workflows" icon={ListChecks} value={workflows.length}
           progress={(n.state('Active') / Math.max(1, workflows.length)) * 100}
           note={`${n.state('Active')} active · ${n.state('Draft')} draft`}
-          info="Every workflow definition in the library, in any state. A workflow is the executable recipe — tasks, assertions and acceptance criteria — that provisioning runs for one intent on one vendor and model."
+          info="All workflow definitions, including drafts and retired versions."
           drillLabel="every workflow, unfiltered" onClick={() => { clear(); scrollToResults() }} />
         <Stat label="Active" icon={CheckCircle2} value={n.state('Active')} tone="good"
           progress={(n.state('Active') / Math.max(1, workflows.length)) * 100}
           note="Only Active workflows can be executed"
-          info="Workflows that have been approved and published. Only these can be picked up by a provisioning request — everything else is still being authored or reviewed."
+          info="Approved workflows available to provisioning requests."
           drillLabel="active workflows" onClick={() => setSt('Active')} />
         <Stat label="Awaiting approval" icon={Clock} value={n.state('Awaiting approval') + n.state('Assigned')} tone="plum"
           progress={((n.state('Awaiting approval') + n.state('Assigned')) / Math.max(1, workflows.length)) * 100}
           note="Draft → Assigned → Awaiting approval → Active"
-          info="Workflows sitting in the review queue: assigned to a reviewer or already submitted for approval. They cannot run until someone approves them."
+          info="Workflows assigned for review or awaiting approval."
           drillLabel="workflows waiting on approval" onClick={() => setSt('Assigned,Awaiting approval')} />
         <Stat label="Coverage" icon={Grid3x3} value={`${coveragePct}%`} tone={gaps === 0 ? 'good' : gaps > combinations / 2 ? 'crit' : 'warn'}
           progress={coveragePct}
           note={gaps === 0 ? `All ${combinations} intent × vendor combinations are covered` : `${gaps} of ${combinations} combinations have no active workflow`}
-          info="The share of intent × vendor combinations that have at least one Active workflow. A gap means orders for that combination cannot be provisioned until a workflow is built and approved."
+          info="Coverage is the share of intent and vendor pairs with an active workflow."
           drillLabel="draft workflows behind the remaining gaps" onClick={() => setSt('Draft')} />
       </div>
 
       <Card>
         <CardHead title="Coverage — intent by vendor" sub={`${coverageDomain} domain${coverageGroups.length > 1 ? ` — ${coverageGroup.join(' / ')}` : ''} — where an active workflow exists, and how much of the installed base rides on it`}
-          info="Each tile shows whether an Active workflow exists for that intent on that vendor: a green count = that many active workflows, amber Draft = authoring has started but nothing is approved, a plain dash (—) = nothing exists — click it to see what's missing. Every vendor column is marked with its device class (Router, Switch, CPE, Radio, Optical, VNF, ONT) — those are disjoint estates, so a column only ever lights up under the category it belongs to; outside that category the dash is fixed and not clickable, because that combination can never be built. Use the Domain chip above the grid to switch between Transport, Access, Radio and Fiber — a domain with more than one disjoint vendor estate (Radio's Microwave/RAN VNF) adds its own group switcher underneath. The bar on the right is the live services riding on that intent — the bigger the bar, the more revenue depends on that row's coverage. Click a tile to filter the list below, or the bar to open those services."
+          info="Tiles show active or draft workflow coverage by intent and vendor. Select a tile to filter the list; select a service count to view those services."
           right={<>
             <Badge tone="good">Built {widgetBuilt}</Badge>
             {widgetDraftCombos > 0 && <Badge tone="warn">Draft {widgetDraftCombos}</Badge>}
@@ -308,7 +311,6 @@ export default function Workflows() {
         rows={filtered} total={workflows.length} columns={columns}
         onRowClick={(r) => nav(`/workflows/${r.id}`)}
         minWidth={1180}
-        fillHeight
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Name, Code, Vendor' },
           /* Domain and Category are the two facets worth a direct dropdown
