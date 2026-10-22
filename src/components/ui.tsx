@@ -59,11 +59,7 @@ export function InfoTip({ children, width = 270 }: { children: ReactNode; width?
    heading, .vw-card-description the sub-line. Padding is handled by the
    head/body/foot parts, so the section itself is reset to zero. */
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-  /* shrink-0: `overflow-hidden` gives a flex item an automatic min-height of
-     0 per the flexbox spec, so without this a Card stacked above a
-     `fillHeight` grid (both flex children of the page column) gets crushed
-     to nothing the moment the column runs short on room, instead of the
-     page simply growing past the viewport and scrolling. */
+  /* Keep stacked cards at their natural height when the page column is tight. */
   return <div className={`vw-card-section p-0 overflow-hidden shrink-0 ${className}`}>{children}</div>
 }
 export function CardHead({ title, sub, right, info, tight = false }:
@@ -752,7 +748,7 @@ export interface GridToolbar {
 }
 
 export function DataTable<T extends { id: string }>({
-  rows, columns, pageSize = 25, onRowClick, empty = 'Nothing matches these filters.', minWidth = 1040, maxHeight = 560, toolbar, total, fillHeight = false,
+  rows, columns, pageSize = 25, onRowClick, empty = 'Nothing matches these filters.', minWidth = 1040, maxHeight = 560, toolbar, total,
 }: {
   rows: T[]
   columns: Column<T>[]
@@ -761,20 +757,19 @@ export function DataTable<T extends { id: string }>({
   onRowClick?: (row: T) => void
   empty?: string
   minWidth?: number
-  /** Height of the scrollable grid body; scrolling near the bottom loads the next `pageSize` rows. Ignored when `fillHeight` is set. */
+  /** Height of the scrollable grid body; scrolling near the bottom loads the next `pageSize` rows. */
   maxHeight?: number
   /** Rendering the toolbar also wraps the table in its own .nst-table-card. */
   toolbar?: GridToolbar
   /** Unfiltered total, for "Showing 12 of 138". Defaults to rows.length. */
   total?: number
-  /** Grow the grid to fill the remaining height of its flex parent instead of stopping at a fixed `maxHeight` — leaves no dead space below a short result set. Needs an ancestor with a bounded height (e.g. a flex column sized to the viewport). */
-  fillHeight?: boolean
 }) {
   const [visibleCount, setVisibleCount] = useState(pageSize)
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [spin, setSpin] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const visibleCountRef = useRef(pageSize)
   const activeFilters = (toolbar?.filters ?? []).filter((f) => f.value && f.value !== 'All').length
 
   const sorted = useMemo(() => {
@@ -789,21 +784,20 @@ export function DataTable<T extends { id: string }>({
   }, [rows, sort, columns])
 
   const view = sorted.slice(0, visibleCount)
-  const hasMore = visibleCount < sorted.length
   useEffect(() => {
+    visibleCountRef.current = pageSize
     setVisibleCount(pageSize)
     scrollRef.current?.scrollTo({ top: 0 })
   }, [rows, pageSize])
 
-  /* Grid-scroll pagination: reveal the next `pageSize` rows once the user
-     scrolls near the bottom of the grid's own viewport, instead of paging
-     through click-through Prev/Next controls. */
+  /* Load one batch only after the user reaches the end of the current rows. */
   const onGridScroll = () => {
     const el = scrollRef.current
-    if (!el || !hasMore) return
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) {
-      setVisibleCount((c) => Math.min(sorted.length, c + pageSize))
-    }
+    if (!el || visibleCountRef.current >= sorted.length) return
+    if (el.scrollTop + el.clientHeight < el.scrollHeight - 80) return
+    const next = Math.min(sorted.length, visibleCountRef.current + pageSize)
+    visibleCountRef.current = next
+    setVisibleCount(next)
   }
 
   const tableEl = (
@@ -814,12 +808,10 @@ export function DataTable<T extends { id: string }>({
           inside a .vw-card-section that already provides them. */}
       <div
         ref={scrollRef} onScroll={onGridScroll}
-        className={`overflow-auto ${fillHeight ? 'flex-1' : ''}`}
-        /* fillHeight grows the grid into whatever room its flex ancestors have —
-           `maxHeight` becomes a floor instead of a cap, so a page with a lot
-           above the grid (stat cards, charts) never crushes it down to a
-           sliver: the grid holds this minimum and the page scrolls past it. */
-        style={fillHeight ? { minHeight: maxHeight } : { maxHeight }}
+        className="overflow-auto"
+        /* Use one fixed-height scroll viewport for every listing, matching the
+           workflow grid's reliable scroll-to-load behavior. */
+        style={{ maxHeight }}
       >
         <table className="nst-table border-0 rounded-none [&>thead>tr>th]:bg-plane [&>thead>tr>th]:sticky [&>thead>tr>th]:top-0 [&>thead>tr>th]:z-10" style={{ minWidth }}>
           <thead>
@@ -857,14 +849,6 @@ export function DataTable<T extends { id: string }>({
           </tbody>
         </table>
       </div>
-      {hasMore && (
-        <div className={fillHeight ? 'shrink-0' : ''}>
-          <CardFoot>
-            <span>Showing {view.length.toLocaleString()} of {sorted.length.toLocaleString()}</span>
-            <span className="text-ink-3">Scroll for more</span>
-          </CardFoot>
-        </div>
-      )}
     </>
   )
 
@@ -873,7 +857,7 @@ export function DataTable<T extends { id: string }>({
   const refresh = () => { setSpin(true); toolbar.onRefresh?.(); window.setTimeout(() => setSpin(false), 600) }
 
   return (
-    <div className={`vw-flex vw-flex-col vw-gap-xs ${fillHeight ? 'flex-1' : ''}`}>
+    <div className="vw-flex vw-flex-col vw-gap-xs">
       <div className="vw-flex vw-items-center vw-wrap vw-gap-md shrink-0">
         <span className="vw-value text-ink-2 whitespace-nowrap tnum">
           Showing {view.length.toLocaleString()} of {sorted.length.toLocaleString()}{total !== undefined && total !== sorted.length ? <span className="text-ink-3"> · {total.toLocaleString()} in total</span> : ''}
@@ -929,11 +913,7 @@ export function DataTable<T extends { id: string }>({
           )}
         </div>
       </div>
-      {/* `.nst-table-card` carries `overflow: hidden` for its rounded corners, which
-          per the flexbox spec gives it an automatic min-height of 0 — without an
-          explicit floor here it would get crushed by its own parent before its
-          `minHeight`-holding children (above) ever get a say. */}
-      <div className={`nst-table-card ${fillHeight ? 'flex flex-col flex-1' : ''}`} style={fillHeight ? { minHeight: maxHeight } : undefined}>
+      <div className="nst-table-card">
         {tableEl}
       </div>
     </div>

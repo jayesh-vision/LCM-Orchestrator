@@ -340,7 +340,6 @@ export default function ServiceInventory() {
       <DataTable
         rows={ranked} total={services.length} columns={columns}
         onRowClick={(r) => nav(`/inventory/${r.id}`)}
-        fillHeight
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Service, Customer' },
           /* State and conformance are visible columns and the most useful

@@ -226,7 +226,6 @@ export default function Reports() {
       <DataTable
         rows={filtered} total={reports.length} columns={columns} minWidth={1220}
         onRowClick={(r) => setOpen(r)}
-        fillHeight
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Report, Question' },
           chips: [

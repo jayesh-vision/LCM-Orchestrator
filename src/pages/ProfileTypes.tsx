@@ -106,7 +106,6 @@ export default function ProfileTypes() {
       <DataTable
         rows={filtered} total={profileTypes.length} columns={columns} minWidth={1020}
         onRowClick={(row) => setView(row)}
-        fillHeight
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Category, Type, Subtype' },
           /* Domain (Transport/Access/Radio/Fiber as one dropdown's options,

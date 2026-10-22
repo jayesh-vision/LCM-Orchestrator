@@ -247,7 +247,6 @@ export default function ServiceIntents() {
 
       <DataTable
         rows={filtered} total={families.length} columns={columns} minWidth={960}
-        fillHeight
         toolbar={{
           search: { value: q, onChange: setQ, placeholder: 'Code, Name, Type' },
           /* Transport / Access / Radio / Fiber as options inside one Domain
