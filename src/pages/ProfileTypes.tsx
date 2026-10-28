@@ -129,6 +129,7 @@ export default function ProfileTypes() {
             { label: 'Profile template', icon: Plus, onClick: () => setOpen(true) },
           ],
         }}
+        
       />
 
       <Modal
